@@ -113,7 +113,7 @@ pub async fn handle_paylog<T>(pmc: &PaymakerClient, log: &T) -> Result<()>
 {
     let ser = serde_json::to_string(log)?;
     let mut pmcm = pmc.pmcm.lock().await;
-    debug!("Writing to paylog {} {}", pmcm.current_file_name, ser);
+    trace!("Writing to paylog {} {}", pmcm.current_file_name, ser);
     pmcm.current_pay_file.write_all(ser.add("\n").as_bytes()).await?;
     Ok(())
 }

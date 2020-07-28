@@ -443,7 +443,7 @@ fn process_submit0(w: &mut Worker, mut sub: AnnPost) {
     }) {
         Ok(_) => (),
         Err(e) => {
-            info!("Error sending reply [{:?}]", e);
+            info!("Error sending reply");
         }
     }
 }
