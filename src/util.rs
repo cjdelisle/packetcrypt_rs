@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
+use std::env;
 use std::panic;
 use std::process;
 use std::path::Path;
@@ -163,11 +164,19 @@ pub async fn setup_env() -> Result<()> {
         process::exit(1);
     }));
 
-    // Filter out some ultra spammy logs
-    env_logger::Builder::from_default_env()
-        .filter_module("tracing", LevelFilter::Warn)
-        .filter_module("hyper", LevelFilter::Info)
-        .init();
+    let rl = if let Ok(rl) = env::var("RUST_LOG") { rl } else { String::new() };
+
+    let mut log = env_logger::Builder::from_default_env();
+    if !rl.contains("tracing") {
+        log.filter_module("tracing", LevelFilter::Warn);
+    }
+    if !rl.contains("hyper") {
+        log.filter_module("hyper", LevelFilter::Info);
+    }
+    if !rl.contains("hyper") {
+        log.filter_module("packetcrypt", LevelFilter::Debug);
+    }
+    log.init();
 
     Ok(())
 }
