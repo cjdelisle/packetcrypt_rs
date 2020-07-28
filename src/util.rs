@@ -1,25 +1,28 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
+use anyhow::Result;
+use bytes::buf::BufMut;
+use crossbeam_channel::Sender as SenderCB;
+use log::LevelFilter;
+use regex::Regex;
 use std::env;
 use std::panic;
-use std::process;
 use std::path::Path;
+use std::process;
 use std::time::{Duration, SystemTime};
-use anyhow::Result;
-use tokio::sync::broadcast::Receiver;
-use crossbeam_channel::Sender as SenderCB;
-use bytes::buf::BufMut;
-use tokio::fs::{File,read_dir};
-use regex::Regex;
-use tokio::stream::StreamExt;
+use tokio::fs::{read_dir, File};
 use tokio::io::AsyncWriteExt;
-use log::LevelFilter;
+use tokio::stream::StreamExt;
+use tokio::sync::broadcast::Receiver;
 
 pub async fn sleep_ms(ms: u64) {
     tokio::time::delay_for(Duration::from_millis(ms)).await;
 }
 
 pub fn now_ms() -> u64 {
-    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis() as u64
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
 }
 
 pub async fn get_url_bin(url: &str) -> Result<bytes::Bytes> {
@@ -31,7 +34,7 @@ pub async fn get_url_bin(url: &str) -> Result<bytes::Bytes> {
                 continue;
             }
             st => Err(format_err!("Status code was {:?}", st)),
-        }
+        };
     }
 }
 
@@ -45,15 +48,13 @@ pub async fn get_url_text(url: &str) -> Result<String> {
 
 #[macro_export]
 macro_rules! async_spawn {
-    ($arc:ident, $blk:block) => {
-        {
-            let $arc = Arc::clone($arc);
-            tokio::spawn(async move { $blk });
-        }
-    }
+    ($arc:ident, $blk:block) => {{
+        let $arc = Arc::clone($arc);
+        tokio::spawn(async move { $blk });
+    }};
 }
 
-pub async fn tokio_bcast_to_crossbeam<T,S>(
+pub async fn tokio_bcast_to_crossbeam<T, S>(
     name: S,
     mut tokio_recv: Receiver<T>,
     crossbeam_send: SenderCB<T>,
@@ -70,7 +71,7 @@ pub async fn tokio_bcast_to_crossbeam<T,S>(
                     sleep_ms(5000).await;
                     continue;
                 }
-                Ok(w) => { w }
+                Ok(w) => w,
             };
             loop {
                 w = match crossbeam_send.try_send(w) {
@@ -79,7 +80,9 @@ pub async fn tokio_bcast_to_crossbeam<T,S>(
                         sleep_ms(3000).await;
                         e.into_inner()
                     }
-                    Ok(_) => { break; }
+                    Ok(_) => {
+                        break;
+                    }
                 }
             }
         }
@@ -99,25 +102,43 @@ pub fn aligned_bytes(from: &[u8], alignment: usize) -> bytes::Bytes {
     b.freeze().slice(i..)
 }
 
-pub async fn numbered_files(dir: &String, regex: &Regex) -> Result<Vec<(String,usize)>> {
-    Ok(read_dir(dir).await?.filter_map(|f_or_err| {
-        let f = if let Ok(x) = f_or_err { x } else {
-            warn!("Error reading files in dir {}", dir);
-            return None;
-        };
-        let filename = if let Ok(s) = f.file_name().into_string() { s } else { return None; };
-        let cap = if let Some(c) = regex.captures(&filename) { c } else { return None; };
-        let fileno = if let Some(c) = cap.get(1) { c.as_str() } else {
-            // This is a problem with the regex
-            error!("filename {:?} does not have a 1st capture group", filename);
-            return None;
-        };
-        let file_int = if let Ok(x) = fileno.parse::<usize>() { x } else {
-            warn!("Invalid file {:?}", filename);
-            return None;
-        };
-        Some((filename, file_int))
-    }).collect().await)
+pub async fn numbered_files(dir: &String, regex: &Regex) -> Result<Vec<(String, usize)>> {
+    Ok(read_dir(dir)
+        .await?
+        .filter_map(|f_or_err| {
+            let f = if let Ok(x) = f_or_err {
+                x
+            } else {
+                warn!("Error reading files in dir {}", dir);
+                return None;
+            };
+            let filename = if let Ok(s) = f.file_name().into_string() {
+                s
+            } else {
+                return None;
+            };
+            let cap = if let Some(c) = regex.captures(&filename) {
+                c
+            } else {
+                return None;
+            };
+            let fileno = if let Some(c) = cap.get(1) {
+                c.as_str()
+            } else {
+                // This is a problem with the regex
+                error!("filename {:?} does not have a 1st capture group", filename);
+                return None;
+            };
+            let file_int = if let Ok(x) = fileno.parse::<usize>() {
+                x
+            } else {
+                warn!("Invalid file {:?}", filename);
+                return None;
+            };
+            Some((filename, file_int))
+        })
+        .collect()
+        .await)
 }
 
 pub async fn highest_num_file(dir: &String, regex: &Regex) -> Result<usize> {
@@ -164,7 +185,11 @@ pub async fn setup_env() -> Result<()> {
         process::exit(1);
     }));
 
-    let rl = if let Ok(rl) = env::var("RUST_LOG") { rl } else { String::new() };
+    let rl = if let Ok(rl) = env::var("RUST_LOG") {
+        rl
+    } else {
+        String::new()
+    };
 
     let mut log = env_logger::Builder::from_default_env();
     if !rl.contains("tracing") {

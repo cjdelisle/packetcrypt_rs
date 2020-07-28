@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
+use crate::protocol::{work_decode, MasterConf, Work};
+use crate::util;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Receiver;
-use crate::util;
-use crate::protocol::{MasterConf,Work,work_decode};
+use tokio::sync::RwLock;
 
 #[derive(Debug)]
 pub struct PoolClientS {
@@ -17,7 +17,7 @@ pub type PoolClient = Arc<RwLock<PoolClientS>>;
 
 pub fn new(url: &str) -> PoolClient {
     let (tx, _) = broadcast::channel::<PoolUpdate>(3);
-    Arc::new(RwLock::new(PoolClientS{
+    Arc::new(RwLock::new(PoolClientS {
         url: String::from(url),
         mc: None,
         work: None,
@@ -47,7 +47,7 @@ async fn cfg_loop(pcli: PoolClient) {
                 util::sleep_ms(5000).await;
                 continue;
             }
-            Ok(r) => r
+            Ok(r) => r,
         };
         let mc = match serde_json::from_str::<MasterConf>(text.as_str()) {
             Err(e) => {
@@ -55,7 +55,7 @@ async fn cfg_loop(pcli: PoolClient) {
                 util::sleep_ms(5000).await;
                 continue;
             }
-            Ok(r) => r
+            Ok(r) => r,
         };
         if {
             let pcr = pcli.read().await;
@@ -73,7 +73,10 @@ async fn cfg_loop(pcli: PoolClient) {
             let mut pc = pcli.write().await;
             pc.mc = Some(mc.clone());
             if let Some(w) = &pc.work {
-                if let Err(_) = pc.notify.send(PoolUpdate{ conf: mc, work: w.clone() }) {
+                if let Err(_) = pc.notify.send(PoolUpdate {
+                    conf: mc,
+                    work: w.clone(),
+                }) {
                     info!("Failed to send conf update to channel");
                 }
             }
@@ -86,7 +89,9 @@ async fn work_loop(pcli: PoolClient) {
     let mut try_height: i32 = -1;
     let mut master_url: Option<String> = None;
     loop {
-        if try_height < 0 { master_url = None; }
+        if try_height < 0 {
+            master_url = None;
+        }
         let work_url = if let Some(url) = &master_url {
             format!("{}/work_{}.bin", url.as_str(), try_height)
         } else {
@@ -107,7 +112,7 @@ async fn work_loop(pcli: PoolClient) {
                 util::sleep_ms(1000).await;
                 continue;
             }
-            Ok(x) => x
+            Ok(x) => x,
         };
         let mut work = Work::default();
         if let Err(e) = work_decode(&mut work, &mut work_bytes) {
@@ -126,7 +131,10 @@ async fn work_loop(pcli: PoolClient) {
                 continue;
             };
             pc.work = Some(work.clone());
-            if let Err(_) = pc.notify.send(PoolUpdate{ conf: mc, work: work }) {
+            if let Err(_) = pc.notify.send(PoolUpdate {
+                conf: mc,
+                work: work,
+            }) {
                 error!("Failed to send work to channel {}", work_url);
             }
         }
@@ -135,6 +143,10 @@ async fn work_loop(pcli: PoolClient) {
 }
 
 pub async fn start(pcli: &PoolClient) {
-    async_spawn!(pcli, { cfg_loop(pcli).await; });
-    async_spawn!(pcli, { work_loop(pcli).await; });
+    async_spawn!(pcli, {
+        cfg_loop(pcli).await;
+    });
+    async_spawn!(pcli, {
+        work_loop(pcli).await;
+    });
 }

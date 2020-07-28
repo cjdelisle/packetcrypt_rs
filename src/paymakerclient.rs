@@ -1,23 +1,16 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
-use std::ops::Add;
-use std::sync::Arc;
-use core::time::Duration;
-
+use crate::poolclient::PoolClient;
+use crate::protocol::PaymakerReply;
+use crate::{hash, poolclient, util};
 use anyhow::Result;
+use core::time::Duration;
 use regex::Regex;
 use serde::Serialize;
-use tokio::fs::{
-    File,
-    read_dir,
-};
+use std::ops::Add;
+use std::sync::Arc;
+use tokio::fs::{read_dir, File};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
-
-use crate::{util,hash,poolclient};
-use crate::poolclient::PoolClient;
-use crate::protocol::{
-    PaymakerReply,
-};
 
 pub struct PaymakerClientMut {
     time_of_last_post: u64,
@@ -31,7 +24,7 @@ pub struct _PaymakerClient {
     pmcm: Mutex<PaymakerClientMut>,
     payfile_regex: Regex,
     pc: PoolClient,
-    cfg: PaymakerClientCfg
+    cfg: PaymakerClientCfg,
 }
 pub type PaymakerClient = Arc<_PaymakerClient>;
 
@@ -46,8 +39,8 @@ pub async fn new(pc: &PoolClient, cfg: PaymakerClientCfg) -> Result<PaymakerClie
     util::ensure_exists_dir(&cfg.paylogdir).await?;
     let next_file_num = util::highest_num_file(&cfg.paylogdir, &payfile_regex).await? + 1;
     let name = format!("{}/paylog_{}.ndjson", &cfg.paylogdir, next_file_num);
-    Ok(Arc::new(_PaymakerClient{
-        pmcm: Mutex::new(PaymakerClientMut{
+    Ok(Arc::new(_PaymakerClient {
+        pmcm: Mutex::new(PaymakerClientMut {
             current_pay_file: File::create(&name).await?,
             current_file_name: name,
             time_of_last_post: util::now_ms(),
@@ -65,8 +58,10 @@ async fn switch_paylogs(pmc: &PaymakerClient) -> Result<()> {
     if pmcm.time_of_last_post + pmc.cfg.paylog_submit_every_ms > util::now_ms() {
     } else if pmcm.current_pay_file.metadata().await?.len() > 0 {
         pmcm.current_pay_file.shutdown();
-        pmcm.current_file_name =
-            format!("{}/paylog_{}.ndjson", &pmc.cfg.paylogdir, pmcm.next_file_num);
+        pmcm.current_file_name = format!(
+            "{}/paylog_{}.ndjson",
+            &pmc.cfg.paylogdir, pmcm.next_file_num
+        );
         pmcm.current_pay_file = File::create(&pmcm.current_file_name).await?;
         pmcm.next_file_num += 1;
     }
@@ -83,56 +78,87 @@ async fn switch_loop(pmc: &PaymakerClient) {
 }
 
 async fn submit_loop(pmc: &PaymakerClient) {
-    loop {        
+    loop {
         match submit_paylogs(&pmc).await {
             Err(e) => {
                 error!("Unable to submit paylogs {}", e);
                 util::sleep_ms(5000).await;
             }
-            Ok(t) => util::sleep_ms(t).await
+            Ok(t) => util::sleep_ms(t).await,
         }
     }
 }
 
 async fn pc_update_loop(pmc: &PaymakerClient) {
     let mut chan = poolclient::update_chan(&pmc.pc).await;
-    loop {        
-        let update = if let Ok(x) = chan.recv().await { x } else { continue; };
-        pmc.pmcm.lock().await.maybe_paymaker_url.replace(update.conf.paymaker_url);
+    loop {
+        let update = if let Ok(x) = chan.recv().await {
+            x
+        } else {
+            continue;
+        };
+        pmc.pmcm
+            .lock()
+            .await
+            .maybe_paymaker_url
+            .replace(update.conf.paymaker_url);
     }
 }
 
 pub async fn start(pmc: &PaymakerClient) {
-    async_spawn!(pmc, { switch_loop(&pmc).await; });
-    async_spawn!(pmc, { submit_loop(&pmc).await; });
-    async_spawn!(pmc, { pc_update_loop(&pmc).await; });
+    async_spawn!(pmc, {
+        switch_loop(&pmc).await;
+    });
+    async_spawn!(pmc, {
+        submit_loop(&pmc).await;
+    });
+    async_spawn!(pmc, {
+        pc_update_loop(&pmc).await;
+    });
 }
 
 pub async fn handle_paylog<T>(pmc: &PaymakerClient, log: &T) -> Result<()>
-    where T: ?Sized + Serialize
+where
+    T: ?Sized + Serialize,
 {
     let ser = serde_json::to_string(log)?;
     let mut pmcm = pmc.pmcm.lock().await;
     trace!("Writing to paylog {} {}", pmcm.current_file_name, ser);
-    pmcm.current_pay_file.write_all(ser.add("\n").as_bytes()).await?;
+    pmcm.current_pay_file
+        .write_all(ser.add("\n").as_bytes())
+        .await?;
     Ok(())
 }
-
 async fn submit_paylogs(pmc: &PaymakerClient) -> Result<u64> {
     let (maybe_paymaker_url, current_file_name) = {
         let pmcm = pmc.pmcm.lock().await;
-        (pmcm.maybe_paymaker_url.clone(), pmcm.current_file_name.clone())
+        (
+            pmcm.maybe_paymaker_url.clone(),
+            pmcm.current_file_name.clone(),
+        )
     };
-    let paymaker_url = if let Some(x) = maybe_paymaker_url { x } else {
+    let paymaker_url = if let Some(x) = maybe_paymaker_url {
+        x
+    } else {
         //debug!("No paymaker_url yet");
         return Ok(10000);
     };
     let mut dir = read_dir(&pmc.cfg.paylogdir).await?;
     let mut uploaded = false;
     while let Some(f) = dir.next_entry().await? {
-        let filename = if let Ok(s) = f.file_name().into_string() { s } else { continue; };
-        let cap = if let Some(c) = pmc.payfile_regex.captures(&filename) { c } else { continue; };
-        let fileno = if let Some(c) = cap.get(1) { c.as_str() } else {
+        let filename = if let Ok(s) = f.file_name().into_string() {
+            s
+        } else {
+            continue;
+        };
+        let cap = if let Some(c) = pmc.payfile_regex.captures(&filename) {
+            c
+        } else {
+            continue;
+        };
+        let fileno = if let Some(c) = cap.get(1) {
+            c.as_str()
+        } else {
             bail!("filename {:?} does not have a 1st capture group", filename);
         };
         if let Err(_) = fileno.parse::<usize>() {
@@ -158,29 +184,50 @@ async fn submit_paylogs(pmc: &PaymakerClient) -> Result<u64> {
             .post(&format!("{}/events", paymaker_url))
             .basic_auth("x", Some(&pmc.cfg.password))
             .body(file)
-            .send().await?;
+            .send()
+            .await?;
         let status = res.status();
         let resbytes = res.bytes().await?;
-        let reply = if let Ok(x) = serde_json::from_slice::<PaymakerReply>(&resbytes) { x } else {
-            warn!("{} Paymaker replied {}: {} which cannot be parsed",
-                filename, status, String::from_utf8_lossy(&resbytes[..]));
+        let reply = if let Ok(x) = serde_json::from_slice::<PaymakerReply>(&resbytes) {
+            x
+        } else {
+            warn!(
+                "{} Paymaker replied {}: {} which cannot be parsed",
+                filename,
+                status,
+                String::from_utf8_lossy(&resbytes[..])
+            );
             util::sleep_ms(5000).await;
             continue;
         };
         if reply.error.len() > 0 {
-            warn!("{} Paymaker replied with errors: {}", filename, reply.error.join(", "));
+            warn!(
+                "{} Paymaker replied with errors: {}",
+                filename,
+                reply.error.join(", ")
+            );
         }
         if reply.warn.len() > 0 {
-            warn!("{} Paymaker is warning us: {}", filename, reply.warn.join(", "));
+            warn!(
+                "{} Paymaker is warning us: {}",
+                filename,
+                reply.warn.join(", ")
+            );
         }
-        let result = if let Some(x) = reply.result { x } else {
+        let result = if let Some(x) = reply.result {
+            x
+        } else {
             warn!("{} Paymaker replied without a result", filename);
             util::sleep_ms(5000).await;
             continue;
         };
         if result.event_id != event_id {
-            warn!("{} Paymaker replied with event id {} which is different from ours {}",
-                filename, status, String::from_utf8_lossy(&resbytes[..]));
+            warn!(
+                "{} Paymaker replied with event id {} which is different from ours {}",
+                filename,
+                status,
+                String::from_utf8_lossy(&resbytes[..])
+            );
             util::sleep_ms(5000).await;
             continue;
         }
@@ -189,4 +236,3 @@ async fn submit_paylogs(pmc: &PaymakerClient) -> Result<u64> {
     }
     Ok(if uploaded { 10_000 } else { 30_000 })
 }
-

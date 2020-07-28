@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
-use serde::{Serialize,Deserialize};
-use bytes::{Buf,Bytes};
 use anyhow::Result;
+use bytes::{Buf, Bytes};
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize,Deserialize,Debug,Clone,Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AnnsEvent {
     #[serde(rename = "type")]
@@ -23,20 +23,20 @@ pub struct AnnsEvent {
     pub event_id: String,
 }
 
-#[derive(Serialize,Deserialize,Debug,Clone,Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct IndexFile {
     pub highest_ann_file: usize,
     pub files: Vec<String>,
 }
 
-#[derive(Serialize,Deserialize,Debug,Clone,Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymakerResult {
     pub event_id: String,
 }
 
-#[derive(Serialize,Deserialize,Debug,Clone,Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymakerReply {
     pub warn: Vec<String>,
@@ -44,14 +44,14 @@ pub struct PaymakerReply {
     pub result: Option<PaymakerResult>,
 }
 
-#[derive(Serialize,Deserialize,Debug,Clone,Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct AnnPostReply {
     pub warn: Vec<String>,
     pub error: Vec<String>,
-    pub result: Option<AnnsEvent>
+    pub result: Option<AnnsEvent>,
 }
 
-#[derive(Deserialize,Debug,Clone,Default,Eq,PartialEq)]
+#[derive(Deserialize, Debug, Clone, Default, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MasterConf {
     pub current_height: i32,
@@ -66,7 +66,7 @@ pub struct MasterConf {
     pub mine_old_anns: u32,
 }
 
-#[derive(Debug,Clone,Default)]
+#[derive(Debug, Clone, Default)]
 pub struct BlockHeader {
     pub version: u32,
     pub hash_prev_block: [u8; 32],
@@ -76,7 +76,7 @@ pub struct BlockHeader {
     pub nonce: u32,
 }
 
-#[derive(Debug,Clone,Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Work {
     pub header: BlockHeader,
     pub signing_key: [u8; 32],
@@ -88,7 +88,9 @@ pub struct Work {
 }
 
 pub fn blockheader_decode(out: &mut BlockHeader, b: &mut Bytes) -> Result<()> {
-    if b.remaining() < 80 { bail!("runt block header"); }
+    if b.remaining() < 80 {
+        bail!("runt block header");
+    }
     let rem = b.remaining();
     out.version = b.get_u32_le();
     b.copy_to_slice(&mut out.hash_prev_block);
@@ -102,17 +104,25 @@ pub fn blockheader_decode(out: &mut BlockHeader, b: &mut Bytes) -> Result<()> {
 
 pub fn work_decode(out: &mut Work, b: &mut Bytes) -> Result<()> {
     blockheader_decode(&mut out.header, b)?;
-    if b.remaining() < 32+16 { bail!("runt work"); }
+    if b.remaining() < 32 + 16 {
+        bail!("runt work");
+    }
     b.copy_to_slice(&mut out.signing_key);
     out.share_target = b.get_u32_le();
     out.ann_target = b.get_u32_le();
     out.height = b.get_i32_le();
     let cnwlen = b.get_u32_le() as usize;
-    if b.remaining() < cnwlen { bail!("runt work"); }
+    if b.remaining() < cnwlen {
+        bail!("runt work");
+    }
     out.coinbase_no_witness = b.slice(0..cnwlen).clone();
     b.advance(cnwlen);
     if b.remaining() % 32 != 0 {
-        bail!("work proof branch not a multiple of 32 ({}) {}", b.remaining(), cnwlen);
+        bail!(
+            "work proof branch not a multiple of 32 ({}) {}",
+            b.remaining(),
+            cnwlen
+        );
     }
     while b.remaining() > 0 {
         out.coinbase_merkle.push(b.slice(0..32).clone());

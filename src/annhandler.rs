@@ -1,44 +1,32 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
-use std::cmp::{min,max};
-use std::convert::Infallible;
-use std::convert::TryInto;
-use std::collections::VecDeque;
-use std::sync::Mutex as MutexB; // blocking
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
-use std::net::SocketAddr;
-
-use warp::Filter;
-use anyhow::Result;
-use rand::RngCore;
-use rand::rngs::OsRng;
-use crossbeam_channel::{
-    Sender as SenderCB,
-    Receiver as ReceiverCB,
-    TryRecvError,
-    RecvTimeoutError,
-};
-use tokio::sync::oneshot;
-use regex::Regex;
-
-use packetcrypt_sys::{ check_ann, PacketCryptAnn, ValidateCtx };
-use crate::util;
 use crate::hash;
-use crate::poolclient;
-use crate::poolclient::{
-    PoolClient,
-    PoolUpdate,
-};
 use crate::paymakerclient;
 use crate::paymakerclient::PaymakerClient;
-use crate::protocol::{
-    AnnsEvent,
-    AnnPostReply,
-    IndexFile,
-};
 use crate::poolcfg::AnnHandlerCfg;
+use crate::poolclient;
+use crate::poolclient::{PoolClient, PoolUpdate};
+use crate::protocol::{AnnPostReply, AnnsEvent, IndexFile};
+use crate::util;
+use anyhow::Result;
+use crossbeam_channel::{
+    Receiver as ReceiverCB, RecvTimeoutError, Sender as SenderCB, TryRecvError,
+};
+use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
+use rand::rngs::OsRng;
+use rand::RngCore;
+use regex::Regex;
+use std::cmp::{max, min};
+use std::collections::VecDeque;
+use std::convert::Infallible;
+use std::convert::TryInto;
+use std::net::SocketAddr;
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
+use std::sync::Mutex as MutexB; // blocking
+use tokio::sync::oneshot;
+use warp::Filter;
 
-#[derive(Default,Clone,Copy)]
+#[derive(Default, Clone, Copy)]
 struct DedupEntry {
     hash: u64,
     ann_num: usize,
@@ -55,7 +43,7 @@ fn mk_dedups(w: &mut Worker) {
     w.dedups.clear();
     for (i, ann_opt) in (0..).zip(w.anns.iter()) {
         let h = hash::compress32(&ann_opt.as_ref().unwrap().bytes[..]);
-        w.dedups.push(DedupEntry{
+        w.dedups.push(DedupEntry {
             hash: u64::from_le_bytes(h[..8].try_into().unwrap()),
             ann_num: i,
         });
@@ -112,7 +100,9 @@ struct Worker {
     write_jobs: VecDeque<WriteJob>,
 }
 
-fn is_zero(s: &[u8]) -> bool { s.iter().all(|x| *x == 0) }
+fn is_zero(s: &[u8]) -> bool {
+    s.iter().all(|x| *x == 0)
+}
 
 const SUPPORT_V1: bool = true;
 
@@ -128,12 +118,7 @@ const SUPPORT_V1: bool = true;
 //
 // If v1 is not supported then this rule is removed.
 //
-fn hash_num_ok(
-    pnr: &AnnPostMeta,
-    ann: &PacketCryptAnn,
-    dedup: u64,
-    conf: &Config) -> bool
-{
+fn hash_num_ok(pnr: &AnnPostMeta, ann: &PacketCryptAnn, dedup: u64, conf: &Config) -> bool {
     if SUPPORT_V1 {
         if pnr.sver < 2 {
             if !is_zero(ann.content_hash()) {
@@ -142,8 +127,10 @@ fn hash_num_ok(
             } else if (dedup as usize % conf.handler_count) == conf.handler_num {
                 true
             } else {
-                debug!("dedup hash {} mod handler count {} != handler num {}",
-                    dedup, conf.handler_count, conf.handler_num);
+                debug!(
+                    "dedup hash {} mod handler count {} != handler num {}",
+                    dedup, conf.handler_count, conf.handler_num
+                );
                 false
             }
         } else {
@@ -163,17 +150,24 @@ fn validate_anns(
     w: &mut Worker,
     res: &mut AnnsEvent,
     pnr: &AnnPostMeta,
-    conf: &Config
+    conf: &Config,
 ) -> Result<()> {
     res.target = 0;
     for (ann_opt, dedup) in w.anns.iter().zip(w.dedups.iter()) {
-        let ann = if let Some(x) = ann_opt { x } else { bail!("empty ann entry"); };
+        let ann = if let Some(x) = ann_opt {
+            x
+        } else {
+            bail!("empty ann entry");
+        };
         let unsigned = is_zero(ann.signing_key());
         if unsigned && conf.signing_key != ann.signing_key() {
             bail!("wrong signing key");
         } else if conf.parent_block_height != ann.parent_block_height() {
-            bail!("wrong parent block height, want {} got {}",
-                conf.parent_block_height, ann.parent_block_height());
+            bail!(
+                "wrong parent block height, want {} got {}",
+                conf.parent_block_height,
+                ann.parent_block_height()
+            );
         } else if conf.min_work < ann.work_bits() {
             bail!("not enough work");
         } else if dedup.hash == 0 || dedup.hash == u64::MAX {
@@ -191,7 +185,11 @@ fn validate_anns(
         // higher number represents less work
         res.target = max(res.target, ann.work_bits());
     }
-    res.target = if res.target == 0 { conf.min_work } else { res.target };
+    res.target = if res.target == 0 {
+        conf.min_work
+    } else {
+        res.target
+    };
     Ok(())
 }
 
@@ -233,7 +231,10 @@ fn enqueue_write(w: &mut Worker, output: &mut Output) {
     w.write_jobs.push_back(WriteJob {
         handler_num: output.config.handler_num,
         parent_block_height: output.config.parent_block_height,
-        fileno: w.global.fileno.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        fileno: w
+            .global
+            .fileno
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         anns,
     });
 }
@@ -245,11 +246,7 @@ fn optr<T>(o: Option<T>) -> Result<T> {
     }
 }
 
-fn perform_dedup(
-    w: &mut Worker,
-    output: &mut Output,
-    res: &mut AnnsEvent,
-) -> Result<()> {
+fn perform_dedup(w: &mut Worker, output: &mut Output, res: &mut AnnsEvent) -> Result<()> {
     //debug!("Perform dedup {} {}", w.dedups.len(), output.dedup_tbl.len());
     if output.dedup_tbl.front() == None {
         output.dedup_tbl.push_back(u64::MAX);
@@ -270,7 +267,7 @@ fn perform_dedup(
             output.dedup_tbl.push_back(dd.hash);
             output.out.push_back(optr(w.anns[dd.ann_num].take())?);
             res.accepted += 1;
-            //debug!("Pushing ann");
+        //debug!("Pushing ann");
         } else if h == dd.hash {
             res.dup += 1;
         }
@@ -285,11 +282,11 @@ fn process_batch(
     w: &mut Worker,
     res: &mut AnnsEvent,
     pnr: &AnnPostMeta,
-    conf: &Config
+    conf: &Config,
 ) -> Result<()> {
     mk_dedups(w);
     validate_anns(w, res, pnr, conf)?;
-    w.dedups.sort_by(|a,b|a.hash.cmp(&b.hash));
+    w.dedups.sort_by(|a, b| a.hash.cmp(&b.hash));
     res.dup += self_dedup(&mut w.dedups);
     let now = util::now_ms();
 
@@ -303,9 +300,7 @@ fn process_batch(
             bail!("block number out of range");
         }
         perform_dedup(w, &mut *output, res)?;
-        while output.out.len() >= OUT_ANN_CAP ||
-            output.time_of_last_write + WRITE_EVERY_MS < now
-        {
+        while output.out.len() >= OUT_ANN_CAP || output.time_of_last_write + WRITE_EVERY_MS < now {
             enqueue_write(w, &mut *output);
         }
     }
@@ -321,29 +316,43 @@ fn process_update(w: &mut Worker, upd: PoolUpdate) {
     let mut output = get_output(&g, hash_height).lock().unwrap();
     if hash_height != output.config.parent_block_height {
         if hash_height < output.config.parent_block_height {
-            info!("Ignoring old work: height: {} because we already have {}",
-            hash_height, output.config.parent_block_height);
+            info!(
+                "Ignoring old work: height: {} because we already have {}",
+                hash_height, output.config.parent_block_height
+            );
         }
         let out = &mut *output;
-        while out.out.len() > 0 { enqueue_write(w, out); }
+        while out.out.len() > 0 {
+            enqueue_write(w, out);
+        }
         out.dedup_tbl.clear();
         out.time_of_last_write = util::now_ms();
         debug!("New work: height: {}", upd.work.height);
     } else if upd.work.header.hash_prev_block != output.config.parent_block_hash {
-        info!("Change of parent block {} -> {}",
+        info!(
+            "Change of parent block {} -> {}",
             hex::encode(upd.work.header.hash_prev_block),
-            hex::encode(output.config.parent_block_hash));
+            hex::encode(output.config.parent_block_hash)
+        );
         output.out.clear();
         output.dedup_tbl.clear();
         output.time_of_last_write = util::now_ms();
     }
-    output.config.handler_num = if let Some(x) =
-        upd.conf.submit_ann_urls.iter().position(|u|{ u == &g.cfg.public_url }) { x } else {
-            error!("This annhandler's URL {} is not in the list from the pool",
-                &g.cfg.public_url);
-            output.config.parent_block_height = 0;
-            return;
-        };
+    output.config.handler_num = if let Some(x) = upd
+        .conf
+        .submit_ann_urls
+        .iter()
+        .position(|u| u == &g.cfg.public_url)
+    {
+        x
+    } else {
+        error!(
+            "This annhandler's URL {} is not in the list from the pool",
+            &g.cfg.public_url
+        );
+        output.config.parent_block_height = 0;
+        return;
+    };
     output.config.handler_count = upd.conf.submit_ann_urls.len();
     output.config.ann_version = *upd.conf.ann_versions.get(0).unwrap_or(&1);
     output.config.signing_key = upd.work.signing_key;
@@ -352,7 +361,7 @@ fn process_update(w: &mut Worker, upd: PoolUpdate) {
     output.config.parent_block_height = hash_height;
 }
 
-#[derive(Debug,Default,Clone,Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 struct Config {
     // Accept only this version of announcements
     ann_version: u8,
@@ -387,18 +396,23 @@ struct AnnPostMeta {
 struct AnnPost {
     meta: AnnPostMeta,
     bytes: bytes::Bytes,
-    reply: Option<oneshot::Sender<AnnPostReply>>
+    reply: Option<oneshot::Sender<AnnPostReply>>,
 }
-
 fn process_submit1(w: &mut Worker, sub: AnnPost) -> Result<AnnPostReply> {
     let (meta, mut bytes) = (sub.meta, sub.bytes);
-    let config = get_output(&w.global, meta.next_block_height - 1).lock().unwrap().config;
+    let config = get_output(&w.global, meta.next_block_height - 1)
+        .lock()
+        .unwrap()
+        .config;
     if config.parent_block_height != meta.next_block_height - 1 {
         if config.parent_block_height < 1 {
             bail!("server not ready");
         }
-        bail!("block number out of range, expect {} got {}",
-            config.parent_block_height, meta.next_block_height - 1);
+        bail!(
+            "block number out of range, expect {} got {}",
+            config.parent_block_height,
+            meta.next_block_height - 1
+        );
     }
     if !w.payto_regex.is_match(meta.pay_to.as_str()) {
         bail!("invalid payto {}", meta.pay_to.as_str());
@@ -417,7 +431,9 @@ fn process_submit1(w: &mut Worker, sub: AnnPost) -> Result<AnnPostReply> {
     }
     w.anns.clear();
     for i in (0..bytes.len()).step_by(1024) {
-        w.anns.push(Some(PacketCryptAnn{ bytes: bytes.slice(i..(i+1024)) }));
+        w.anns.push(Some(PacketCryptAnn {
+            bytes: bytes.slice(i..(i + 1024)),
+        }));
     }
     let mut res = AnnsEvent::default();
     res.anns_type = String::from("anns");
@@ -425,7 +441,7 @@ fn process_submit1(w: &mut Worker, sub: AnnPost) -> Result<AnnPostReply> {
     res.event_id = hex::encode(&hash::compress32(&bytes)[..16]);
     res.time = util::now_ms();
     process_batch(w, &mut res, &meta, &config)?;
-    Ok(AnnPostReply{
+    Ok(AnnPostReply {
         error: vec![],
         warn: vec![],
         result: Some(res),
@@ -434,18 +450,21 @@ fn process_submit1(w: &mut Worker, sub: AnnPost) -> Result<AnnPostReply> {
 
 fn process_submit0(w: &mut Worker, mut sub: AnnPost) {
     let remote_addr: Option<SocketAddr> = sub.meta.remote_addr.take();
-    match sub.reply.take().unwrap().send(match process_submit1(w, sub) {
-        Ok(resp) => resp,
-        Err(e) => {
-            debug!("Error processing req from [{:?}] [{:?}]",
-                &remote_addr, e);
-            AnnPostReply{
-                error: vec![ e.to_string() ],
-                warn: vec![],
-                result: None,
+    match sub
+        .reply
+        .take()
+        .unwrap()
+        .send(match process_submit1(w, sub) {
+            Ok(resp) => resp,
+            Err(e) => {
+                debug!("Error processing req from [{:?}] [{:?}]", &remote_addr, e);
+                AnnPostReply {
+                    error: vec![e.to_string()],
+                    warn: vec![],
+                    result: None,
+                }
             }
-        }
-    }) {
+        }) {
         Ok(_) => (),
         Err(_) => {
             info!("Error sending reply");
@@ -456,7 +475,7 @@ fn process_submit0(w: &mut Worker, mut sub: AnnPost) {
 fn worker_loop(g: Arc<Global>) {
     let pc_update_recv = g.pc_update_recv.clone();
     let submit_recv = g.submit_recv.clone();
-    let mut w: Worker = Worker{
+    let mut w: Worker = Worker {
         global: g,
         random: OsRng.next_u32() as u8,
         payto_regex: Regex::new(r"^[a-zA-Z0-9]+$").unwrap(),
@@ -475,7 +494,7 @@ fn worker_loop(g: Arc<Global>) {
             Ok(upd) => {
                 process_update(&mut w, upd);
                 continue;
-            },
+            }
             Err(TryRecvError::Empty) => (),
             Err(TryRecvError::Disconnected) => {
                 error!("pc_update_recv disconnected");
@@ -485,7 +504,7 @@ fn worker_loop(g: Arc<Global>) {
             Ok(sub) => {
                 process_submit0(&mut w, sub);
                 continue;
-            },
+            }
             Err(RecvTimeoutError::Timeout) => (),
             Err(RecvTimeoutError::Disconnected) => {
                 error!("submit_recv disconnected");
@@ -500,20 +519,28 @@ pub async fn new(
     pc: &PoolClient,
     pmc: &PaymakerClient,
     workdir: String,
-    cfg: AnnHandlerCfg
+    cfg: AnnHandlerCfg,
 ) -> Result<AnnHandler> {
     if cfg.skip_check_chance > 1.0 || cfg.skip_check_chance < 0.0 {
-        bail!("skip_check_chance must be a number between 0 and 1, got {}", cfg.skip_check_chance);
+        bail!(
+            "skip_check_chance must be a number between 0 and 1, got {}",
+            cfg.skip_check_chance
+        );
     }
     let now = util::now_ms();
-    let outputs: Box<[_; NUM_BLOCKS_TRACKING]> = (0..NUM_BLOCKS_TRACKING).map(|_|{
-        MutexB::new(Output{
-            config: Config::default(),
-            time_of_last_write: now,
-            out: VecDeque::new(),
-            dedup_tbl: VecDeque::new(),
+    let outputs: Box<[_; NUM_BLOCKS_TRACKING]> = (0..NUM_BLOCKS_TRACKING)
+        .map(|_| {
+            MutexB::new(Output {
+                config: Config::default(),
+                time_of_last_write: now,
+                out: VecDeque::new(),
+                dedup_tbl: VecDeque::new(),
+            })
         })
-    }).collect::<Vec<_>>().into_boxed_slice().try_into().unwrap();
+        .collect::<Vec<_>>()
+        .into_boxed_slice()
+        .try_into()
+        .unwrap();
 
     let anndir = format!("{}/anndir", workdir);
     util::ensure_exists_dir(&anndir).await?;
@@ -524,10 +551,9 @@ pub async fn new(
     let top_ann_file = util::highest_num_file(&anndir, &ann_file_regex).await?;
 
     let (submit_send, submit_recv) = crossbeam_channel::bounded(cfg.input_queue_len);
-    let (write_file_send, write_file_recv) =
-        tokio::sync::mpsc::unbounded_channel();
+    let (write_file_send, write_file_recv) = tokio::sync::mpsc::unbounded_channel();
     let (pc_update_send, pc_update_recv) = crossbeam_channel::bounded(POOL_UPDATE_QUEUE_LEN);
-    let global = Arc::new(Global{
+    let global = Arc::new(Global {
         outputs: *outputs,
         submit_send,
         submit_recv,
@@ -536,7 +562,7 @@ pub async fn new(
         pc_update_send,
         fileno: AtomicUsize::new(top_ann_file + 1),
         pmc: pmc.clone(),
-        sockaddr: ([0,0,0,0], cfg.bind_port).into(),
+        sockaddr: ([0, 0, 0, 0], cfg.bind_port).into(),
         skip_check_chance: 255 * cfg.skip_check_chance as u8,
         write_file_send,
         write_file_recv: tokio::sync::Mutex::new(write_file_recv),
@@ -556,11 +582,11 @@ async fn handle_submit(
     //content_length: usize,
     sver: u32,
     next_block_height: i32,
-    pay_to: String
+    pay_to: String,
 ) -> Result<impl warp::Reply, Infallible> {
-    let ( reply, getreply ) = oneshot::channel();
-    match ah.submit_send.try_send(AnnPost{
-        meta: AnnPostMeta{
+    let (reply, getreply) = oneshot::channel();
+    match ah.submit_send.try_send(AnnPost {
+        meta: AnnPostMeta {
             sver,
             next_block_height,
             pay_to,
@@ -579,24 +605,29 @@ async fn handle_submit(
             }
             Ok(warp::reply::with_status(
                 warp::reply::json(&reply),
-                if ok { warp::http::StatusCode::OK } else { warp::http::StatusCode::BAD_REQUEST }
+                if ok {
+                    warp::http::StatusCode::OK
+                } else {
+                    warp::http::StatusCode::BAD_REQUEST
+                },
             ))
         }
         Err(e) => {
             let err: String = (if e.is_full() {
                 info!("server overloaded");
                 "overloaded"
-            } else { 
+            } else {
                 error!("channel disconnected");
                 "disconnected"
-            }).into();
+            })
+            .into();
             Ok(warp::reply::with_status(
-                warp::reply::json(&AnnPostReply{
-                    error: vec![ err ],
+                warp::reply::json(&AnnPostReply {
+                    error: vec![err],
                     warn: vec![],
                     result: None,
                 }),
-                warp::http::StatusCode::SERVICE_UNAVAILABLE
+                warp::http::StatusCode::SERVICE_UNAVAILABLE,
             ))
         }
     }
@@ -604,18 +635,22 @@ async fn handle_submit(
 
 pub async fn write_file_loop(ah: &AnnHandler) {
     loop {
-        let job = if let Some(x) = ah.write_file_recv.lock().await.recv().await { x } else {
+        let job = if let Some(x) = ah.write_file_recv.lock().await.recv().await {
+            x
+        } else {
             continue;
         };
         match util::write_file(
-            &format!("anns_{}_{}_{}.bin",
-                job.parent_block_height,
-                job.handler_num,
-                job.fileno),
+            &format!(
+                "anns_{}_{}_{}.bin",
+                job.parent_block_height, job.handler_num, job.fileno
+            ),
             &ah.tmpdir,
             &ah.anndir,
-            job.anns.iter().map(|ann|{ &ann.bytes })
-        ).await {
+            job.anns.iter().map(|ann| &ann.bytes),
+        )
+        .await
+        {
             Ok(_) => (),
             Err(e) => {
                 error!("write_file() -> {}", e);
@@ -626,23 +661,24 @@ pub async fn write_file_loop(ah: &AnnHandler) {
 
 pub async fn try_maintanence(ah: &AnnHandler) -> Result<()> {
     let mut files = util::numbered_files(&ah.anndir, &ah.ann_file_regex).await?;
-    files.sort_by(|a,b|{ b.1.cmp(&a.1) });
+    files.sort_by(|a, b| b.1.cmp(&a.1));
     if files.len() > ah.cfg.files_to_keep {
         for f in files.drain(ah.cfg.files_to_keep..) {
             trace!("deleting old ann file [{}]", f.0);
             tokio::fs::remove_file(format!("{}/{}", &ah.anndir, f.0)).await?;
         }
     }
-    let vecu8 = serde_json::to_vec(&IndexFile{
-        highest_ann_file: files.get(0).map(|f|{ f.1 }).unwrap_or(0),
-        files: files.drain(0..).map(|f|{f.0}).rev().collect(),
+    let vecu8 = serde_json::to_vec(&IndexFile {
+        highest_ann_file: files.get(0).map(|f| f.1).unwrap_or(0),
+        files: files.drain(0..).map(|f| f.0).rev().collect(),
     })?;
     util::write_file(
         &String::from("index.json"),
         &ah.tmpdir,
         &ah.anndir,
         std::iter::once(&bytes::Bytes::from(vecu8)),
-    ).await
+    )
+    .await
 }
 
 const PAUSE_BETWEEN_MAINTANENCE_MS: u64 = 10_000;
@@ -660,7 +696,9 @@ pub async fn start(ah: &AnnHandler) {
     let sub = warp::post()
         .and(warp::path("submit"))
         .and(warp::path::end())
-        .and((|ah:AnnHandler|{warp::any().map(move || ah.clone())})(ah.clone()))
+        .and((|ah: AnnHandler| warp::any().map(move || ah.clone()))(
+            ah.clone(),
+        ))
         .and(warp::filters::addr::remote())
         .and(warp::body::bytes())
         //.and(warp::header::<usize>("content-length"))
@@ -672,10 +710,12 @@ pub async fn start(ah: &AnnHandler) {
     let anns = warp::path("anns").and(warp::fs::dir(ah.anndir.clone()));
 
     // Pipe new work updates through to a crossbeam channel
-    util::tokio_bcast_to_crossbeam("poolclient update",
+    util::tokio_bcast_to_crossbeam(
+        "poolclient update",
         poolclient::update_chan(&ah.pc).await,
-        ah.pc_update_send.clone()
-    ).await;
+        ah.pc_update_send.clone(),
+    )
+    .await;
 
     for _ in 0..FILE_WRITE_WORKERS {
         async_spawn!(ah, { write_file_loop(&ah).await });
@@ -686,7 +726,9 @@ pub async fn start(ah: &AnnHandler) {
 
     for _ in 0..(ah.cfg.num_workers) {
         let g = ah.clone();
-        std::thread::spawn(move || { worker_loop(g); });
+        std::thread::spawn(move || {
+            worker_loop(g);
+        });
     }
 }
 
@@ -695,9 +737,10 @@ mod tests {
     use crate::hash;
     use crate::util;
     use hex_literal::hex;
-    use packetcrypt_sys::{ check_ann, PacketCryptAnn, ValidateCtx };
+    use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
 
-    static ANN: [u8;1024] = hex!("
+    static ANN: [u8; 1024] = hex!(
+        "
         01cd06000baf7821000002204398070000000000000000000000000000000000
         0000000000000000000000000000000000000000000000008a48028ff7d392a5
         dad2ecf812793d3d1f052053fe6947da093ab56ab2c7731fc7a0d07887b5e81c
@@ -729,18 +772,23 @@ mod tests {
         217c404b1dec0abad3dab0e5195825d0d3a5842ce5d181ce850a21b31041bd30
         bc4cac295da680057d83bdd67bf7c0ecc405c406c5a903cf67e0fd7ae128cca6
         1a7dc56366de128f1a662779699490f926acbf5e79aad7e3f6f1a1c8a4f1ff46
-        83c622154dac17ad9141c4b4b2a733934af0b24ff24f81ec9a16058f2fee88d4");
+        83c622154dac17ad9141c4b4b2a733934af0b24ff24f81ec9a16058f2fee88d4"
+    );
 
     #[test]
     fn hash() {
         let ann_hash = hash::compress32(&ANN);
-        assert_eq!(hex::encode(&ann_hash[..]),
-            "2684bd8f044073677ffd921023dd1cdd28c0605e6ba889d05b0f63663f7d50d4");
+        assert_eq!(
+            hex::encode(&ann_hash[..]),
+            "2684bd8f044073677ffd921023dd1cdd28c0605e6ba889d05b0f63663f7d50d4"
+        );
     }
 
     #[test]
     fn validate() {
-        let ann = PacketCryptAnn{ bytes: util::aligned_bytes(&ANN, 4) };
+        let ann = PacketCryptAnn {
+            bytes: util::aligned_bytes(&ANN, 4),
+        };
         let mut parent_block_hash =
             hex!("255094b788fe98be51bafb4d941d507d4d5a949c751d1f68dfad0715215e1e48");
         // Bitcoin block header hashes are printed in reverse order

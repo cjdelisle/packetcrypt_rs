@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use blake2b_simd::Params;
+use sha2::{Digest, Sha256};
 use std::convert::TryInto;
-use sha2::{Sha256,Digest};
 
 pub fn compress_sha256(buf: &[u8]) -> [u8; 32] {
     let mut s = Sha256::new();
@@ -19,7 +19,6 @@ pub fn compress32(buf: &[u8]) -> [u8; 32] {
         .try_into()
         .unwrap()
 }
-
 #[cfg(test)]
 mod tests {
     use crate::hash;
@@ -29,7 +28,10 @@ mod tests {
         assert_eq!((b"hello world").len(), 11);
         let hash = hash::compress32(b"hello world");
         let hex_hash = hex::encode(hash);
-        assert_eq!(hex_hash, "256c83b297114d201b30179f3f0ef0cace9783622da5974326b436178aeef610");
+        assert_eq!(
+            hex_hash,
+            "256c83b297114d201b30179f3f0ef0cace9783622da5974326b436178aeef610"
+        );
     }
 
     // This is moved into the test becuase it is currently unused
@@ -42,8 +44,12 @@ mod tests {
         assert_eq!((b"hello world").len(), 11);
         let hash = compress64(b"hello world");
         let hex_hash = hex::encode(&hash[..]);
-        assert_eq!(hex_hash,
-            concat!("021ced8799296ceca557832ab941a50b4a11f83478cf141f51f933f653ab9fbc",
-            "c05a037cddbed06e309bf334942c4e58cdf1a46e237911ccd7fcf9787cbc7fd0"));
+        assert_eq!(
+            hex_hash,
+            concat!(
+                "021ced8799296ceca557832ab941a50b4a11f83478cf141f51f933f653ab9fbc",
+                "c05a037cddbed06e309bf334942c4e58cdf1a46e237911ccd7fcf9787cbc7fd0"
+            )
+        );
     }
 }
