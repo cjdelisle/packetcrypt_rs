@@ -78,7 +78,7 @@ async fn switch_loop(pmc: &PaymakerClient) {
         if let Err(e) = switch_paylogs(&pmc).await {
             error!("Unable to switch paylogs {}", e);
         }
-        util::sleep_ms(5000).await;
+        util::sleep_ms(30_000).await;
     }
 }
 
@@ -155,7 +155,7 @@ async fn submit_paylogs(pmc: &PaymakerClient) -> Result<u64> {
         let res = reqwest::ClientBuilder::new()
             .timeout(Duration::from_millis(30_000))
             .build()?
-            .post(&paymaker_url)
+            .post(&format!("{}/events", paymaker_url))
             .basic_auth("x", Some(&pmc.cfg.password))
             .body(file)
             .send().await?;
