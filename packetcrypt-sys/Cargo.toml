@@ -1,0 +1,27 @@
+[package]
+name = "packetcrypt-sys"
+version = "0.1.0"
+authors = ["Caleb James DeLisle <cjd@cjdns.fr>"]
+edition = "2018"
+links = "packetcrypt"
+build = "build.rs"
+license = "(LGPL-2.1-only OR LGPL-3.0-only)"
+description = """
+Bindings to PacketCrypt
+"""
+categories = ["external-ffi-bindings"]
+
+[lib]
+name = "packetcrypt_sys"
+path = "lib.rs"
+
+[dependencies]
+anyhow = "1.0"
+hex = "0.4.2"
+bytes = "0.5.4"
+
+[build-dependencies]
+cc = "1.0.58"
+pkg-config = "0.3.18"
+walkdir = "2"
+bindgen = "0.54.1"

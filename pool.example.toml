@@ -1,0 +1,30 @@
+# Password used by your paymaker to post logs for payment
+paymaker_http_password = "you'll want this to be a secret"
+
+# URL of the pool master, used for getting configuration and work
+master_url = "http://your.main.pool.server/master"
+
+# Store the data here
+root_workdir = "./datastore/pool"
+
+[ann_handler.ann0]
+    # Randomly skip validation of some announcements to reduce CPU effort
+    # Set to 0 to check all announcements.
+    skip_check_chance = 0.5
+
+    # Number of worker threads
+    num_workers = 8
+
+    # Length of the input queue, keeping this low will create back-pressure
+    # and prevent miners from posting too many announcements when the server
+    # is in fact overloaded
+    input_queue_len = 256
+
+    # The public UDP of this ann handler
+    public_url = "http://this.server/submit"
+
+    # Bind this port
+    bind_port = 80
+
+    # Keep this many of the newest ann files
+    files_to_keep = 500
