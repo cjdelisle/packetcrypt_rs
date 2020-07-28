@@ -220,11 +220,11 @@ struct WriteJob {
 fn enqueue_write(w: &mut Worker, output: &mut Output) {
     output.time_of_last_write = util::now_ms();
     let anns: Vec<_> = {
-        let l = min(OUT_ANN_CAP, output.out.len());
-        if l == 0 {
+        if output.out.len() == 0 {
             debug!("Nothing to write");
             return;
         }
+        let l = min(OUT_ANN_CAP, output.out.len());
         output.out.drain(..l).collect()
     };
     //debug!("enqueue_write() with {} anns", anns.len());
@@ -301,7 +301,7 @@ fn process_batch(
             bail!("block number out of range");
         }
         perform_dedup(w, &mut *output, res)?;
-        while output.out.len() + w.anns.len() >= OUT_ANN_CAP ||
+        while output.out.len() >= OUT_ANN_CAP ||
             output.time_of_last_write + WRITE_EVERY_MS < now
         {
             enqueue_write(w, &mut *output);
