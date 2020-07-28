@@ -6,6 +6,7 @@ use std::collections::VecDeque;
 use std::sync::Mutex as MutexB; // blocking
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::net::SocketAddr;
 
 use warp::Filter;
 use anyhow::Result;
@@ -379,6 +380,7 @@ struct AnnPostMeta {
     sver: u32,
     next_block_height: i32,
     pay_to: String,
+    remote_addr: Option<SocketAddr>,
 }
 
 struct AnnPost {
@@ -430,10 +432,12 @@ fn process_submit1(w: &mut Worker, sub: AnnPost) -> Result<AnnPostReply> {
 }
 
 fn process_submit0(w: &mut Worker, mut sub: AnnPost) {
+    let remote_addr: Option<SocketAddr> = sub.meta.remote_addr.take();
     match sub.reply.take().unwrap().send(match process_submit1(w, sub) {
         Ok(resp) => resp,
         Err(e) => {
-            debug!("Error processing request [{:?}]", e);
+            debug!("Error processing req from [{:?}] [{:?}]",
+                &remote_addr, e);
             AnnPostReply{
                 error: vec![ e.to_string() ],
                 warn: vec![],
@@ -442,7 +446,7 @@ fn process_submit0(w: &mut Worker, mut sub: AnnPost) {
         }
     }) {
         Ok(_) => (),
-        Err(e) => {
+        Err(_) => {
             info!("Error sending reply");
         }
     }
@@ -546,6 +550,7 @@ pub async fn new(
 
 async fn handle_submit(
     ah: AnnHandler,
+    remote_addr: Option<SocketAddr>,
     bytes: bytes::Bytes,
     //content_length: usize,
     sver: u32,
@@ -558,6 +563,7 @@ async fn handle_submit(
             sver,
             next_block_height,
             pay_to,
+            remote_addr,
         },
         bytes,
         reply: Some(reply),
@@ -654,6 +660,7 @@ pub async fn start(ah: &AnnHandler) {
         .and(warp::path("submit"))
         .and(warp::path::end())
         .and((|ah:AnnHandler|{warp::any().map(move || ah.clone())})(ah.clone()))
+        .and(warp::filters::addr::remote())
         .and(warp::body::bytes())
         //.and(warp::header::<usize>("content-length"))
         .and(warp::header::<u32>("x-pc-sver"))
