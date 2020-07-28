@@ -632,10 +632,9 @@ pub async fn try_maintanence(ah: &AnnHandler) -> Result<()> {
             tokio::fs::remove_file(format!("{}/{}", &ah.anndir, f.0)).await?;
         }
     }
-    files.reverse();
     let vecu8 = serde_json::to_vec(&IndexFile{
         highest_ann_file: files.get(0).map(|f|{ f.1 }).unwrap_or(0),
-        files: files.drain(0..).map(|f|{f.0}).collect(),
+        files: files.drain(0..).map(|f|{f.0}).rev().collect(),
     })?;
     util::write_file(
         &String::from("index.json"),
