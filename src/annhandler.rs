@@ -165,7 +165,7 @@ fn validate_anns(
     pnr: &AnnPostMeta,
     conf: &Config
 ) -> Result<()> {
-    res.target = 0xffffffff;
+    res.target = 0;
     for (ann_opt, dedup) in w.anns.iter().zip(w.dedups.iter()) {
         let ann = if let Some(x) = ann_opt { x } else { bail!("empty ann entry"); };
         let unsigned = is_zero(ann.signing_key());
@@ -191,6 +191,7 @@ fn validate_anns(
         // higher number represents less work
         res.target = max(res.target, ann.work_bits());
     }
+    res.target = if res.target == 0 { conf.min_work } else { res.target };
     Ok(())
 }
 
