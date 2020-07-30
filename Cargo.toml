@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Caleb James DeLisle <cjd@cjdns.fr>"]
 edition = "2018"
 license = "LGPL-2.1-only OR LGPL-3.0-only"
+description = """
+PacketCrypt proof of work algorithm
+"""
 
 [dev-dependencies]
 hex-literal = "0.3"
