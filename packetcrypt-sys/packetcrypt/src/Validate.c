@@ -14,7 +14,6 @@
 #include "Difficulty.h"
 #include "Work.h"
 #include "Util.h"
-#include "ContentMerkle.h"
 
 #include "sodium/crypto_sign_ed25519.h"
 

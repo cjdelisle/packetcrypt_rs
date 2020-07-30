@@ -2,8 +2,9 @@
 use crate::poolclient::PoolClient;
 use crate::protocol::PaymakerReply;
 use crate::{hash, poolclient, util};
-use anyhow::Result;
+use anyhow::{bail, Result};
 use core::time::Duration;
+use log::{debug, error, trace, warn};
 use regex::Regex;
 use serde::Serialize;
 use std::ops::Add;

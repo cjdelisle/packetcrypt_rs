@@ -7,13 +7,12 @@ use crate::poolclient;
 use crate::poolclient::{PoolClient, PoolUpdate};
 use crate::protocol::{AnnPostReply, AnnsEvent, IndexFile};
 use crate::util;
-use anyhow::Result;
+use anyhow::{bail, Result};
 use crossbeam_channel::{
     Receiver as ReceiverCB, RecvTimeoutError, Sender as SenderCB, TryRecvError,
 };
+use log::{debug, error, info, trace, warn};
 use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
-use rand::rngs::OsRng;
-use rand::RngCore;
 use regex::Regex;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
@@ -100,10 +99,6 @@ struct Worker {
     write_jobs: VecDeque<WriteJob>,
 }
 
-fn is_zero(s: &[u8]) -> bool {
-    s.iter().all(|x| *x == 0)
-}
-
 const SUPPORT_V1: bool = true;
 
 // This is a little bit tricky.
@@ -121,7 +116,7 @@ const SUPPORT_V1: bool = true;
 fn hash_num_ok(pnr: &AnnPostMeta, ann: &PacketCryptAnn, dedup: u64, conf: &Config) -> bool {
     if SUPPORT_V1 {
         if pnr.sver < 2 {
-            if !is_zero(ann.content_hash()) {
+            if !util::is_zero(ann.content_hash()) {
                 debug!("non-zero content hash, failing the ann");
                 false
             } else if (dedup as usize % conf.handler_count) == conf.handler_num {
@@ -134,7 +129,7 @@ fn hash_num_ok(pnr: &AnnPostMeta, ann: &PacketCryptAnn, dedup: u64, conf: &Confi
                 false
             }
         } else {
-            if is_zero(ann.content_hash()) {
+            if util::is_zero(ann.content_hash()) {
                 debug!("zero content hash sver 2, failing the ann");
                 false
             } else {
@@ -159,7 +154,7 @@ fn validate_anns(
         } else {
             bail!("empty ann entry");
         };
-        let unsigned = is_zero(ann.signing_key());
+        let unsigned = util::is_zero(ann.signing_key());
         if unsigned && conf.signing_key != ann.signing_key() {
             bail!("wrong signing key");
         } else if conf.parent_block_height != ann.parent_block_height() {
@@ -477,7 +472,7 @@ fn worker_loop(g: Arc<Global>) {
     let submit_recv = g.submit_recv.clone();
     let mut w: Worker = Worker {
         global: g,
-        random: OsRng.next_u32() as u8,
+        random: util::rand_u32() as u8,
         payto_regex: Regex::new(r"^[a-zA-Z0-9]+$").unwrap(),
         anns: Vec::new(),
         dedups: Vec::new(),

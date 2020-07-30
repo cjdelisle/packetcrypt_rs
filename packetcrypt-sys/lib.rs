@@ -9,16 +9,21 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 pub type ValidateCtx = PacketCrypt_ValidateCtx_t;
 impl PacketCrypt_ValidateCtx_t {
     pub fn default() -> PacketCrypt_ValidateCtx_t {
-        PacketCrypt_ValidateCtx_t{ progbuf: [0;2048], progLen: 0 }
+        PacketCrypt_ValidateCtx_t {
+            progbuf: [0; 2048],
+            progLen: 0,
+        }
     }
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct PacketCryptAnn {
-    pub bytes: bytes::Bytes
+    pub bytes: bytes::Bytes,
 }
 impl PacketCryptAnn {
-    pub fn version(&self) -> u8 { self.bytes[0] }
+    pub fn version(&self) -> u8 {
+        self.bytes[0]
+    }
     pub fn soft_nonce(&self) -> u32 {
         u32::from_le_bytes(self.bytes[..4].try_into().unwrap()) << 8
     }
@@ -31,8 +36,12 @@ impl PacketCryptAnn {
     pub fn parent_block_height(&self) -> i32 {
         i32::from_le_bytes(self.bytes[12..16].try_into().unwrap())
     }
-    pub fn content_hash(&self) -> &[u8] { &self.bytes[24..56] }
-    pub fn signing_key(&self) -> &[u8] { &self.bytes[56..88] }
+    pub fn content_hash(&self) -> &[u8] {
+        &self.bytes[24..56]
+    }
+    pub fn signing_key(&self) -> &[u8] {
+        &self.bytes[56..88]
+    }
 }
 
 pub fn check_ann(

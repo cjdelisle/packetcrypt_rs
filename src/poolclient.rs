@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::protocol::{work_decode, MasterConf, Work};
 use crate::util;
+use log::{debug, error, info, warn};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Receiver;

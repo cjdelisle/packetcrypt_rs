@@ -18,7 +18,6 @@
 #include "Conf.h"
 #include "Util.h"
 #include "packetcrypt/Validate.h"
-#include "ContentMerkle.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -56,13 +55,11 @@ struct AnnMiner_s {
 
     HeaderAndHash_t hah;
 
-    int sendPtr;
-    bool paranoia;
     bool active;
     uint32_t minerId;
 
-    int numOutFiles;
-    int* outFiles;
+    void* callback_ctx;
+    AnnMiner_Callback ann_found;
 
     pthread_mutex_t lock;
     pthread_cond_t cond;
@@ -102,6 +99,7 @@ struct Worker_s {
 };
 
 static inline void setRequestedState(AnnMiner_t* ctx, Worker_t* w, enum ThreadState ts) {
+    (void)(ctx);
     w->reqState = ts;
 }
 static inline enum ThreadState getRequestedState(Worker_t* w) {
@@ -111,6 +109,7 @@ static inline void setState(Worker_t* w, enum ThreadState ts) {
     w->workerState = ts;
 }
 static inline enum ThreadState getState(AnnMiner_t* ctx, Worker_t* w) {
+    (void)(ctx);
     return w->workerState;
 }
 
@@ -197,58 +196,8 @@ static void search(Worker_t* restrict w)
     int nonce = w->softNonce;
     for (int i = 0; i < HASHES_PER_CYCLE; i++) {
         if (Util_likely(!annHash(w, nonce++))) { continue; }
-        if (w->ctx->paranoia) {
-            // Found an ann!
-            PacketCrypt_Announce_t backup;
-            Buf_OBJCPY(&backup, &w->ann);
-            int res = Validate_checkAnn(
-                NULL,
-                (PacketCrypt_Announce_t*)&w->ann,
-                w->job.parentBlockHash.bytes,
-                &w->vctx);
-            if (res) {
-                fprintf(stderr, "Validate_checkAnn returned [%s]\n",
-                    Validate_checkAnn_outToString(res));
-                assert(0 && "Internal error: Validate_checkAnn() failed");
-            }
-            assert(!Buf_OBJCMP(&backup, &w->ann));
-        }
 
-        // Send the ann to an outfile segmented by it's hash so that if we are
-        // submitting to a pool, the pool servers may insist that announcements
-        // are only sent to different pool servers based on ann hash.
-        Buf32_t hash;
-        Hash_COMPRESS32_OBJ(&hash, &w->ann);
-        int outFile = w->ctx->outFiles[hash.longs[0] % w->ctx->numOutFiles];
-
-        if (w->ctx->sendPtr || w->ann.hdr.contentLength > 32) {
-            ssize_t len = sizeof w->ann;
-            if (w->ann.hdr.contentLength > 32) {
-                len += w->ann.hdr.contentLength;
-            }
-            uint8_t* ann = malloc(len);
-            assert(ann);
-            memcpy(ann, &w->ann, sizeof w->ann);
-            if (w->ann.hdr.contentLength > 32) {
-                assert(w->job.content);
-                memcpy(&ann[1024], w->job.content, w->ann.hdr.contentLength);
-            }
-            if (w->ctx->sendPtr) {
-                PacketCrypt_Find_t f = {
-                    .ptr = (uint64_t) (uintptr_t) ann,
-                    .size = sizeof w->ann
-                };
-                ssize_t ret = write(outFile, &f, sizeof f);
-                assert(ret == sizeof f || ret == -1);
-            } else {
-                ssize_t ret = write(outFile, ann, len);
-                assert(ret == len || ret == -1);
-                free(ann);
-            }
-        } else {
-            ssize_t ret = write(outFile, &w->ann, sizeof w->ann);
-            assert(ret == sizeof w->ann || ret == -1);
-        }
+        w->ctx->ann_found(w->ctx->callback_ctx, (uint8_t*) &w->ann);
 
         // update time since last find
         Time_END(w->timeBetweenFinds);
@@ -369,7 +318,7 @@ static void stopThreads(AnnMiner_t* ctx) {
     }
 }
 
-void AnnMiner_start(AnnMiner_t* ctx, AnnMiner_Request_t* req, uint8_t* content, int version) {
+void AnnMiner_start(AnnMiner_t* ctx, AnnMiner_Request_t* req, int version) {
     stopThreads(ctx);
     while (!threadsStopped(ctx)) { Time_nsleep(100000); }
     assert(version == 0 || version == 1);
@@ -385,15 +334,6 @@ void AnnMiner_start(AnnMiner_t* ctx, AnnMiner_Request_t* req, uint8_t* content, 
     Buf_OBJCPY(hah.annHdr.signingKey, req->signingKey);
 
     Buf_OBJCPY(&hah.hash.thirtytwos[0], req->parentBlockHash);
-
-    if (req->contentLen) {
-        assert(content);
-        if (req->contentLen <= 32) {
-            memcpy(hah.annHdr.contentHash, content, req->contentLen);
-        } else {
-            ContentMerkle_compute((Buf32_t*)hah.annHdr.contentHash, content, req->contentLen);
-        }
-    }
 
     // if we're called with identical data, we should not reset the workers
     // because that will cause multiple searches of the same nonce space.
@@ -428,19 +368,14 @@ void AnnMiner_start(AnnMiner_t* ctx, AnnMiner_Request_t* req, uint8_t* content, 
 AnnMiner_t* AnnMiner_create(
     uint32_t minerId,
     int threads,
-    int* outFiles,
-    int numOutFiles,
-    enum AnnMiner_Flags flags)
+    void* callback_ctx,
+    AnnMiner_Callback ann_found)
 {
     assert(threads);
     AnnMiner_t* ctx = allocCtx(threads);
-    ctx->outFiles = calloc(sizeof(int), numOutFiles);
-    assert(ctx->outFiles);
-    ctx->numOutFiles = numOutFiles;
-    memcpy(ctx->outFiles, outFiles, sizeof(int) * numOutFiles);
-    ctx->sendPtr = (flags & AnnMiner_Flags_SENDPTR) != 0;
-    ctx->paranoia = (flags & AnnMiner_Flags_PARANOIA) != 0;
     ctx->minerId = minerId;
+    ctx->ann_found = ann_found;
+    ctx->callback_ctx = callback_ctx;
 
     for (int i = 0; i < threads; i++) {
         ctx->workers[i].workerNum = i;

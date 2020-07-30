@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
-use anyhow::Result;
+use anyhow::{bail, Result};
 use bytes::{Buf, Bytes};
 use serde::{Deserialize, Serialize};
 

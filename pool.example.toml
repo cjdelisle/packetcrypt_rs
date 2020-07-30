@@ -7,7 +7,10 @@ master_url = "http://your.main.pool.server/master"
 # Store the data here
 root_workdir = "./datastore/pool"
 
-[ann_handler.ann0]
+# You can have multiple announcement handlers defined in the same conf file
+# You select the one you want using the command line, for example:
+# packetcrypt ah --config /path/to/config.toml ah0
+[ann_handler.ah0]
     # Randomly skip validation of some announcements to reduce CPU effort
     # Set to 0 to check all announcements.
     skip_check_chance = 0.5
@@ -20,10 +23,12 @@ root_workdir = "./datastore/pool"
     # is in fact overloaded
     input_queue_len = 256
 
-    # The public UDP of this ann handler
+    # The public URL of this ann handler
     public_url = "http://this.server/submit"
 
-    # Bind this port
+    # Bind to this port
+    # NOTE: To bind low ports with non-root user:
+    # sudo setcap CAP_NET_BIND_SERVICE=+eip $(which packetcrypt)
     bind_port = 80
 
     # Keep this many of the newest ann files

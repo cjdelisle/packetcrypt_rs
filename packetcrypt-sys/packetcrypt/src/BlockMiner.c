@@ -15,7 +15,6 @@
 #include "Work.h"
 #include "Util.h"
 #include "Conf.h"
-#include "ContentMerkle.h"
 #include "config.h"
 
 #include <stdlib.h>

@@ -14,31 +14,7 @@
 
 typedef struct AnnMiner_s AnnMiner_t;
 
-enum AnnMiner_Flags {
-    // Send pointers to results rather than writing the results (for inter-thread comms over pipes)
-    AnnMiner_Flags_SENDPTR,
-
-    // Check every announcement after it is created
-    AnnMiner_Flags_PARANOIA
-};
-
-/**
- * Create a new announcement miner and allocate threads.
- *
- * @param minerId a number which will differentiate this announcement miner from others so
- *     if they are mining announcements without content, they will not find the exact same
- *     announcements.
- * @param threads is the number of threads to use.
- * @param outfiles is a list of output file descriptors.
- * @param numOutfiles is the number of output file descriptors in outFiles.
- * @param sendPtr if non-zero, then write a PacketCrypt_Find_t, otherwise write the content
- */
-AnnMiner_t* AnnMiner_create(
-    uint32_t minerId,
-    int threads,
-    int* outFiles,
-    int numOutFiles,
-    enum AnnMiner_Flags flags);
+typedef void (* AnnMiner_Callback)(void* callback_ctx, uint8_t* ann_buf);
 
 typedef struct AnnMiner_Request_s {
     // the bitcoin format hash target which must be beaten in order to
@@ -65,6 +41,12 @@ typedef struct AnnMiner_Request_s {
 } AnnMiner_Request_t;
 _Static_assert(sizeof(AnnMiner_Request_t) == 84, "");
 
+AnnMiner_t* AnnMiner_create(
+    uint32_t minerId,
+    int threads,
+    void* callback_ctx,
+    AnnMiner_Callback ann_found);
+
 /**
  * Begin mining announcements with a particular hash and content type.
  * If the miner is currently mining, it will stop and begin mining the new parameters.
@@ -73,11 +55,8 @@ _Static_assert(sizeof(AnnMiner_Request_t) == 84, "");
  *
  * @param ctx the annMiner.
  * @param req a request for mining.
- * @param content the announcement content. This is used in-place and must not be freed
- *        until after you have called AnnMiner_stop() AnnMiner_Free() or AnnMiner_start()
- *        again.
  */
-void AnnMiner_start(AnnMiner_t* ctx, AnnMiner_Request_t* req, uint8_t* content, int version);
+void AnnMiner_start(AnnMiner_t* ctx, AnnMiner_Request_t* req, int version);
 
 /**
  * Stops the announcement miner.

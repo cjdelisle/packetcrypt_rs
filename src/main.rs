@@ -3,34 +3,28 @@
 #[macro_use]
 mod util;
 mod annhandler;
+mod annmine;
+mod annminer;
 mod hash;
 mod paymakerclient;
 mod poolcfg;
 mod poolclient;
 mod protocol;
+use anyhow::{bail, Context, Result};
+use clap::{App, Arg, SubCommand};
+use log::warn;
 
-#[macro_use]
-extern crate anyhow;
-#[macro_use]
-extern crate log;
-use std::env;
+async fn ah_main(config: &str, handler: &str) -> Result<()> {
+    let confb = tokio::fs::read(config)
+        .await
+        .with_context(|| format!("Failed to read config file [{}]", config))?;
+    let mut cfg: poolcfg::Config = toml::de::from_slice(&confb[..])
+        .with_context(|| format!("Failed to parse config file [{}]", config))?;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    util::setup_env().await?;
-
-    let confb = tokio::fs::read("./pool.toml").await?;
-    let mut cfg: poolcfg::Config = toml::de::from_slice(&confb[..])?;
-    let args: Vec<String> = env::args().collect();
-    let arg = if let Some(x) = args.get(1) {
+    let hconf = if let Some(x) = cfg.ann_handler.remove(handler) {
         x
     } else {
-        bail!("Usage: miner <instance name>    # run instance, defined in pool.toml");
-    };
-    let hconf = if let Some(x) = cfg.ann_handler.remove(arg) {
-        x
-    } else {
-        bail!("{} is not defined in the pool.toml", arg);
+        bail!("{} is not defined in the config file [{}]", handler, config);
     };
     let ah_workdir = poolcfg::get_ah_workdir(&cfg.root_workdir, &hconf);
 
@@ -52,7 +46,142 @@ async fn main() -> anyhow::Result<()> {
     annhandler::start(&ah).await;
 
     // All of the threads and jobs are setup, put the main thread to sleep
-    loop {
-        util::sleep_ms(100_000_000).await;
+    util::sleep_forever().await
+}
+
+const DEFAULT_ADDR: &str = "pkt1q6hqsqhqdgqfd8t3xwgceulu7k9d9w5t2amath0qxyfjlvl3s3u4sjza2g2";
+
+async fn ann_main(
+    pool_master: &str,
+    threads: usize,
+    payment_addr: &str,
+    uploads: usize,
+) -> Result<()> {
+    if payment_addr == DEFAULT_ADDR {
+        warn!(
+            "--paymentaddr was not specified, coins will be mined for {}",
+            DEFAULT_ADDR
+        );
     }
+    let pc = poolclient::new(pool_master);
+    poolclient::start(&pc).await;
+    let am = annmine::new(
+        &pc,
+        annmine::AnnMineCfg {
+            miner_id: util::rand_u32(),
+            workers: threads,
+            uploaders: uploads,
+            pay_to: String::from(payment_addr),
+        },
+    )
+    .await?;
+    annmine::start(&am).await?;
+
+    util::sleep_forever().await
+}
+
+macro_rules! get_str {
+    ($m:ident, $s:expr) => {
+        if let Some(x) = $m.value_of($s) {
+            x
+        } else {
+            return Ok(());
+        }
+    };
+}
+macro_rules! get_usize {
+    ($m:ident, $s:expr) => {{
+        let s = get_str!($m, $s);
+        if let Ok(u) = s.parse::<usize>() {
+            u
+        } else {
+            println!("Unable to parse argument {} as number [{}]", $s, s);
+            return Ok(());
+        }
+    }};
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let cpus_str = format!("{}", num_cpus::get());
+    let matches = App::new("packetcrypt")
+        .version("0.1.0")
+        .author("Caleb James DeLisle <cjd@cjdns.fr>")
+        .about("Bandwidth hard proof of work algorithm")
+        .setting(clap::AppSettings::ArgRequiredElseHelp)
+        .arg(
+            Arg::with_name("v")
+                .short("v")
+                .long("verbose")
+                .multiple(true)
+                .help("Verbose logging"),
+        )
+        .subcommand(
+            SubCommand::with_name("ah")
+                .about("Run announcement handler")
+                .arg(
+                    Arg::with_name("config")
+                        .short("C")
+                        .long("config")
+                        .help("Select the config file, default: pool.toml")
+                        .default_value("./pool.toml")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("handler")
+                        .help("Name of the announcment handler in the config (e.g. ann0)")
+                        .required(true)
+                        .index(1),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("ann")
+                .about("Run announcement miner")
+                .arg(
+                    Arg::with_name("threads")
+                        .short("t")
+                        .long("threads")
+                        .help("Number of threads to mine with")
+                        .default_value(&cpus_str)
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("uploads")
+                        .short("u")
+                        .long("uploads")
+                        .help("Max concurrent uploads")
+                        .default_value("20")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("paymentaddr")
+                        .short("p")
+                        .long("paymentaddr")
+                        .help("Address to request payment for mining")
+                        .default_value(DEFAULT_ADDR),
+                )
+                .arg(
+                    Arg::with_name("pool")
+                        .help("The pool server to use")
+                        .required(true)
+                        .index(1),
+                ),
+        )
+        .get_matches();
+
+    util::setup_env(matches.occurrences_of("v")).await?;
+    if let Some(ann) = matches.subcommand_matches("ann") {
+        // ann miner
+        let pool_master = get_str!(ann, "pool");
+        let payment_addr = get_str!(ann, "paymentaddr");
+        let threads = get_usize!(ann, "threads");
+        let uploads = get_usize!(ann, "uploads");
+        ann_main(pool_master, threads, payment_addr, uploads).await?;
+    } else if let Some(ah) = matches.subcommand_matches("ah") {
+        // ann handler
+        let config = get_str!(ah, "config");
+        let handler = get_str!(ah, "handler");
+        ah_main(config, handler).await?;
+    }
+    Ok(())
 }

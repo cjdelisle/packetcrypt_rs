@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
-use anyhow::Result;
+use anyhow::{format_err, Result};
 use bytes::buf::BufMut;
 use crossbeam_channel::Sender as SenderCB;
-use log::LevelFilter;
+use log::{error, trace, warn, LevelFilter};
 use regex::Regex;
 use std::env;
 use std::panic;
@@ -176,7 +176,7 @@ pub async fn ensure_exists_dir(path: &String) -> Result<()> {
     Ok(())
 }
 
-pub async fn setup_env() -> Result<()> {
+pub async fn setup_env(verbosity: u64) -> Result<()> {
     // If a thread panics, exit so that the process can be restarted
     let orig_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
@@ -198,10 +198,34 @@ pub async fn setup_env() -> Result<()> {
     if !rl.contains("hyper") {
         log.filter_module("hyper", LevelFilter::Info);
     }
-    if !rl.contains("hyper") {
-        log.filter_module("packetcrypt", LevelFilter::Debug);
+    if !rl.contains("packetcrypt") {
+        log.filter_module(
+            "packetcrypt",
+            if verbosity > 0 {
+                LevelFilter::Debug
+            } else {
+                LevelFilter::Info
+            },
+        );
     }
     log.init();
 
     Ok(())
+}
+
+pub fn is_zero(s: &[u8]) -> bool {
+    s.iter().all(|x| *x == 0)
+}
+
+pub async fn sleep_forever() -> ! {
+    loop {
+        sleep_ms(100_000_000).await;
+    }
+}
+
+use rand::rngs::OsRng;
+use rand::RngCore;
+
+pub fn rand_u32() -> u32 {
+    OsRng.next_u32()
 }
