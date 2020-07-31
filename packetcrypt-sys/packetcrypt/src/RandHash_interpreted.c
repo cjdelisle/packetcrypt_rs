@@ -312,6 +312,16 @@ static int interpret(PacketCrypt_ValidateCtx_t* ctx, int pc) {
     }
 }
 
+PacketCrypt_ValidateCtx_t* ValidateCtx_create() {
+    return calloc(sizeof(PacketCrypt_ValidateCtx_t), 1);
+}
+
+void ValidateCtx_destroy(PacketCrypt_ValidateCtx_t* ctx) {
+    Vec_free(&ctx->vars);
+    Vec_free(&ctx->scopes);
+    free(ctx);
+}
+
 int RandHash_interpret(
     PacketCrypt_ValidateCtx_t* ctx,
     uint64_t itemNum,
