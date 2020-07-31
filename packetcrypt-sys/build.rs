@@ -66,7 +66,6 @@ fn main() {
     libsodium.include_paths.iter().for_each(|p| {
         cfg.include(p);
     });
-    cfg.static_flag(true);
     println!(
         "cargo:rustc-flags=-lsodium {}",
         openssl

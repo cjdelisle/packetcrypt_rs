@@ -84,6 +84,7 @@ pub struct AnnMineCfg {
     pub workers: usize,
     pub uploaders: usize,
     pub pay_to: String,
+    pub upload_timeout: usize,
 }
 
 const UPLOAD_CHANNEL_LEN: usize = 200;
@@ -356,7 +357,7 @@ async fn upload_batch(am: &AnnMine, mut batch: AnnBatch, upload_n: usize) -> Res
     // and the parent_block_height is the height of the most recent mined block.
     let worknum = batch.parent_block_height + 1;
     let res = reqwest::ClientBuilder::new()
-        .timeout(Duration::from_millis(30_000))
+        .timeout(Duration::from_secs(am.cfg.upload_timeout as u64))
         .build()?
         .post(&*batch.url)
         .header("x-pc-payto", &am.cfg.pay_to)
@@ -416,6 +417,16 @@ async fn upload_batch(am: &AnnMine, mut batch: AnnBatch, upload_n: usize) -> Res
     Ok(result.accepted)
 }
 
+fn format_kbps(mut kbps: f64) -> String {
+    for letter in "KMGPYZ".chars() {
+        if kbps < 1000.0 {
+            return format!("{}{}b/s", ((kbps * 100.0) as u32) as f64 / 100.0, letter);
+        }
+        kbps /= 1024.0;
+    }
+    String::from("???")
+}
+
 async fn stats_loop(am: &AnnMine) {
     let (mut recv_anns_per_second, mut recv_goodrate) = {
         let mut m = am.m.lock().await;
@@ -444,7 +455,7 @@ async fn stats_loop(am: &AnnMine) {
             continue;
         };
         let now = util::now_ms();
-        if now - time_of_last_msg > 30_000 {
+        if now - time_of_last_msg > 10_000 {
             let aps = raps[..].iter().map(|a| a.count).fold(0, |acc, x| acc + x)
                 / (STATS_SECONDS_TO_KEEP - 1);
             let goodrate = goodrate_slots[..]
@@ -455,20 +466,15 @@ async fn stats_loop(am: &AnnMine) {
             } else {
                 1.0
             };
-            let mut kbps = aps as f64 * 8.0;
+            let kbps = aps as f64 * 8.0;
+            let kbps_reported = annminer::anns_per_second(&am.miner) * 8.0;
             if kbps > 0.0 {
-                for letter in "KMGPYZ".chars() {
-                    if kbps < 1000.0 {
-                        info!(
-                            "{}{}b/s ok: {}%",
-                            ((kbps * 100.0) as u32) as f64 / 100.0,
-                            letter,
-                            (rate * 100.0) as u32
-                        );
-                        break;
-                    }
-                    kbps /= 1024.0;
-                }
+                info!(
+                    "{} ok: {}% (old metric reports: {})",
+                    format_kbps(kbps),
+                    (rate * 100.0) as u32,
+                    format_kbps(kbps_reported),
+                );
             }
             time_of_last_msg = now;
         }

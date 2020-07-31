@@ -56,6 +56,7 @@ async fn ann_main(
     threads: usize,
     payment_addr: &str,
     uploads: usize,
+    upload_timeout: usize,
 ) -> Result<()> {
     if payment_addr == DEFAULT_ADDR {
         warn!(
@@ -72,6 +73,7 @@ async fn ann_main(
             workers: threads,
             uploaders: uploads,
             pay_to: String::from(payment_addr),
+            upload_timeout,
         },
     )
     .await?;
@@ -154,6 +156,14 @@ async fn main() -> Result<()> {
                         .takes_value(true),
                 )
                 .arg(
+                    Arg::with_name("uploadtimeout")
+                        .short("T")
+                        .long("uploadtimeout")
+                        .help("How long to wait for a reply before aborting an upload")
+                        .default_value("30")
+                        .takes_value(true),
+                )
+                .arg(
                     Arg::with_name("paymentaddr")
                         .short("p")
                         .long("paymentaddr")
@@ -176,7 +186,8 @@ async fn main() -> Result<()> {
         let payment_addr = get_str!(ann, "paymentaddr");
         let threads = get_usize!(ann, "threads");
         let uploads = get_usize!(ann, "uploads");
-        ann_main(pool_master, threads, payment_addr, uploads).await?;
+        let upload_timeout = get_usize!(ann, "uploadtimeout");
+        ann_main(pool_master, threads, payment_addr, uploads, upload_timeout).await?;
     } else if let Some(ah) = matches.subcommand_matches("ah") {
         // ann handler
         let config = get_str!(ah, "config");
