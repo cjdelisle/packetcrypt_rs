@@ -98,28 +98,9 @@ void CryptoCycle_init(
 
 bool CryptoCycle_update(
     CryptoCycle_State_t* restrict state,
-    CryptoCycle_Item_t* restrict item,
-    const uint8_t* restrict contentProof,
-    int randHashCycles,
-    PacketCrypt_ValidateCtx_t* ctx)
+    CryptoCycle_Item_t* restrict item)
 {
-    if (randHashCycles) {
-        #ifdef NO_RANDHASH
-            assert(0);
-        #else
-        assert(ctx);
-        int ret = RandGen_generate(ctx->progbuf, &item->thirtytwos[31]);
-        if (ret < 0) { return false; }
-        if (RandHash_interpret(ctx->progbuf, state, item->ints, ret, sizeof *item, randHashCycles)) {
-            return false;
-        }
-        #endif
-    }
-
     memcpy(state->sixteens[2].bytes, item, sizeof *item);
-    if (contentProof) {
-        memcpy(&state->bytes[32 + sizeof *item], contentProof, 32);
-    }
     CryptoCycle_makeFuzzable(&state->hdr);
     CryptoCycle_crypt(&state->hdr);
     assert(!CryptoCycle_isFailed(&state->hdr));

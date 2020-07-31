@@ -9,6 +9,7 @@
 #include "Hash.h"
 #include "RandGen.h"
 #include "RandHash.h"
+#include "ValidateCtx.h"
 
 #include <assert.h>
 
@@ -37,7 +38,7 @@ void Announce_mkitem(uint64_t num, CryptoCycle_Item_t* item, Buf32_t* seed) {
 
 int Announce_createProg(PacketCrypt_ValidateCtx_t* prog, Buf32_t* seed) {
     Hash_expand((uint8_t*)prog->progbuf, sizeof prog->progbuf, seed->bytes, 0);
-    int len = RandGen_generate(prog->progbuf, seed);
+    int len = RandGen_generate(prog->progbuf, seed, &prog->vars);
     if (len < 0) {
         return len;
     }
@@ -50,12 +51,7 @@ int Announce_mkitem2(uint64_t num, CryptoCycle_Item_t* item,
 {
     CryptoCycle_State_t state;
     CryptoCycle_init(&state, seed, num);
-    uint32_t* memory = &prog->progbuf[ num % (((sizeof prog->progbuf) / 4) - RandHash_MEMORY_SZ) ];
-    if (RandHash_interpret(prog->progbuf, &state, memory, prog->progLen,
-        RandHash_MEMORY_SZ*4, 2))
-    {
-        return -1;
-    }
+    if (RandHash_interpret(prog, num, &state, 2)) { return -1; }
     CryptoCycle_makeFuzzable(&state.hdr);
     CryptoCycle_crypt(&state.hdr);
     assert(!CryptoCycle_isFailed(&state.hdr));

@@ -11,7 +11,6 @@
 #define BLOCKMINER_H
 
 #include "packetcrypt/PacketCrypt.h"
-#include "config.h"
 
 #include <stdint.h>
 #include <stdbool.h>

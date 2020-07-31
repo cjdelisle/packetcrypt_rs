@@ -6,12 +6,20 @@ use std::convert::TryInto;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-pub type ValidateCtx = PacketCrypt_ValidateCtx_t;
-impl PacketCrypt_ValidateCtx_t {
-    pub fn default() -> PacketCrypt_ValidateCtx_t {
-        PacketCrypt_ValidateCtx_t {
-            progbuf: [0; 2048],
-            progLen: 0,
+pub struct ValidateCtx {
+    raw: *mut PacketCrypt_ValidateCtx_t,
+}
+impl Drop for ValidateCtx {
+    fn drop(&mut self) {
+        unsafe {
+            ValidateCtx_destroy(self.raw);
+        }
+    }
+}
+impl Default for ValidateCtx {
+    fn default() -> ValidateCtx {
+        ValidateCtx {
+            raw: unsafe { ValidateCtx_create() },
         }
     }
 }
@@ -51,13 +59,12 @@ pub fn check_ann(
 ) -> Result<[u8; 32], &'static str> {
     let mut hashout: [u8; 32] = [0; 32];
     let annptr = ann.bytes.as_ptr() as *const PacketCrypt_Announce_t;
-    let vctxptr = vctx as *mut ValidateCtx;
     let res = unsafe {
         Validate_checkAnn(
             hashout.as_mut_ptr(),
             annptr,
             parent_block_hash.as_ptr(),
-            vctxptr,
+            vctx.raw,
         )
     };
     match res as i32 {

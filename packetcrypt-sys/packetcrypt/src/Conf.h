@@ -44,7 +44,6 @@
 // MAX_INSNS are deemed invalid and the hash attempt is failed.
 #define Conf_RandGen_MIN_INSNS            0
 #define Conf_RandGen_MAX_INSNS         2048
-_Static_assert(sizeof(PacketCrypt_ValidateCtx_t) >= Conf_RandGen_MAX_INSNS*4, "");
 
 // Some operations are more complicated than normal and have particular costs.
 #define Conf_RandGen_MEMORY_COST         20

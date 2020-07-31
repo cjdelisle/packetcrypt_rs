@@ -200,10 +200,8 @@ typedef struct {
 } PacketCrypt_Find_t;
 _Static_assert(sizeof(PacketCrypt_Find_t) == 16, "");
 
-typedef struct {
-    uint32_t progbuf[2048];
-    int progLen;
-} PacketCrypt_ValidateCtx_t;
-_Static_assert(sizeof(PacketCrypt_ValidateCtx_t) == 2049*4, "");
+typedef struct PacketCrypt_ValidateCtx_s PacketCrypt_ValidateCtx_t;
+PacketCrypt_ValidateCtx_t* ValidateCtx_create();
+void ValidateCtx_destroy(PacketCrypt_ValidateCtx_t* ctx);
 
 #endif

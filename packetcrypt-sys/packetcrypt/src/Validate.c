@@ -45,30 +45,21 @@ int Validate_checkAnn(
     uint32_t softNonce = PacketCrypt_AnnounceHdr_softNonce(&ann->hdr);
 
     Buf64_t v1Seed[2];
-    int randHashCycles = Conf_AnnHash_RANDHASH_CYCLES;
-    if (ann->hdr.version > 0) {
-        randHashCycles = 0;
-        uint32_t softNonceMax = Util_annSoftNonceMax(ann->hdr.workBits);
-        if (softNonce > softNonceMax) {
-            return Validate_checkAnn_SOFT_NONCE_HIGH;
-        }
-        Buf_OBJCPY(&v1Seed[0], &ann->merkleProof.sixtyfours[Announce_MERKLE_DEPTH]);
-        Buf_OBJCPY(&v1Seed[1], &annHash0);
-        Hash_COMPRESS64_OBJ(&v1Seed[0], &v1Seed);
-        Announce_createProg(vctx, &v1Seed[0].thirtytwos[0]);
+    uint32_t softNonceMax = Util_annSoftNonceMax(ann->hdr.workBits);
+    if (softNonce > softNonceMax) {
+        return Validate_checkAnn_SOFT_NONCE_HIGH;
     }
+    Buf_OBJCPY(&v1Seed[0], &ann->merkleProof.sixtyfours[Announce_MERKLE_DEPTH]);
+    Buf_OBJCPY(&v1Seed[1], &annHash0);
+    Hash_COMPRESS64_OBJ(&v1Seed[0], &v1Seed);
+    Announce_createProg(vctx, &v1Seed[0].thirtytwos[0]);
 
     CryptoCycle_init(&state, &annHash1.thirtytwos[0], softNonce);
     int itemNo = -1;
     for (int i = 0; i < 4; i++) {
         itemNo = (CryptoCycle_getItemNo(&state) % Announce_TABLE_SZ);
-        if (ann->hdr.version > 0) {
-            Announce_mkitem2(itemNo, &item, &v1Seed[0].thirtytwos[1], vctx);
-        } else {
-            // only 32 bytes of the seed is used
-            Announce_mkitem(itemNo, &item, &annHash0.thirtytwos[0]);
-        }
-        if (!CryptoCycle_update(&state, &item, NULL, randHashCycles, vctx)) {
+        Announce_mkitem2(itemNo, &item, &v1Seed[0].thirtytwos[1], vctx);
+        if (!CryptoCycle_update(&state, &item)) {
             return Validate_checkAnn_INVAL;
         }
     }
@@ -136,7 +127,7 @@ static int checkPcHash(uint64_t indexesOut[PacketCrypt_NUM_ANNS],
         // This gets modded over the total anns in PacketCryptProof_hashProof()
         indexesOut[j] = CryptoCycle_getItemNo(&pcState);
         CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &hap->announcements[j];
-        if (Util_unlikely(!CryptoCycle_update(&pcState, it, NULL, 0, NULL))) { return -1; }
+        if (Util_unlikely(!CryptoCycle_update(&pcState, it))) { return -1; }
     }
     CryptoCycle_smul(&pcState);
     CryptoCycle_final(&pcState);

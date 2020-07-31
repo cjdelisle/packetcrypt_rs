@@ -77,7 +77,7 @@ struct Worker_s {
 
     Announce_t ann;
     CryptoCycle_State_t state;
-    PacketCrypt_ValidateCtx_t vctx;
+    PacketCrypt_ValidateCtx_t* vctx;
 
     AnnMiner_t* ctx;
     pthread_t thread;
@@ -125,11 +125,15 @@ static AnnMiner_t* allocCtx(int numWorkers)
     assert(ctx->workers);
     for (int i = 0; i < numWorkers; i++) {
         ctx->workers[i].ctx = ctx;
+        ctx->workers[i].vctx = ValidateCtx_create();
     }
     return ctx;
 }
 static void freeCtx(AnnMiner_t* ctx)
 {
+    for (int i = 0; i < ctx->numWorkers; i++) {
+        ValidateCtx_destroy(ctx->workers[i].vctx);
+    }
     assert(!pthread_cond_destroy(&ctx->cond));
     assert(!pthread_mutex_destroy(&ctx->lock));
     free(ctx->workers);
@@ -144,13 +148,13 @@ static void populateTable(CryptoCycle_Item_t* table, Buf64_t* annHash0) {
 
 // -1 means try again
 static int populateTable2(Worker_t* w, Buf64_t* seed) {
-    if (Announce_createProg(&w->vctx, &seed->thirtytwos[0])) {
+    if (Announce_createProg(w->vctx, &seed->thirtytwos[0])) {
         return -1;
     }
     for (int i = 0; i < Announce_TABLE_SZ; i++) {
         // Allow this to be interrupted in case we should stop
         if (getRequestedState(w) != ThreadState_RUNNING) { return -1; }
-        if (Announce_mkitem2(i, &w->job.table[i], &seed->thirtytwos[1], &w->vctx)) {
+        if (Announce_mkitem2(i, &w->job.table[i], &seed->thirtytwos[1], w->vctx)) {
             return -1;
         }
     }
@@ -161,11 +165,10 @@ static int populateTable2(Worker_t* w, Buf64_t* seed) {
 static int annHash(Worker_t* restrict w, uint32_t nonce) {
     CryptoCycle_init(&w->state, &w->job.annHash1.thirtytwos[0], nonce);
     int itemNo = -1;
-    int randHashCycles = (w->job.hah.annHdr.version > 0) ? 0 : Conf_AnnHash_RANDHASH_CYCLES;
     for (int i = 0; i < 4; i++) {
         itemNo = (CryptoCycle_getItemNo(&w->state) % Announce_TABLE_SZ);
         CryptoCycle_Item_t* restrict it = &w->job.table[itemNo];
-        if (Util_unlikely(!CryptoCycle_update(&w->state, it, NULL, randHashCycles, &w->vctx))) {
+        if (Util_unlikely(!CryptoCycle_update(&w->state, it))) {
             return 0;
         }
     }

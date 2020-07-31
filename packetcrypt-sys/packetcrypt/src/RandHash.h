@@ -30,11 +30,9 @@
 #define RandHash_TOO_SHORT -4
 
 int RandHash_interpret(
-    uint32_t progbuf[Conf_RandGen_MAX_INSNS],
+    PacketCrypt_ValidateCtx_t* prog,
+    uint64_t itemNum,
     CryptoCycle_State_t* ccState,
-    uint32_t* memory,
-    int progLen,
-    uint32_t memorySizeBytes,
     int cycles);
 
 #endif

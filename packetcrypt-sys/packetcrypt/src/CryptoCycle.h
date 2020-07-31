@@ -214,10 +214,7 @@ void CryptoCycle_init(CryptoCycle_State_t* state, const Buf32_t* seed, uint64_t 
 
 bool CryptoCycle_update(
     CryptoCycle_State_t* restrict state,
-    CryptoCycle_Item_t* restrict item,
-    const uint8_t* restrict contentProof,
-    int randHashCycles,
-    PacketCrypt_ValidateCtx_t* ctx);
+    CryptoCycle_Item_t* restrict item);
 
 void CryptoCycle_smul(CryptoCycle_State_t* state);
 void CryptoCycle_final(CryptoCycle_State_t* state);

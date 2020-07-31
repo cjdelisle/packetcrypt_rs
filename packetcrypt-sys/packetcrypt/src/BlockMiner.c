@@ -15,7 +15,6 @@
 #include "Work.h"
 #include "Util.h"
 #include "Conf.h"
-#include "config.h"
 
 #include <stdlib.h>
 #include <assert.h>
@@ -240,8 +239,7 @@ static bool mine(Worker_t* w)
             for (int j = 0; j < 4; j++) {
                 uint64_t x = res.items[j] = CryptoCycle_getItemNo(&w->pcState) % w->bm->annCount;
                 CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &w->bm->anns[x].ann;
-                const uint8_t* contentProof = NULL;
-                assert(CryptoCycle_update(&w->pcState, it, contentProof, 0, NULL));
+                assert(CryptoCycle_update(&w->pcState, it));
             }
             CryptoCycle_smul(&w->pcState);
             CryptoCycle_final(&w->pcState);

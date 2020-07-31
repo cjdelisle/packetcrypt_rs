@@ -304,7 +304,7 @@ out:
     return false;
 }
 
-int RandGen_generate(uint32_t buf[static Conf_RandGen_MAX_INSNS], Buf32_t* seed)
+int RandGen_generate(uint32_t buf[static Conf_RandGen_MAX_INSNS], Buf32_t* seed, Vec* vars)
 {
     uint32_t budget = Conf_RandGen_INITIAL_BUDGET;
     Context ctx; memset(&ctx, 0, sizeof ctx);
@@ -313,10 +313,9 @@ int RandGen_generate(uint32_t buf[static Conf_RandGen_MAX_INSNS], Buf32_t* seed)
     ctx.nextInt = -1;
     ctx.insns.max = Conf_RandGen_MAX_INSNS;
     ctx.insns.elems = buf;
+    vars->count = 0;
 
     loop(&ctx, &budget);
-
-    Vec_free(&ctx.vars);
 
     _Static_assert(!Conf_RandGen_MIN_INSNS, "");
     if (ctx.tooBig) { return RandHash_TOO_BIG; }

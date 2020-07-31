@@ -12,6 +12,7 @@
 #include "RandGen.h"
 #include "Buf.h"
 #include "CryptoCycle.h"
+#include "ValidateCtx.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -26,48 +27,27 @@ enum OpCodes {
 };
 
 typedef struct {
-    uint32_t* memory;
-
-    uint32_t* hashIn;
-    uint32_t* hashOut;
-
-    uint32_t* prog;
-    int progLen;
-
-    int hashctr;
-
-    int loopCycle;
-    int varCount;
-
-    uint64_t opCtr;
-
-    Vec vars;
-    Vec scopes;
-} Context;
-
-typedef struct {
     uint32_t lo;
     uint32_t hi;
 } Uint64;
 
-
-static inline uint32_t getReg(Context* ctx, uint16_t index) {
+static inline uint32_t getReg(PacketCrypt_ValidateCtx_t* ctx, uint16_t index) {
     assert(index < ctx->vars.count);
     return ctx->vars.elems[index];
 }
 
-static inline uint32_t getA(Context* ctx, uint32_t insn) {
+static inline uint32_t getA(PacketCrypt_ValidateCtx_t* ctx, uint32_t insn) {
     return getReg(ctx, DecodeInsn_REGA(insn));
 }
-static inline uint32_t getB(Context* ctx, uint32_t insn) {
+static inline uint32_t getB(PacketCrypt_ValidateCtx_t* ctx, uint32_t insn) {
     if (DecodeInsn_HAS_IMM(insn)) { return DecodeInsn_immLo(insn); }
     return getReg(ctx, DecodeInsn_REGB(insn));
 }
 
-static inline Uint64 getA2(Context* ctx, uint32_t insn) {
+static inline Uint64 getA2(PacketCrypt_ValidateCtx_t* ctx, uint32_t insn) {
     return (Uint64) { getReg(ctx, DecodeInsn_REGA(insn) - 1), getReg(ctx, DecodeInsn_REGA(insn)) };
 }
-static inline Uint64 getB2(Context* ctx, uint32_t insn) {
+static inline Uint64 getB2(PacketCrypt_ValidateCtx_t* ctx, uint32_t insn) {
     if (DecodeInsn_HAS_IMM(insn)) {
         int64_t imm = DecodeInsn_imm(insn);
         return (Uint64) { (uint32_t) imm, (uint32_t)(((uint64_t) imm) >> 32) };
@@ -160,21 +140,21 @@ static const char* OP_STR[] = {
 #define TEST44(op1, op2, a, b)
 #endif
 
-static inline void out1(Context* ctx, uint32_t val) {
+static inline void out1(PacketCrypt_ValidateCtx_t* ctx, uint32_t val) {
     Vec_push(&ctx->vars, val);
     ctx->varCount++;
 }
-static inline void out2(Context* ctx, uint64_t val) {
+static inline void out2(PacketCrypt_ValidateCtx_t* ctx, uint64_t val) {
     out1(ctx, (uint32_t) val); out1(ctx, (uint32_t) (val >> 32));
 }
-static inline void out4(Context* ctx, uint128 val) {
+static inline void out4(PacketCrypt_ValidateCtx_t* ctx, uint128 val) {
     out1(ctx, U128_0(val)); out1(ctx, U128_1(val));
     out1(ctx, U128_2(val)); out1(ctx, U128_3(val));
 }
 
-static int interpret(Context* ctx, int pc);
+static int interpret(PacketCrypt_ValidateCtx_t* ctx, int pc);
 
-static inline uint32_t branch(Context* ctx, uint32_t a, uint32_t insn, int pc) {
+static inline uint32_t branch(PacketCrypt_ValidateCtx_t* ctx, uint32_t a, uint32_t insn, int pc) {
     int count = DecodeInsn_imm(insn);
     assert(count == 2);
     if (a) { return interpret(ctx, pc + count); }
@@ -183,7 +163,7 @@ static inline uint32_t branch(Context* ctx, uint32_t a, uint32_t insn, int pc) {
 
 #define uint32(x) ((uint32_t)(x))
 
-static int interpret(Context* ctx, int pc) {
+static int interpret(PacketCrypt_ValidateCtx_t* ctx, int pc) {
     // spacing added in RandGen
     if (pc != 0) {
         Vec_push(&ctx->vars, ~0);
@@ -195,7 +175,7 @@ static int interpret(Context* ctx, int pc) {
         if (ctx->opCtr > Conf_RandHash_MAX_OPS) { return -1; }
         ctx->opCtr++;
         assert(pc < ctx->progLen);
-        uint32_t insn = ctx->prog[pc];
+        uint32_t insn = ctx->progbuf[pc];
         assert(DecodeInsn_OP(insn) > OpCode_INVALID_ZERO);
         assert(DecodeInsn_OP(insn) < OpCode_INVALID_BIG);
         switch (DecodeInsn_OP(insn)) {
@@ -333,23 +313,19 @@ static int interpret(Context* ctx, int pc) {
 }
 
 int RandHash_interpret(
-    uint32_t progbuf[Conf_RandGen_MAX_INSNS],
+    PacketCrypt_ValidateCtx_t* ctx,
+    uint64_t itemNum,
     CryptoCycle_State_t* ccState,
-    uint32_t* memory,
-    int progLen,
-    uint32_t memorySizeBytes,
     int cycles)
 {
-    assert(progLen >= 0);
-    assert(memorySizeBytes >= RandHash_MEMORY_SZ * sizeof(uint32_t));
-    Context _ctx; memset(&_ctx, 0, sizeof _ctx);
-    Context* ctx = &_ctx;
-
-    ctx->memory = memory;
+    ctx->memory = &ctx->progbuf[ itemNum % (((sizeof ctx->progbuf) / 4) - RandHash_MEMORY_SZ) ];
     ctx->hashIn = ccState->sixtyfours[0].ints;
     ctx->hashOut = ccState->sixtyfours[16].ints;
-    ctx->prog = progbuf;
-    ctx->progLen = progLen;
+    ctx->hashctr = 0;
+    ctx->loopCycle = 0;
+    ctx->varCount = 0;
+    ctx->vars.count = 0;
+    ctx->scopes.count = 0;
 
     int ret = 0;
 
@@ -366,7 +342,5 @@ int RandHash_interpret(
         uint32_t* x = ctx->hashOut; ctx->hashOut = ctx->hashIn; ctx->hashIn = x;
     }
 
-    Vec_free(&ctx->vars);
-    Vec_free(&ctx->scopes);
     return ret;
 }
