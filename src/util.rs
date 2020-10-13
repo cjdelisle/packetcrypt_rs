@@ -2,7 +2,7 @@
 use anyhow::{format_err, Result};
 use bytes::buf::BufMut;
 use crossbeam_channel::Sender as SenderCB;
-use log::{error, trace, warn, LevelFilter};
+use log::{error, info, trace, warn, LevelFilter};
 use regex::Regex;
 use std::env;
 use std::panic;
@@ -67,6 +67,10 @@ pub async fn tokio_bcast_to_crossbeam<T, S>(
         loop {
             let mut w = match tokio_recv.recv().await {
                 Err(e) => {
+                    if let tokio::sync::broadcast::RecvError::Lagged(l) = e {
+                        info!("Lost {} messages from full queue", l);
+                        continue;
+                    }
                     error!("Error receiving {} from tokio: {:?}", n, e);
                     sleep_ms(5000).await;
                     continue;
@@ -76,9 +80,16 @@ pub async fn tokio_bcast_to_crossbeam<T, S>(
             loop {
                 w = match crossbeam_send.try_send(w) {
                     Err(e) => {
-                        error!("Error sending {} to crossbeam: {:?}", n, e);
-                        sleep_ms(3000).await;
-                        e.into_inner()
+                        if let crossbeam_channel::TrySendError::Full(w) = e {
+                            // We won't even notify about this, just later when
+                            // messages are lost on the tokio side.
+                            sleep_ms(100).await;
+                            w
+                        } else {
+                            error!("Error sending {} to crossbeam: {:?}", n, e);
+                            sleep_ms(3000).await;
+                            e.into_inner()
+                        }
                     }
                     Ok(_) => {
                         break;

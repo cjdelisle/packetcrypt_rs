@@ -461,8 +461,8 @@ fn process_submit0(w: &mut Worker, mut sub: AnnPost) {
             }
         }) {
         Ok(_) => (),
-        Err(_) => {
-            info!("Error sending reply");
+        Err(e) => {
+            info!("Error sending reply [{:?}]", e);
         }
     }
 }
@@ -485,14 +485,18 @@ fn worker_loop(g: Arc<Global>) {
                 warn!("error sending to write_file_send {}", e);
             }
         }
-        match pc_update_recv.try_recv() {
-            Ok(upd) => {
-                process_update(&mut w, upd);
-                continue;
-            }
-            Err(TryRecvError::Empty) => (),
-            Err(TryRecvError::Disconnected) => {
-                error!("pc_update_recv disconnected");
+        loop {
+            match pc_update_recv.try_recv() {
+                Ok(upd) => {
+                    process_update(&mut w, upd);
+                    continue;
+                }
+                Err(TryRecvError::Empty) => {
+                    break;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    error!("pc_update_recv disconnected");
+                }
             }
         }
         match submit_recv.recv_timeout(core::time::Duration::from_millis(RECV_WAIT_MS)) {
