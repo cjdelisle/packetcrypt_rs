@@ -2,9 +2,18 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
+use sodiumoxide;
 use std::convert::TryInto;
 
+#[cfg(feature = "generate-bindings")]
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+
+#[cfg(not(feature = "generate-bindings"))]
+include!("bindings.rs");
+
+pub fn init() {
+    sodiumoxide::init().unwrap();
+}
 
 pub struct ValidateCtx {
     raw: *mut PacketCrypt_ValidateCtx_t,

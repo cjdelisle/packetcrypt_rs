@@ -1,6 +1,6 @@
 [package]
 name = "packetcrypt-sys"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Caleb James DeLisle <cjd@cjdns.fr>"]
 edition = "2018"
 links = "packetcrypt"
@@ -16,12 +16,14 @@ name = "packetcrypt_sys"
 path = "lib.rs"
 
 [dependencies]
-anyhow = "1.0"
-hex = "0.4.2"
+sodiumoxide = { git = "https://github.com/cjdelisle/sodiumoxide", branch = "mingw32-build", version = "0.2", default-features = false, features = ["std"] }
 bytes = "0.5.4"
 
 [build-dependencies]
 cc = "1.0.58"
 pkg-config = "0.3.18"
 walkdir = "2"
-bindgen = "0.54.1"
+bindgen = { version = "0.55", optional = true }
+
+[features]
+generate-bindings = ["bindgen"]

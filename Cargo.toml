@@ -1,6 +1,6 @@
 [package]
 name = "packetcrypt"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Caleb James DeLisle <cjd@cjdns.fr>"]
 edition = "2018"
 license = "LGPL-2.1-only OR LGPL-3.0-only"
@@ -22,7 +22,7 @@ bytes = "0.5"
 anyhow = "1.0"
 blake2b_simd = "0.5"
 hex = "0.4"
-packetcrypt-sys = { version = "0.1", path = "packetcrypt-sys" }
+packetcrypt-sys = { version = "0.2", path = "packetcrypt-sys" }
 rand = "0.7"
 crossbeam-channel = "0.4"
 regex = "1"

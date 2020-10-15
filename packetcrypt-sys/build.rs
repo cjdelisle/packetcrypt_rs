@@ -1,4 +1,3 @@
-extern crate bindgen;
 extern crate cc;
 extern crate pkg_config;
 use walkdir::WalkDir;
@@ -7,25 +6,22 @@ use std::env;
 use std::iter::Iterator;
 use std::path::PathBuf;
 
-fn bindgen() {
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
-    bindgen::Builder::default()
-        .header("bindings.h")
-        .clang_args(&["-I", "packetcrypt/include"])
-        .generate_comments(false)
-        .generate()
-        .expect("Unable to generate bindings")
-        .write_to_file(out_path.join("bindings.rs"))
-        .expect("Couldn't write bindings!");
-}
-
 fn main() {
-    bindgen();
+    #[cfg(feature = "generate-bindings")]
+    {
+        let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
+        bindgen::Builder::default()
+            .header("bindings.h")
+            .clang_args(&["-I", "packetcrypt/include"])
+            .generate_comments(false)
+            .generate()
+            .expect("Unable to generate bindings")
+            .write_to_file(out_path.join("bindings.rs"))
+            .expect("Couldn't write bindings!");
+    }
 
     let mut cfg = cc::Build::new();
     let target = env::var("TARGET").unwrap();
-
-    let deps = vec!["openssl.pc", "libsodium.pc"];
 
     if target.contains("apple") {
         let mut path = if let Ok(p) = env::var("PKG_CONFIG_PATH") {
@@ -39,15 +35,13 @@ fn main() {
             } else {
                 continue;
             };
-            for d in deps.iter() {
-                if e.path().ends_with(d) {
-                    let dir = e.path().parent().unwrap().to_str().unwrap();
-                    println!("Found {} in {}", d, dir);
-                    if path.len() > 0 {
-                        path = format!("{}:{}", path, dir);
-                    } else {
-                        path = String::from(dir);
-                    }
+            if e.path().ends_with("libcrypto.pc") {
+                let dir = e.path().parent().unwrap().to_str().unwrap();
+                println!("Found libcrypto.pc in {}", dir);
+                if path.len() > 0 {
+                    path = format!("{}:{}", path, dir);
+                } else {
+                    path = String::from(dir);
                 }
             }
         }
@@ -55,23 +49,37 @@ fn main() {
         env::set_var("PKG_CONFIG_PATH", path);
     }
 
-    let openssl = pkg_config::Config::new().probe("openssl").unwrap();
-    let libsodium = pkg_config::Config::new().probe("libsodium").unwrap();
+    let libcrypto = pkg_config::Config::new().probe("libcrypto").unwrap();
 
     let dst = PathBuf::from(env::var_os("OUT_DIR").unwrap());
 
-    openssl.include_paths.iter().for_each(|p| {
-        cfg.include(p);
-    });
-    libsodium.include_paths.iter().for_each(|p| {
+    let mut sodium_found = false;
+    for maybe_entry in WalkDir::new(dst.parent().unwrap().parent().unwrap()) {
+        let e = if let Ok(e) = maybe_entry {
+            e
+        } else {
+            continue;
+        };
+        if e.path().ends_with("sodium.h") {
+            let dir = e.path().parent().unwrap();
+            cfg.include(dir);
+            println!("Found sodium.h in {}", dir.to_str().unwrap());
+            sodium_found = true;
+            break;
+        }
+    }
+    if !sodium_found {
+        panic!("Could not find libsodium source code");
+    }
+
+    libcrypto.include_paths.iter().for_each(|p| {
         cfg.include(p);
     });
     println!(
-        "cargo:rustc-flags=-lsodium {}",
-        openssl
+        "cargo:rustc-flags={}",
+        libcrypto
             .link_paths
             .iter()
-            .chain(libsodium.link_paths.iter())
             .map(|p| { format!(" -L {}", p.to_str().unwrap()) })
             .collect::<String>()
     );

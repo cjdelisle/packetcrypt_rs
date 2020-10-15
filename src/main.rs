@@ -107,7 +107,7 @@ macro_rules! get_usize {
 async fn main() -> Result<()> {
     let cpus_str = format!("{}", num_cpus::get());
     let matches = App::new("packetcrypt")
-        .version("0.1.0")
+        .version("0.1.1")
         .author("Caleb James DeLisle <cjd@cjdns.fr>")
         .about("Bandwidth hard proof of work algorithm")
         .setting(clap::AppSettings::ArgRequiredElseHelp)
