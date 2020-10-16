@@ -80,6 +80,25 @@ static inline void bnWorkForDiff(BN_CTX* ctx, BIGNUM* workOut, /*const*/ BIGNUM*
     assert(BN_sub(diff, diff, BN_value_one()));
 }
 
+uint32_t DifficultyTest_workForTar(uint32_t target) {
+    BN_CTX* ctx = BN_CTX_new();
+    assert(ctx);
+
+    BIGNUM* tar = BN_new(); assert(tar);
+    BIGNUM* work = BN_new(); assert(work);
+
+    bnSetCompact(tar, target);
+    bnWorkForDiff(ctx, work, tar);
+
+    uint32_t res = bnGetCompact(work);
+
+    BN_free(work);
+    BN_free(tar);
+    BN_CTX_free(ctx);
+
+    return res;
+}
+
 // diffOut = (2**256 - work) / work
 static inline void bnDiffForWork(BN_CTX* ctx, BIGNUM* diffOut, const BIGNUM* work)
 {
@@ -93,6 +112,25 @@ static inline void bnDiffForWork(BN_CTX* ctx, BIGNUM* diffOut, const BIGNUM* wor
     assert(BN_sub(diffOut, diffOut, work));
     // diffOut /= work
     assert(BN_div(diffOut, NULL, diffOut, work, ctx));
+}
+
+uint32_t DifficultyTest_tarForWork(uint32_t cwork) {
+    BN_CTX* ctx = BN_CTX_new();
+    assert(ctx);
+
+    BIGNUM* tar = BN_new(); assert(tar);
+    BIGNUM* work = BN_new(); assert(work);
+
+    bnSetCompact(work, cwork);
+    bnDiffForWork(ctx, tar, work);
+
+    uint32_t res = bnGetCompact(tar);
+
+    BN_free(work);
+    BN_free(tar);
+    BN_CTX_free(ctx);
+
+    return res;
 }
 
 static void setuint64(BIGNUM* out, uint64_t n)
@@ -165,7 +203,25 @@ static inline void getEffectiveWork(
     BN_free(bnAnnCount);
 }
 
-uint32_t Difficulty_getEffectiveTarget(uint32_t blockTar, uint32_t annTar, uint64_t annCount)
+uint32_t DifficultyTest_getEffectiveWork(uint32_t blockWork, uint32_t annWork, uint64_t annCount)
+{
+    BN_CTX* ctx = BN_CTX_new();
+    assert(ctx);
+    BIGNUM* x = BN_new(); assert(x);
+    BIGNUM* bnBlockWork = BN_new(); assert(bnBlockWork);
+    BIGNUM* bnAnnWork = BN_new(); assert(bnAnnWork);
+    bnSetCompact(bnBlockWork, blockWork);
+    bnSetCompact(bnAnnWork, annWork);
+    getEffectiveWork(ctx, x, bnBlockWork, bnAnnWork, annCount);
+    uint32_t res = bnGetCompact(x);
+    BN_free(x);
+    BN_free(bnBlockWork);
+    BN_free(bnAnnWork);
+    BN_CTX_free(ctx);
+    return res;
+}
+
+uint32_t DifficultyTest_getEffectiveTarget(uint32_t blockTar, uint32_t annTar, uint64_t annCount)
 {
     BN_CTX* ctx = BN_CTX_new();
     assert(ctx);
@@ -193,7 +249,7 @@ uint32_t Difficulty_getEffectiveTarget(uint32_t blockTar, uint32_t annTar, uint6
     return res > 0x207fffff ? 0x207fffff : res;
 }
 
-uint64_t Difficulty_getHashRateMultiplier(uint32_t annTar, uint64_t annCount)
+uint64_t DifficultyTest_getHashRateMultiplier(uint32_t annTar, uint64_t annCount)
 {
     BN_CTX* ctx = BN_CTX_new();
     assert(ctx);
@@ -222,7 +278,7 @@ uint64_t Difficulty_getHashRateMultiplier(uint32_t annTar, uint64_t annCount)
     return out;
 }
 
-uint32_t Difficulty_degradeAnnouncementTarget(uint32_t annTar, uint32_t annAgeBlocks)
+uint32_t DifficultyTest_degradeAnnouncementTarget(uint32_t annTar, uint32_t annAgeBlocks)
 {
     if (annAgeBlocks < Conf_PacketCrypt_ANN_WAIT_PERIOD) { return 0xffffffff; }
     if (annAgeBlocks == Conf_PacketCrypt_ANN_WAIT_PERIOD) { return annTar; }
@@ -240,7 +296,7 @@ uint32_t Difficulty_degradeAnnouncementTarget(uint32_t annTar, uint32_t annAgeBl
 
 // IsAnnMinDiffOk is kind of a sanity check to make sure that the miner doesn't provide
 // "silly" results which might trigger wrong behavior from the diff computation
-bool Difficulty_isMinAnnDiffOk(uint32_t target)
+bool DifficultyTest_isMinAnnDiffOk(uint32_t target)
 {
     if (target == 0 || target > 0x207fffff) {
         return false;

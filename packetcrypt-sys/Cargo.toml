@@ -13,17 +13,22 @@ categories = ["external-ffi-bindings"]
 
 [lib]
 name = "packetcrypt_sys"
-path = "lib.rs"
 
 [dependencies]
 sodiumoxide = { git = "https://github.com/cjdelisle/sodiumoxide", branch = "mingw32-build", version = "0.2", default-features = false, features = ["std"] }
 bytes = "0.5.4"
+num-bigint = { version = "0.3" }
+num-traits = { version = "0.2" }
 
 [build-dependencies]
-cc = "1.0.58"
-pkg-config = "0.3.18"
+cc = "1.0"
 walkdir = "2"
 bindgen = { version = "0.55", optional = true }
+pkg-config = { version = "0.3", optional = true }
+
+[dev-dependencies]
+rand = "0.7"
 
 [features]
 generate-bindings = ["bindgen"]
+difficulty-test = ["pkg-config"]

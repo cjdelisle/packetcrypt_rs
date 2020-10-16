@@ -2,6 +2,8 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
+mod difficulty;
+
 use sodiumoxide;
 use std::convert::TryInto;
 
@@ -9,7 +11,7 @@ use std::convert::TryInto;
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 #[cfg(not(feature = "generate-bindings"))]
-include!("bindings.rs");
+include!("../bindings.rs");
 
 pub fn init() {
     sodiumoxide::init().unwrap();
