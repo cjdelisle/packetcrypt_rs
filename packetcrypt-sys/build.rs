@@ -71,19 +71,27 @@ fn main() {
 
     let dst = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let mut sodium_found = false;
-    for maybe_entry in WalkDir::new(dst.parent().unwrap().parent().unwrap()) {
-        let e = if let Ok(e) = maybe_entry {
-            e
-        } else {
-            continue;
-        };
-        if e.path().ends_with("sodium.h") {
-            let dir = e.path().parent().unwrap();
-            cfg.include(dir);
-            println!("Found sodium.h in {}", dir.to_str().unwrap());
-            sodium_found = true;
+    let search_path = dst.parent().unwrap().parent().unwrap();
+    for i in 0..600 {
+        println!("Looking for libsodium in {}", search_path.to_str().unwrap());
+        for maybe_entry in WalkDir::new(search_path) {
+            let e = if let Ok(e) = maybe_entry {
+                e
+            } else {
+                continue;
+            };
+            if e.path().ends_with("sodium.h") {
+                let dir = e.path().parent().unwrap();
+                cfg.include(dir);
+                println!("Found sodium.h in {}", dir.to_str().unwrap());
+                sodium_found = true;
+                break;
+            }
+        }
+        if sodium_found {
             break;
         }
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
     if !sodium_found {
         panic!("Could not find libsodium source code");
