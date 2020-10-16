@@ -72,7 +72,7 @@ fn main() {
     let dst = PathBuf::from(env::var_os("OUT_DIR").unwrap());
     let mut sodium_found = false;
     let search_path = dst.parent().unwrap().parent().unwrap();
-    for i in 0..600 {
+    for _ in 0..600 {
         println!("Looking for libsodium in {}", search_path.to_str().unwrap());
         for maybe_entry in WalkDir::new(search_path) {
             let e = if let Ok(e) = maybe_entry {
