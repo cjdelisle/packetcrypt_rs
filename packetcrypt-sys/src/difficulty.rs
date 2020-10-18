@@ -88,7 +88,7 @@ fn get_effective_work(blk_work: BigUint, ann_work: BigUint, ann_count: u64) -> B
 }
 
 #[no_mangle]
-pub fn pcdiff_get_effective_target(block_tar: u32, ann_tar: u32, ann_count: u64) -> u32 {
+pub fn pc_get_effective_target(block_tar: u32, ann_tar: u32, ann_count: u64) -> u32 {
     let blk_work = work_for_tar(bn_for_compact(block_tar));
     let ann_work = work_for_tar(bn_for_compact(ann_tar));
     let effective_work = get_effective_work(blk_work, ann_work, ann_count);
@@ -97,7 +97,7 @@ pub fn pcdiff_get_effective_target(block_tar: u32, ann_tar: u32, ann_count: u64)
 }
 
 #[no_mangle]
-pub fn pcdiff_get_hashrate_multiplier(ann_tar: u32, ann_count: u64) -> u64 {
+pub fn pc_get_hashrate_multiplier(ann_tar: u32, ann_count: u64) -> u64 {
     let bn_ann_tar = bn_for_compact(ann_tar);
     let bn_ann_work = work_for_tar(bn_ann_tar);
     let bn_ann_count_2 = BigUint::from(ann_count).pow(2);
@@ -110,7 +110,7 @@ pub fn pcdiff_get_hashrate_multiplier(ann_tar: u32, ann_count: u64) -> u64 {
 }
 
 #[no_mangle]
-pub fn pcdiff_degrade_announcement_target(ann_tar: u32, ann_age_blocks: u32) -> u32 {
+pub fn pc_degrade_announcement_target(ann_tar: u32, ann_age_blocks: u32) -> u32 {
     if ann_age_blocks < ANN_WAIT_PERIOD {
     } else if ann_age_blocks > 256 + ANN_WAIT_PERIOD {
     } else if ann_age_blocks == ANN_WAIT_PERIOD {
@@ -128,7 +128,7 @@ pub fn pcdiff_degrade_announcement_target(ann_tar: u32, ann_age_blocks: u32) -> 
 }
 
 #[no_mangle]
-pub fn pcdiff_is_min_ann_diff_ok(ann_tar: u32) -> bool {
+pub fn pc_is_min_ann_diff_ok(ann_tar: u32) -> bool {
     if is_valid(ann_tar) {
         let tar = bn_for_compact(ann_tar);
         if !tar.is_zero() {
@@ -236,7 +236,7 @@ mod tests {
         while i < 1000 {
             let ann_tar = rand_compact(&mut rng);
             let c_answer = unsafe { DifficultyTest_isMinAnnDiffOk(ann_tar) };
-            let rs_answer = super::pcdiff_is_min_ann_diff_ok(ann_tar);
+            let rs_answer = super::pc_is_min_ann_diff_ok(ann_tar);
 
             if c_answer != rs_answer {
                 println!("annTar   {:08x}", ann_tar);
@@ -297,7 +297,7 @@ mod tests {
 
             let c_answer =
                 unsafe { DifficultyTest_getEffectiveTarget(block_tar, ann_tar, ann_count) };
-            let rs_answer = super::pcdiff_get_effective_target(block_tar, ann_tar, ann_count);
+            let rs_answer = super::pc_get_effective_target(block_tar, ann_tar, ann_count);
 
             if c_answer != rs_answer {
                 println!("blockTar {:#08x}", block_tar);
@@ -327,7 +327,7 @@ mod tests {
 
             let c_answer =
                 unsafe { DifficultyTest_degradeAnnouncementTarget(ann_tar, age_in_blocks) };
-            let rs_answer = super::pcdiff_degrade_announcement_target(ann_tar, age_in_blocks);
+            let rs_answer = super::pc_degrade_announcement_target(ann_tar, age_in_blocks);
 
             if c_answer != rs_answer {
                 println!("annTar   {:#08x}", ann_tar);
@@ -353,7 +353,7 @@ mod tests {
             let ann_count = rng.gen::<u64>();
 
             let c_answer = unsafe { DifficultyTest_getHashRateMultiplier(ann_tar, ann_count) };
-            let rs_answer = super::pcdiff_get_hashrate_multiplier(ann_tar, ann_count);
+            let rs_answer = super::pc_get_hashrate_multiplier(ann_tar, ann_count);
 
             if c_answer != rs_answer {
                 println!("annTar   {:#08x}", ann_tar);
