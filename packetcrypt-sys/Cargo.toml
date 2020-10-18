@@ -1,6 +1,6 @@
 [package]
 name = "packetcrypt-sys"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Caleb James DeLisle <cjd@cjdns.fr>"]
 edition = "2018"
 links = "packetcrypt"

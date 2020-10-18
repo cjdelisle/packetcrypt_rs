@@ -1,6 +1,6 @@
 [package]
 name = "packetcrypt-dll"
-version = "0.1.0"
+version = "0.3.0"
 authors = ["Caleb James DeLisle <cjd@cjdns.fr>"]
 edition = "2018"
 
