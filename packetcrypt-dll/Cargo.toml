@@ -10,7 +10,7 @@ edition = "2018"
 crate-type = ["cdylib"]
 
 [dependencies]
-packetcrypt-sys = { path = "../packetcrypt-sys" }
+packetcrypt-sys = { path = "../packetcrypt-sys", version = "0.3" }
 
 # Rust wants to use DWARF unwinding but mingw32 i686 only supports sjlj
 [target.i686-pc-windows-gnu]
