@@ -1,6 +1,6 @@
 [package]
 name = "packetcrypt-sys"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Caleb James DeLisle <cjd@cjdns.fr>"]
 edition = "2018"
 links = "packetcrypt"
@@ -15,7 +15,7 @@ categories = ["external-ffi-bindings"]
 name = "packetcrypt_sys"
 
 [dependencies]
-sodiumoxide = { git = "https://github.com/cjdelisle/sodiumoxide", branch = "mingw32-build", version = "0.2", default-features = false, features = ["std"] }
+sodiumoxide = { git = "https://github.com/cjdelisle/sodiumoxide", branch = "master", version = "0.2", default-features = false, features = ["std"] }
 bytes = "0.5.4"
 num-bigint = { version = "0.3" }
 num-traits = { version = "0.2" }

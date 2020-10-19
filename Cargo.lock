@@ -568,7 +568,7 @@ checksum = "2448f6066e80e3bfc792e9c98bf705b4b0fc6e8ef5b43e5889aff0eaa9c58743"
 [[package]]
 name = "libsodium-sys"
 version = "0.2.6"
-source = "git+https://github.com/cjdelisle/sodiumoxide?branch=mingw32-build#c1581f06bb1d436124fc29baa653d0310232cd6d"
+source = "git+https://github.com/cjdelisle/sodiumoxide?branch=master#ae5902ab8650956a099e0c502f0613c175bd46f9"
 dependencies = [
  "cc",
  "libc",
@@ -714,7 +714,7 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "packetcrypt"
-version = "0.1.2"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "blake2b_simd",
@@ -740,7 +740,7 @@ dependencies = [
 
 [[package]]
 name = "packetcrypt-sys"
-version = "0.2.0"
+version = "0.3.1"
 dependencies = [
  "bytes",
  "cc",
@@ -1031,7 +1031,7 @@ dependencies = [
 [[package]]
 name = "sodiumoxide"
 version = "0.2.6"
-source = "git+https://github.com/cjdelisle/sodiumoxide?branch=mingw32-build#c1581f06bb1d436124fc29baa653d0310232cd6d"
+source = "git+https://github.com/cjdelisle/sodiumoxide?branch=master#ae5902ab8650956a099e0c502f0613c175bd46f9"
 dependencies = [
  "libc",
  "libsodium-sys",
