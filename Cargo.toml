@@ -12,6 +12,7 @@ PacketCrypt proof of work algorithm
 hex-literal = "0.3"
 
 [dependencies]
+jemallocator = "0.3.2"
 tokio = { version = "0.2", features = ["macros","sync","fs"], default-features = false }
 warp = { version = "0.2", features = [], default-features = false }
 reqwest = { version = "0.10", features = ["stream"], default-features = false }
