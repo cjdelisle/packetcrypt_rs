@@ -115,7 +115,7 @@ pub fn work_decode(out: &mut Work, b: &mut Bytes) -> Result<()> {
     if b.remaining() < cnwlen {
         bail!("runt work");
     }
-    out.coinbase_no_witness = b.slice(0..cnwlen).clone();
+    out.coinbase_no_witness = b.slice(0..cnwlen);
     b.advance(cnwlen);
     if b.remaining() % 32 != 0 {
         bail!(

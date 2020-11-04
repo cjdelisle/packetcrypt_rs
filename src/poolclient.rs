@@ -134,7 +134,7 @@ async fn work_loop(pcli: PoolClient) {
             pc.work = Some(work.clone());
             if let Err(_) = pc.notify.send(PoolUpdate {
                 conf: mc,
-                work: work,
+                work,
             }) {
                 error!("Failed to send work to channel {}", work_url);
             }

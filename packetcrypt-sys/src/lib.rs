@@ -4,7 +4,6 @@
 
 mod difficulty;
 
-use sodiumoxide;
 use std::convert::TryInto;
 
 #[cfg(feature = "generate-bindings")]

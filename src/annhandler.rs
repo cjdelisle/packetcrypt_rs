@@ -128,14 +128,12 @@ fn hash_num_ok(pnr: &AnnPostMeta, ann: &PacketCryptAnn, dedup: u64, conf: &Confi
                 );
                 false
             }
-        } else {
-            if util::is_zero(ann.content_hash()) {
+        } else if util::is_zero(ann.content_hash()) {
                 debug!("zero content hash sver 2, failing the ann");
                 false
             } else {
                 true
             }
-        }
     } else {
         (ann.hard_nonce() as usize % conf.handler_count) == conf.handler_num
     }
@@ -171,7 +169,7 @@ fn validate_anns(
             bail!("submit elsewhere");
         } else if conf.ann_version != ann.version() {
             bail!("unsupported ann version");
-        } else if (dedup.hash as u8 ^ w.random) & 0xff < w.global.skip_check_chance {
+        } else if (dedup.hash as u8 ^ w.random) < w.global.skip_check_chance {
             // fallthrough
         } else if let Err(x) = check_ann(ann, &conf.parent_block_hash, &mut w.vctx) {
             bail!("check_ann() -> {}", x);
@@ -571,7 +569,7 @@ pub async fn new(
         tmpdir,
     });
 
-    Ok(global.clone())
+    Ok(global)
 }
 
 async fn handle_submit(
