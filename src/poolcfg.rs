@@ -19,6 +19,6 @@ pub struct Config {
     pub root_workdir: String,
     pub ann_handler: HashMap<String, AnnHandlerCfg>,
 }
-pub fn get_ah_workdir(root_workdir: &String, ahc: &AnnHandlerCfg) -> String {
+pub fn get_ah_workdir(root_workdir: &str, ahc: &AnnHandlerCfg) -> String {
     format!("{}/ann_{}", root_workdir, ahc.bind_port)
 }

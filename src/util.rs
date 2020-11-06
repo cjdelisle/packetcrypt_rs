@@ -113,7 +113,7 @@ pub fn aligned_bytes(from: &[u8], alignment: usize) -> bytes::Bytes {
     b.freeze().slice(i..)
 }
 
-pub async fn numbered_files(dir: &String, regex: &Regex) -> Result<Vec<(String, usize)>> {
+pub async fn numbered_files(dir: &str, regex: &Regex) -> Result<Vec<(String, usize)>> {
     Ok(read_dir(dir)
         .await?
         .filter_map(|f_or_err| {
@@ -152,7 +152,7 @@ pub async fn numbered_files(dir: &String, regex: &Regex) -> Result<Vec<(String, 
         .await)
 }
 
-pub async fn highest_num_file(dir: &String, regex: &Regex) -> Result<usize> {
+pub async fn highest_num_file(dir: &str, regex: &Regex) -> Result<usize> {
     let mut highest: usize = 0;
     for nf in numbered_files(dir, regex).await? {
         highest = if nf.1 > highest { nf.1 } else { highest };
@@ -161,9 +161,9 @@ pub async fn highest_num_file(dir: &String, regex: &Regex) -> Result<usize> {
 }
 
 pub async fn write_file(
-    name: &String,
-    tempdir: &String,
-    permdir: &String,
+    name: &str,
+    tempdir: &str,
+    permdir: &str,
     content: impl Iterator<Item = &bytes::Bytes>,
 ) -> Result<()> {
     trace!("write_file({})", name);
@@ -179,7 +179,7 @@ pub async fn write_file(
     Ok(())
 }
 
-pub async fn ensure_exists_dir(path: &String) -> Result<()> {
+pub async fn ensure_exists_dir(path: &str) -> Result<()> {
     let p = Path::new(path);
     if !p.is_dir() {
         tokio::fs::create_dir_all(&p).await?;

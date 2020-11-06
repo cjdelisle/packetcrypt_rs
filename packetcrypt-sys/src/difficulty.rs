@@ -23,9 +23,9 @@ fn compact_for_bn(bn: BigUint) -> u32 {
             bits / 8 + if bits % 8 == 0 { 0 } else { 1 }
         };
         let compact = if size <= 3 {
-            bn.to_u32().unwrap() << 8 * (3 - size)
+            bn.to_u32().unwrap() << (8 * (3 - size))
         } else {
-            (bn >> 8 * (size - 3)).to_u32().unwrap()
+            (bn >> (8 * (size - 3))).to_u32().unwrap()
         };
         if compact & 0x00800000 != 0 {
             (compact >> 8, size + 1)
