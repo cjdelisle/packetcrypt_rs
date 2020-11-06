@@ -129,11 +129,11 @@ fn hash_num_ok(pnr: &AnnPostMeta, ann: &PacketCryptAnn, dedup: u64, conf: &Confi
                 false
             }
         } else if util::is_zero(ann.content_hash()) {
-                debug!("zero content hash sver 2, failing the ann");
-                false
-            } else {
-                true
-            }
+            debug!("zero content hash sver 2, failing the ann");
+            false
+        } else {
+            true
+        }
     } else {
         (ann.hard_nonce() as usize % conf.handler_count) == conf.handler_num
     }
@@ -559,7 +559,7 @@ pub async fn new(
         pc_update_send,
         fileno: AtomicUsize::new(top_ann_file + 1),
         pmc: pmc.clone(),
-        sockaddr: ([0, 0, 0, 0], cfg.bind_port).into(),
+        sockaddr: ([0; 16], cfg.bind_port).into(),
         skip_check_chance: 255 * cfg.skip_check_chance as u8,
         write_file_send,
         write_file_recv: tokio::sync::Mutex::new(write_file_recv),
