@@ -42,6 +42,11 @@ For more information `packetcrypt help ah`
 * `RUST_LOG=packetcrypt=debug` for better logging
 * `RUST_BACKTRACE=1` for backtraces on errors (including non-critical ones)
 
+## Memory leak detection
+To run with memory leak detection, build with `cargo build --features leak_detection` and while
+it is running send a SIGUSR1 signal, this will cause it to write out all of it's long lived memory
+to a file.
+
 ## License
 
 LGPL-2.1 or LGPL-3.0, at your option
