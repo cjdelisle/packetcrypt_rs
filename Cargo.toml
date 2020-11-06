@@ -13,7 +13,7 @@ hex-literal = "0.3"
 
 [dependencies]
 jemallocator = "0.3.2"
-tokio = { version = "0.2", features = ["macros","sync","fs"], default-features = false }
+tokio = { version = "0.2", features = ["macros","sync","fs","signal"], default-features = false }
 warp = { version = "0.2", features = [], default-features = false }
 reqwest = { version = "0.10", features = ["stream"], default-features = false }
 serde = { version = "1.0", features = ["derive"], default-features = false }
@@ -32,3 +32,7 @@ env_logger = "0.7"
 sha2 = "0.9"
 clap = "2.33"
 num_cpus = "1.13"
+leak-detect-allocator = { version = "0.1", optional = true }
+
+[features]
+leak_detect = ["leak-detect-allocator"]
