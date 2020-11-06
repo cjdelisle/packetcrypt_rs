@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 // #![deny(warnings)]
+#[global_allocator]
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 #[macro_use]
 mod util;
 mod annhandler;
