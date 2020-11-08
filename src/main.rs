@@ -51,7 +51,9 @@ async fn detect_leaks() -> Result<()> {
                     unsafe {
                         out += &format!(
                             "\t{}\r\n",
-                            LEAK_TRACER.get_symbol_name(*f).unwrap_or("".to_owned())
+                            LEAK_TRACER
+                                .get_symbol_name(*f)
+                                .unwrap_or(format!("{:x}", f))
                         );
                     }
                 }
