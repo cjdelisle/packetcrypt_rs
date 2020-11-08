@@ -45,17 +45,18 @@ async fn detect_leaks() -> Result<()> {
                     return true;
                 }
                 count_size += size;
-                out += &format!("leak memory address: {:#x}, size: {}\r\n", addr, size);
-                for f in it {
+                out += &format!("memory allocaction: {:#x}, size: {}\r\n", addr, size);
+                for addr in it {
                     // Resolve this instruction pointer to a symbol name
-                    unsafe {
-                        out += &format!(
-                            "\t{}\r\n",
-                            LEAK_TRACER
-                                .get_symbol_name(*f)
-                                .unwrap_or(format!("{:x}", f))
-                        );
-                    }
+                    let mut ret: Option<String> = None;
+                    backtrace::resolve(*addr as *mut _, |symbol| {
+                        ret = symbol.name().map(|x| x.to_string())
+                    });
+                    out += &format!(
+                        "\t0x{:x}: {}\n",
+                        addr
+                        ret.unwrap_or("<unknown>".to_owned())
+                    )
                 }
                 true // continue until end
             });
