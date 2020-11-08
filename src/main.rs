@@ -54,7 +54,7 @@ async fn detect_leaks() -> Result<()> {
                     });
                     out += &format!(
                         "\t0x{:x}: {}\n",
-                        addr
+                        addr,
                         ret.unwrap_or("<unknown>".to_owned())
                     )
                 }
