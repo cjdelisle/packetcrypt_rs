@@ -31,7 +31,7 @@ async fn leak_detect() -> Result<()> {
             s.recv().await;
             let outfile = format!("packetcrypt_memory_{}.txt", util::now_ms());
             println!("Got SIGUSR1, writing memory trace to: [{}]", outfile);
-            if let Err(e) = al.write_mem_allocations(&outfile).await {
+            if let Err(e) = al.write_mem_allocations(outfile).await {
                 println!("Error writing memory trace [{:?}]", e);
             }
         }
