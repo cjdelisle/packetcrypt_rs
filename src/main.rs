@@ -20,60 +20,27 @@ use tokio::signal::unix::{signal, SignalKind};
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[cfg(feature = "leak_detect")]
-#[global_allocator]
-static LEAK_TRACER: leak_detect_allocator::LeakTracerDefault =
-    leak_detect_allocator::LeakTracerDefault::new();
+mod alloc;
 
 #[cfg(feature = "leak_detect")]
-async fn detect_leaks() -> Result<()> {
-    let lda_size = LEAK_TRACER.init();
+async fn leak_detect() -> Result<()> {
+    let al = alloc::alloc_init().await?;
     let mut s = signal(SignalKind::user_defined1())?;
     tokio::spawn(async move {
         loop {
             s.recv().await;
             let outfile = format!("packetcrypt_memory_{}.txt", util::now_ms());
             println!("Got SIGUSR1, writing memory trace to: [{}]", outfile);
-            let mut out = String::new();
-            let mut count = 0;
-            let mut count_size = 0;
-            LEAK_TRACER.now_leaks(|addr, frames| {
-                count += 1;
-                let mut it = frames.iter();
-                // first is the alloc size
-                let size = it.next().unwrap_or(&0);
-                if *size == lda_size {
-                    return true;
-                }
-                count_size += size;
-                out += &format!("memory allocaction: {:#x}, size: {}\r\n", addr, size);
-                for addr in it {
-                    // Resolve this instruction pointer to a symbol name
-                    let mut ret: Option<String> = None;
-                    backtrace::resolve(*addr as *mut _, |symbol| {
-                        ret = symbol.name().map(|x| x.to_string())
-                    });
-                    out += &format!(
-                        "\t0x{:x}: {}\n",
-                        addr,
-                        ret.unwrap_or("<unknown>".to_owned())
-                    )
-                }
-                true // continue until end
-            });
-            out += &format!(
-                "\r\ntotal address:{}, bytes:{}, internal use for leak-detect-allacator:{} bytes\r\n",
-                count,
-                count_size,
-                lda_size * 2
-            );
-            std::fs::write(outfile, out.as_str().as_bytes()).ok();
+            if let Err(e) = al.write_mem_allocations(&outfile).await {
+                println!("Error writing memory trace [{:?}]", e);
+            }
         }
     });
     Ok(())
 }
 
 #[cfg(not(feature = "leak_detect"))]
-async fn detect_leaks() -> Result<()> {
+async fn leak_detect() -> Result<()> {
     Ok(())
 }
 
@@ -178,7 +145,7 @@ macro_rules! get_usize {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    detect_leaks().await?;
+    leak_detect().await?;
     exiter().await?;
     let cpus_str = format!("{}", num_cpus::get());
     let matches = App::new("packetcrypt")
