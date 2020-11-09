@@ -658,9 +658,8 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "leak-detect-allocator"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0b078aacbe0b963775b97367fd9f637377a83b81c77807625c2b82e7881b5da"
+version = "0.1.1"
+source = "git+https://github.com/cjdelisle/leak-detect-allocator?rev=0915e7f8913a5ccdfe55a11345816db7c91dce82#0915e7f8913a5ccdfe55a11345816db7c91dce82"
 dependencies = [
  "backtrace",
  "heapless",

@@ -65,11 +65,8 @@ fn write_mem_allocations(ld_size: usize, outfile: String) -> Result<()> {
                 )?;
             }
             AllocEnt::Frame(addr) => {
-                let mut ret: Option<String> = None;
-                backtrace::resolve(addr as *mut _, |symbol| {
-                    ret = Some(format!("\t0x{:x}: {:?}\n", addr, symbol));
-                });
-                file.write_all(&ret.unwrap().into_bytes()[..])?;
+                let name = unsafe { LEAK_TRACER.get_symbol_name(addr) };
+                file.write_all(&format!("\t0x{:x}: {:?}\n", addr, name).into_bytes()[..])?;
             }
         }
     }
