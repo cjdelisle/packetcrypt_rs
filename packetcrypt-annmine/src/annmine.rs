@@ -92,9 +92,9 @@ const UPLOAD_CHANNEL_LEN: usize = 200;
 pub async fn new(pcli: &PoolClient, cfg: AnnMineCfg) -> Result<AnnMine> {
     let (miner, recv_ann) = annminer::new(cfg.miner_id, cfg.workers);
     let (send_upload, recv_upload) = mpsc::channel(UPLOAD_CHANNEL_LEN);
-    let (send_handlers, recv_handlers) = mpsc::channel(10);
-    let (send_anns_per_second, recv_anns_per_second) = mpsc::channel(10);
-    let (send_goodrate, recv_goodrate) = mpsc::channel(10);
+    let (send_handlers, recv_handlers) = mpsc::channel(32);
+    let (send_anns_per_second, recv_anns_per_second) = mpsc::channel(32);
+    let (send_goodrate, recv_goodrate) = mpsc::channel(64);
     Ok(Arc::new(AnnMineS {
         m: Arc::new(Mutex::new(AnnMineM {
             top_work_number: -1,
