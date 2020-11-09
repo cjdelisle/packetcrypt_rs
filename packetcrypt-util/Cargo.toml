@@ -1,0 +1,19 @@
+[package]
+name = "packetcrypt-util"
+version = "0.3.1"
+authors = ["Caleb James DeLisle <cjd@cjdns.fr>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+jemallocator = "0.3.2"
+tokio = { version = "0.2", features = ["macros","sync","fs","signal"], default-features = false }
+bytes = "0.5"
+anyhow = "1.0"
+crossbeam-channel = "0.4"
+regex = "1"
+log = "0.4"
+rand = "0.7"
+env_logger = "0.7"
+reqwest = { version = "0.10", features = ["stream"], default-features = false }

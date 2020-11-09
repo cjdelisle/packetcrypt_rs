@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::hash;
-use crate::util;
 use anyhow::Result;
 use bytes::Buf;
 use log::warn;
 use packetcrypt_sys::PacketCryptAnn;
+use packetcrypt_util as util;
 use std::convert::TryInto;
 use std::os::raw::c_int;
 use std::os::raw::c_void;

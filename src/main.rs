@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 // #![deny(warnings)]
 #[macro_use]
-mod util;
 mod annhandler;
 mod annmine;
 mod annminer;
@@ -13,6 +12,7 @@ mod protocol;
 use anyhow::{bail, Context, Result};
 use clap::{App, Arg, SubCommand};
 use log::warn;
+use packetcrypt_util as util;
 use tokio::signal::unix::{signal, SignalKind};
 
 #[cfg(not(feature = "leak_detect"))]

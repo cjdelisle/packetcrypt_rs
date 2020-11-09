@@ -6,13 +6,13 @@ use crate::poolcfg::AnnHandlerCfg;
 use crate::poolclient;
 use crate::poolclient::{PoolClient, PoolUpdate};
 use crate::protocol::{AnnPostReply, AnnsEvent, IndexFile};
-use crate::util;
 use anyhow::{bail, Result};
 use crossbeam_channel::{
     Receiver as ReceiverCB, RecvTimeoutError, Sender as SenderCB, TryRecvError,
 };
 use log::{debug, error, info, trace, warn};
 use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
+use packetcrypt_util as util;
 use regex::Regex;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
@@ -715,11 +715,11 @@ pub async fn start(ah: &AnnHandler) {
     .await;
 
     for _ in 0..FILE_WRITE_WORKERS {
-        async_spawn!(ah, { write_file_loop(&ah).await });
+        util::async_spawn!(ah, { write_file_loop(&ah).await });
     }
 
-    async_spawn!(ah, { maintanence_loop(&ah).await });
-    async_spawn!(ah, { warp::serve(sub.or(anns)).run(ah.sockaddr).await });
+    util::async_spawn!(ah, { maintanence_loop(&ah).await });
+    util::async_spawn!(ah, { warp::serve(sub.or(anns)).run(ah.sockaddr).await });
 
     for _ in 0..(ah.cfg.num_workers) {
         let g = ah.clone();
@@ -732,9 +732,9 @@ pub async fn start(ah: &AnnHandler) {
 #[cfg(test)]
 mod tests {
     use crate::hash;
-    use crate::util;
     use hex_literal::hex;
     use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
+    use packetcrypt_util as util;
 
     static ANN: [u8; 1024] = hex!(
         "

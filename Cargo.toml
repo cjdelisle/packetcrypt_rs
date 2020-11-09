@@ -24,6 +24,7 @@ anyhow = "1.0"
 blake2b_simd = "0.5"
 hex = "0.4"
 packetcrypt-sys = { version = "0.3", path = "packetcrypt-sys" }
+packetcrypt-util = { version = "0.3", path = "packetcrypt-util" }
 rand = "0.7"
 crossbeam-channel = "0.4"
 regex = "1"

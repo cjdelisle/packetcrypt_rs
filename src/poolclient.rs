@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::protocol::{work_decode, MasterConf, Work};
-use crate::util;
 use log::{debug, error, info, warn};
+use packetcrypt_util as util;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Receiver;
@@ -132,10 +132,7 @@ async fn work_loop(pcli: PoolClient) {
                 continue;
             };
             pc.work = Some(work.clone());
-            if let Err(_) = pc.notify.send(PoolUpdate {
-                conf: mc,
-                work,
-            }) {
+            if let Err(_) = pc.notify.send(PoolUpdate { conf: mc, work }) {
                 error!("Failed to send work to channel {}", work_url);
             }
         }
@@ -144,10 +141,10 @@ async fn work_loop(pcli: PoolClient) {
 }
 
 pub async fn start(pcli: &PoolClient) {
-    async_spawn!(pcli, {
+    util::async_spawn!(pcli, {
         cfg_loop(pcli).await;
     });
-    async_spawn!(pcli, {
+    util::async_spawn!(pcli, {
         work_loop(pcli).await;
     });
 }

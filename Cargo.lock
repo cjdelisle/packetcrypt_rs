@@ -857,6 +857,7 @@ dependencies = [
  "log",
  "num_cpus",
  "packetcrypt-sys",
+ "packetcrypt-util",
  "rand",
  "regex",
  "reqwest",
@@ -878,6 +879,22 @@ dependencies = [
  "num-traits",
  "sodiumoxide",
  "walkdir",
+]
+
+[[package]]
+name = "packetcrypt-util"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "crossbeam-channel",
+ "env_logger",
+ "jemallocator",
+ "log",
+ "rand",
+ "regex",
+ "reqwest",
+ "tokio",
 ]
 
 [[package]]
