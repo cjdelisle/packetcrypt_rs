@@ -30,7 +30,7 @@ typedef struct {
     Vec insns;
 
     // variables / scopes
-    Vec vars;
+    Vec* vars;
     uint32_t scope;
 
     bool tooBig;
@@ -126,21 +126,21 @@ static void emit(Context* ctx, uint32_t insn) {
     Vec_push(&ctx->insns, insn);
 }
 
-static void scope(Context* ctx) { ctx->scope++; Vec_push(&ctx->vars, ~0u); }
+static void scope(Context* ctx) { ctx->scope++; Vec_push(ctx->vars, ~0u); }
 static void end(Context* ctx) {
     emit(ctx, OpCode_END);
     ctx->scope--;
-    while (Vec_pop(&ctx->vars) != ~0u) { }
+    while (Vec_pop(ctx->vars) != ~0u) { }
 }
 
-static void mkVar(Context* ctx) { Vec_push(&ctx->vars, 0); }
+static void mkVar(Context* ctx) { Vec_push(ctx->vars, 0); }
 
 
 static int _getVar(Context* ctx, bool dbl) {
-    int eof = ctx->vars.count;
+    int eof = ctx->vars->count;
     int bof = eof - 1;
     for (; bof >= 0; bof--) {
-        if (ctx->vars.elems[bof] != ~0u) { continue; }
+        if (ctx->vars->elems[bof] != ~0u) { continue; }
         // only 1 var in this frame and we're looking for dword, continue looking
         if (dbl) {
             if (bof >= eof - 2) { goto nextFrame; }
@@ -165,22 +165,22 @@ static int _getVar(Context* ctx, bool dbl) {
         if ((!dbl || (j > bof + 1)) && cointoss(ctx, Conf_RandGen_VAR_REUSE_LIKELYHOOD)) {
             //printf("reuse\n");
             return j;
-        } else if (!(ctx->vars.elems[j] & 1)) {
-            if (!dbl || !(ctx->vars.elems[j-1] & 1)) { return j; }
+        } else if (!(ctx->vars->elems[j] & 1)) {
+            if (!dbl || !(ctx->vars->elems[j-1] & 1)) { return j; }
         }
     }
 }
 static int getVar(Context* ctx, bool dbl) {
     int out = _getVar(ctx, dbl);
-    assert(out < (int)ctx->vars.count);
+    assert(out < (int)ctx->vars->count);
     assert(out >= 0);
     //printf("%08x %d <\n", ctx->vars.elems[out], out);
-    assert(ctx->vars.elems[out] != ~0u);
-    ctx->vars.elems[out] |= 1;
+    assert(ctx->vars->elems[out] != ~0u);
+    ctx->vars->elems[out] |= 1;
     if (dbl) {
         assert(out > 0);
-        assert(ctx->vars.elems[out-1] != ~0u);
-        ctx->vars.elems[out-1] |= 1;
+        assert(ctx->vars->elems[out-1] != ~0u);
+        ctx->vars->elems[out-1] |= 1;
     }
     return out;
 }
@@ -313,9 +313,15 @@ int RandGen_generate(uint32_t buf[static Conf_RandGen_MAX_INSNS], Buf32_t* seed,
     ctx.nextInt = -1;
     ctx.insns.max = Conf_RandGen_MAX_INSNS;
     ctx.insns.elems = buf;
+    ctx.vars = vars;
     vars->count = 0;
 
     loop(&ctx, &budget);
+
+    if (ctx.insns.elems != buf) {
+        Vec_free(&ctx.insns);
+        ctx.tooBig = true;
+    }
 
     _Static_assert(!Conf_RandGen_MIN_INSNS, "");
     if (ctx.tooBig) { return RandHash_TOO_BIG; }
