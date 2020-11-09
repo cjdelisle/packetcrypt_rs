@@ -659,7 +659,7 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 [[package]]
 name = "leak-detect-allocator"
 version = "0.1.1"
-source = "git+https://github.com/cjdelisle/leak-detect-allocator?rev=0915e7f8913a5ccdfe55a11345816db7c91dce82#0915e7f8913a5ccdfe55a11345816db7c91dce82"
+source = "git+https://github.com/cjdelisle/leak-detect-allocator?rev=627fdf89645f18ac35dabd7dfbd7d5a0357da8a2#627fdf89645f18ac35dabd7dfbd7d5a0357da8a2"
 dependencies = [
  "backtrace",
  "heapless",
@@ -843,7 +843,6 @@ name = "packetcrypt"
 version = "0.3.1"
 dependencies = [
  "anyhow",
- "backtrace",
  "clap",
  "crossbeam-channel",
  "hex-literal",

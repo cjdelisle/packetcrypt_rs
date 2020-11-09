@@ -25,8 +25,7 @@ crossbeam-channel = "0.4"
 log = "0.4"
 clap = "2.33"
 num_cpus = "1.13"
-leak-detect-allocator = { version = "0.1", git = "https://github.com/cjdelisle/leak-detect-allocator", rev = "0915e7f8913a5ccdfe55a11345816db7c91dce82", optional = true }
-backtrace = { version = "0.3", features = ["libbacktrace","std"], default-features = false, optional = true }
+leak-detect-allocator = { version = "0.1", git = "https://github.com/cjdelisle/leak-detect-allocator", rev = "627fdf89645f18ac35dabd7dfbd7d5a0357da8a2", optional = true }
 
 [features]
-leak_detect = ["leak-detect-allocator", "backtrace"]
+leak_detect = ["leak-detect-allocator"]
