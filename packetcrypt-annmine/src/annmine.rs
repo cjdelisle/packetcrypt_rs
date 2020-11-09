@@ -467,14 +467,8 @@ async fn stats_loop(am: &AnnMine) {
                 1.0
             };
             let kbps = aps as f64 * 8.0;
-            let kbps_reported = annminer::anns_per_second(&am.miner) * 8.0;
             if kbps > 0.0 {
-                info!(
-                    "{} ok: {}% (old metric reports: {})",
-                    format_kbps(kbps),
-                    (rate * 100.0) as u32,
-                    format_kbps(kbps_reported),
-                );
+                info!("{} ok: {}%", format_kbps(kbps), (rate * 100.0) as u32,);
             }
             time_of_last_msg = now;
         }

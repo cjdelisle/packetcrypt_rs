@@ -65,9 +65,9 @@ const ANN_VERSION: c_int = 1;
 //     unsafe { packetcrypt_sys::AnnMiner_stop(*miner.miner.lock().unwrap().get_mut()) };
 // }
 
-pub fn anns_per_second(miner: &AnnMiner) -> f64 {
-    unsafe { packetcrypt_sys::AnnMiner_getAnnsPerSecond(*miner.miner.lock().unwrap().get_mut()) }
-}
+// pub fn anns_per_second(miner: &AnnMiner) -> f64 {
+//     unsafe { packetcrypt_sys::AnnMiner_getAnnsPerSecond(*miner.miner.lock().unwrap().get_mut()) }
+// }
 
 pub fn start(
     miner: &AnnMiner,
