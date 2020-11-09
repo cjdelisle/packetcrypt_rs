@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::annminer::{self, AnnResult};
-use crate::poolclient::{self, PoolClient};
-use crate::protocol::AnnPostReply;
 use anyhow::Result;
 use core::time::Duration;
 use log::{debug, info, trace, warn};
 use packetcrypt_sys::PacketCryptAnn;
-use packetcrypt_util as util;
+use packetcrypt_util::poolclient::{self, PoolClient};
+use packetcrypt_util::protocol::AnnPostReply;
+use packetcrypt_util::util;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver};
@@ -511,17 +511,17 @@ async fn uploader_loop(am: &AnnMine) {
 }
 
 pub async fn start(am: &AnnMine) -> Result<()> {
-    util::async_spawn!(am, {
+    packetcrypt_util::async_spawn!(am, {
         update_work_loop(&am).await;
     });
-    util::async_spawn!(am, {
+    packetcrypt_util::async_spawn!(am, {
         handle_ann_loop(&am).await;
     });
-    util::async_spawn!(am, {
+    packetcrypt_util::async_spawn!(am, {
         stats_loop(&am).await;
     });
     for _ in 0..am.cfg.uploaders {
-        util::async_spawn!(am, {
+        packetcrypt_util::async_spawn!(am, {
             uploader_loop(&am).await;
         });
     }

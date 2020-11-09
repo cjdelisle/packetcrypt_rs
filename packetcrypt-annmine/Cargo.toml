@@ -1,0 +1,17 @@
+[package]
+name = "packetcrypt-annmine"
+version = "0.3.1"
+authors = ["Caleb James DeLisle <cjd@cjdns.fr>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+packetcrypt-util = { version = "0.3", path = "../packetcrypt-util" }
+packetcrypt-sys = { version = "0.3", path = "../packetcrypt-sys" }
+anyhow = "1.0"
+log = "0.4"
+tokio = { version = "0.2", features = ["macros","sync","fs","signal"], default-features = false }
+bytes = "0.5"
+reqwest = { version = "0.10", features = ["stream"], default-features = false }
+serde_json = "1.0"

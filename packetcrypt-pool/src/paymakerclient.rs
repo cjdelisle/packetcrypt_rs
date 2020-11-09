@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
-use crate::poolclient::PoolClient;
-use crate::protocol::PaymakerReply;
-use crate::{hash, poolclient};
 use anyhow::{bail, Result};
 use core::time::Duration;
 use log::{debug, error, trace, warn};
-use packetcrypt_util as util;
+use packetcrypt_util::poolclient::{self, PoolClient};
+use packetcrypt_util::protocol::PaymakerReply;
+use packetcrypt_util::{hash, util};
 use regex::Regex;
 use serde::Serialize;
 use std::ops::Add;
@@ -108,13 +107,13 @@ async fn pc_update_loop(pmc: &PaymakerClient) {
 }
 
 pub async fn start(pmc: &PaymakerClient) {
-    util::async_spawn!(pmc, {
+    packetcrypt_util::async_spawn!(pmc, {
         switch_loop(&pmc).await;
     });
-    util::async_spawn!(pmc, {
+    packetcrypt_util::async_spawn!(pmc, {
         submit_loop(&pmc).await;
     });
-    util::async_spawn!(pmc, {
+    packetcrypt_util::async_spawn!(pmc, {
         pc_update_loop(&pmc).await;
     });
 }
