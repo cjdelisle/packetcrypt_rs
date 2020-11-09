@@ -66,17 +66,14 @@ fn write_mem_allocations(ld_size: usize, outfile: String) -> Result<()> {
             }
             AllocEnt::Frame(addr) => {
                 let mut ret: Option<String> = None;
-                let mut done: bool = false;
                 backtrace::resolve(addr as *mut _, |symbol| {
                     ret = symbol.name().map(|x| x.to_string());
-                    done = true;
                 });
                 file.write_all(
                     &format!(
                         "\t0x{:x}: {} {}\n",
                         addr,
                         ret.unwrap_or("<unknown>".to_owned()),
-                        done,
                     )
                     .into_bytes()[..],
                 )?;

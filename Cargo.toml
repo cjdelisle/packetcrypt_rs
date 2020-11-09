@@ -33,7 +33,7 @@ sha2 = "0.9"
 clap = "2.33"
 num_cpus = "1.13"
 leak-detect-allocator = { version = "0.1", optional = true }
-backtrace = { version = "0.3", features = ["libbacktrace"], optional = true }
+backtrace = { version = "0.3", features = ["libbacktrace","std"], default-features = false, optional = true }
 
 [features]
 leak_detect = ["leak-detect-allocator", "backtrace"]
