@@ -71,7 +71,7 @@ fn write_mem_allocations(ld_size: usize, outfile: String) -> Result<()> {
                 });
                 file.write_all(
                     &format!(
-                        "\t0x{:x}: {} {}\n",
+                        "\t0x{:x}: {}\n",
                         addr,
                         ret.unwrap_or("<unknown>".to_owned()),
                     )
