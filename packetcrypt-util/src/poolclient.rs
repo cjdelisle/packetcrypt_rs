@@ -1,47 +1,73 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
-use crate::protocol::{work_decode, MasterConf, Work};
+use crate::protocol::{BlockInfo, MasterConf};
 use crate::util;
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::RwLock;
 
 #[derive(Debug)]
-pub struct PoolClientS {
-    url: String,
+pub struct PoolClientM {
     mc: Option<MasterConf>,
-    work: Option<Work>,
-    notify: broadcast::Sender<PoolUpdate>,
+    chain: HashMap<i32, BlockInfo>,
 }
-pub type PoolClient = Arc<RwLock<PoolClientS>>;
 
-pub fn new(url: &str) -> PoolClient {
+#[derive(Debug)]
+pub struct PoolClientS {
+    m: RwLock<PoolClientM>,
+    url: String,
+    notify: broadcast::Sender<PoolUpdate>,
+    history_depth: i32,
+}
+pub type PoolClient = Arc<PoolClientS>;
+
+pub fn new(url: &str, history_depth: i32) -> PoolClient {
     let (tx, _) = broadcast::channel::<PoolUpdate>(3);
-    Arc::new(RwLock::new(PoolClientS {
+    Arc::new(PoolClientS {
+        m: RwLock::new(PoolClientM {
+            mc: None,
+            chain: HashMap::new(),
+        }),
         url: String::from(url),
-        mc: None,
-        work: None,
         notify: tx,
-    }))
+        history_depth,
+    })
 }
 
 #[derive(Clone)]
 pub struct PoolUpdate {
     pub conf: MasterConf,
-    pub work: Work,
+    pub update_blocks: Vec<BlockInfo>,
 }
 
 pub async fn update_chan(pcli: &PoolClient) -> Receiver<PoolUpdate> {
-    pcli.read().await.notify.subscribe()
+    pcli.notify.subscribe()
 }
 
-async fn cfg_loop(pcli: PoolClient) {
+fn fmt_blk(hash: &[u8; 32], height: i32) -> String {
+    format!("{} @ {}", hex::encode(&hash[..]), height)
+}
+
+async fn discover_block(pcli: &PoolClient, height: i32, hash: &[u8; 32]) -> Option<BlockInfo> {
+    if let Some(bi) = pcli.m.read().await.chain.get(&height) {
+        if &bi.header.hash == hash {
+            debug!("We already know about block [{}]", fmt_blk(hash, height));
+            return None;
+        } else {
+            // we have an entry for this block, but it is incorrect (rollback)
+            info!(
+                "ROLLBACK [{}] incorrect, replace with [{}]",
+                fmt_blk(&bi.header.hash, height),
+                fmt_blk(hash, height)
+            );
+        }
+    } else {
+        //debug!("New block [{}]", fmt_blk(&hash, height));
+    }
+    let url = format!("{}/blkinfo_{}.json", pcli.url, hex::encode(&hash[..]));
     loop {
-        let url = {
-            let locked = pcli.write().await;
-            format!("{}/config.json", locked.url)
-        };
         let text = match util::get_url_text(&url).await {
             Err(e) => {
                 info!("Failed to make request {:?} retry in 5 seconds", e);
@@ -50,7 +76,57 @@ async fn cfg_loop(pcli: PoolClient) {
             }
             Ok(r) => r,
         };
-        let mc = match serde_json::from_str::<MasterConf>(text.as_str()) {
+        let bi = match serde_json::from_str::<BlockInfo>(text.as_str()) {
+            Err(e) => {
+                info!("Failed to deserialize block info {:?} {:?}", text, e);
+                util::sleep_ms(5000).await;
+                continue;
+            }
+            Ok(r) => r,
+        };
+        info!(
+            "Discovered block [{}]",
+            fmt_blk(&bi.header.hash, bi.header.height)
+        );
+        pcli.m.write().await.chain.insert(bi.header.height, bi);
+        return Some(bi);
+    }
+}
+
+// This takes a newly discovered block and returns a vector of blocks which have
+// been changed. It calls the pool master iteratively in order to back-fill any
+// blocks which are incorrect and it updates the local state appropriately.
+async fn discover_blocks(pcli: &PoolClient, height: i32, hash: &[u8; 32]) -> Vec<BlockInfo> {
+    let mut out: Vec<BlockInfo> = Vec::new();
+    let mut xhash = *hash;
+    let mut xheight = height;
+    loop {
+        if let Some(bi) = discover_block(pcli, xheight, &xhash).await {
+            if bi.header.height <= height - pcli.history_depth {
+                // We've backfilled enough history
+                return out;
+            }
+            xhash = bi.header.previousblockhash;
+            xheight -= 1;
+            out.push(bi);
+        } else {
+            return out;
+        };
+    }
+}
+
+async fn cfg_loop(pcli: &PoolClient) {
+    loop {
+        let url = format!("{}/config.json", pcli.url);
+        let text = match util::get_url_text(&url).await {
+            Err(e) => {
+                info!("Failed to make request {:?} retry in 5 seconds", e);
+                util::sleep_ms(5000).await;
+                continue;
+            }
+            Ok(r) => r,
+        };
+        let conf = match serde_json::from_str::<MasterConf>(text.as_str()) {
             Err(e) => {
                 info!("Failed to deserialize master conf {:?} {:?}", text, e);
                 util::sleep_ms(5000).await;
@@ -58,10 +134,17 @@ async fn cfg_loop(pcli: PoolClient) {
             }
             Ok(r) => r,
         };
+        let tip_hash = if let Some(tip_hash) = conf.tip_hash {
+            tip_hash
+        } else {
+            error!("Pool missing tipHash, this pool is too old to mine with");
+            util::sleep_ms(5000).await;
+            continue;
+        };
         if {
-            let pcr = pcli.read().await;
+            let pcr = pcli.m.read().await;
             if let Some(mcx) = &pcr.mc {
-                !mcx.eq(&mc)
+                !mcx.eq(&conf)
             } else {
                 if pcr.mc == None {
                     info!("Got master config");
@@ -71,80 +154,22 @@ async fn cfg_loop(pcli: PoolClient) {
                 true
             }
         } {
-            let mut pc = pcli.write().await;
-            pc.mc = Some(mc.clone());
-            if let Some(w) = &pc.work {
-                if let Err(_) = pc.notify.send(PoolUpdate {
-                    conf: mc,
-                    work: w.clone(),
-                }) {
-                    info!("Failed to send conf update to channel");
-                }
+            let update_blocks = discover_blocks(pcli, conf.current_height - 1, &tip_hash).await;
+            let mut pc = pcli.m.write().await;
+            pc.mc = Some(conf.clone());
+            if let Err(_) = pcli.notify.send(PoolUpdate {
+                conf,
+                update_blocks,
+            }) {
+                info!("Failed to send conf update to channel");
             }
         }
-        util::sleep_ms(120_000).await;
-    }
-}
-
-async fn work_loop(pcli: PoolClient) {
-    let mut try_height: i32 = -1;
-    let mut master_url: Option<String> = None;
-    loop {
-        if try_height < 0 {
-            master_url = None;
-        }
-        let work_url = if let Some(url) = &master_url {
-            format!("{}/work_{}.bin", url.as_str(), try_height)
-        } else {
-            let mc = pcli.write().await.mc.clone();
-            if let Some(mc) = mc {
-                try_height = mc.current_height - 6; // TODO magic number, parameterize
-                master_url = Some(mc.master_url.clone());
-            } else {
-                debug!("No master conf yet");
-                util::sleep_ms(1000).await;
-            }
-            continue;
-        };
-
-        let mut work_bytes = match util::get_url_bin(&work_url).await {
-            Err(e) => {
-                info!("Error getting {:?} because {:?}", work_url, e);
-                util::sleep_ms(1000).await;
-                continue;
-            }
-            Ok(x) => x,
-        };
-        let mut work = Work::default();
-        if let Err(e) = work_decode(&mut work, &mut work_bytes) {
-            warn!("Failed to decode work {:?} because {:?}", work_url, e);
-            util::sleep_ms(5000).await;
-            continue;
-        }
-        //debug!("Got new work {:?}", work.height);
-        {
-            let mut pc = pcli.write().await;
-            let mc = if let Some(mc) = &pc.mc {
-                mc.clone()
-            } else {
-                error!("MasterConf missing");
-                try_height = -1;
-                continue;
-            };
-            pc.work = Some(work.clone());
-            if let Err(_) = pc.notify.send(PoolUpdate { conf: mc, work }) {
-                error!("Failed to send work to channel {}", work_url);
-            }
-        }
-        try_height += 1;
+        util::sleep_ms(30_000).await;
     }
 }
 
 pub async fn start(pcli: &PoolClient) {
     async_spawn!(pcli, {
-        cfg_loop(pcli).await;
-    });
-    async_spawn!(pcli, {
-        work_loop(pcli).await;
+        cfg_loop(&pcli).await;
     });
 }

@@ -4,9 +4,10 @@ use anyhow::Result;
 use core::time::Duration;
 use log::{debug, info, trace, warn};
 use packetcrypt_sys::PacketCryptAnn;
-use packetcrypt_util::poolclient::{self, PoolClient};
-use packetcrypt_util::protocol::AnnPostReply;
+use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
+use packetcrypt_util::protocol::{AnnPostReply, BlockInfo};
 use packetcrypt_util::util;
+use std::cmp::max;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver};
@@ -15,14 +16,6 @@ use tokio::sync::Mutex;
 const RECENT_WORK_BUF: usize = 8;
 const MAX_ANN_BATCH_SIZE: usize = 1024;
 const MAX_MS_BETWEEN_POSTS: u64 = 30_000;
-
-#[derive(Clone, Copy)]
-struct WorkData {
-    pub signing_key: [u8; 32],
-    pub parent_block_hash: [u8; 32],
-    pub parent_block_height: i32,
-    pub ann_target: u32,
-}
 
 struct AnnBatch {
     url: Arc<String>,
@@ -57,8 +50,8 @@ struct GoodRate {
 }
 
 struct AnnMineM {
-    top_work_number: i32,
-    recent_work: [Option<WorkData>; RECENT_WORK_BUF],
+    currently_mining: i32,
+    recent_work: [Option<BlockInfo>; RECENT_WORK_BUF],
     recv_ann: Option<UnboundedReceiver<AnnResult>>,
     recv_handlers: Option<Receiver<HandlersMsg>>,
     send_handlers: Sender<HandlersMsg>,
@@ -80,6 +73,7 @@ pub struct AnnMineS {
 pub type AnnMine = Arc<AnnMineS>;
 
 pub struct AnnMineCfg {
+    pub master_url: String,
     pub miner_id: u32,
     pub workers: usize,
     pub uploaders: usize,
@@ -89,7 +83,10 @@ pub struct AnnMineCfg {
 
 const UPLOAD_CHANNEL_LEN: usize = 200;
 
-pub async fn new(pcli: &PoolClient, cfg: AnnMineCfg) -> Result<AnnMine> {
+const PREFETCH_HISTORY_DEPTH: i32 = 6;
+
+pub async fn new(cfg: AnnMineCfg) -> Result<AnnMine> {
+    let pcli = poolclient::new(&cfg.master_url, PREFETCH_HISTORY_DEPTH);
     let (miner, recv_ann) = annminer::new(cfg.miner_id, cfg.workers);
     let (send_upload, recv_upload) = mpsc::channel(UPLOAD_CHANNEL_LEN);
     let (send_handlers, recv_handlers) = mpsc::channel(32);
@@ -97,7 +94,7 @@ pub async fn new(pcli: &PoolClient, cfg: AnnMineCfg) -> Result<AnnMine> {
     let (send_goodrate, recv_goodrate) = mpsc::channel(64);
     Ok(Arc::new(AnnMineS {
         m: Arc::new(Mutex::new(AnnMineM {
-            top_work_number: -1,
+            currently_mining: -1,
             recent_work: [None; RECENT_WORK_BUF],
             recv_ann: Some(recv_ann),
             recv_handlers: Some(recv_handlers),
@@ -109,90 +106,81 @@ pub async fn new(pcli: &PoolClient, cfg: AnnMineCfg) -> Result<AnnMine> {
             recv_goodrate: Some(recv_goodrate),
         })),
         miner,
-        pcli: Arc::clone(pcli),
+        pcli,
         recv_upload: Mutex::new(recv_upload),
         cfg,
         upload_num: AtomicUsize::new(0),
     }))
 }
 
-// Don't exactly believe what the master says we should mine old anns, because we
-// want to submit anns after the block changes and the js handler doesn't like this
-// idea very much. TODO: When the js handler is gone, this can be dropped.
-const SUPPORT_OLD_HANDLER: bool = true;
+async fn update_work_cycle(am: &AnnMine, chan: &mut tokio::sync::broadcast::Receiver<PoolUpdate>) {
+    let update = if let Ok(x) = chan.recv().await {
+        x
+    } else {
+        info!("Unable to get data from chan");
+        util::sleep_ms(5_000).await;
+        return;
+    };
+    let ann_target = if let Some(ann_target) = update.conf.ann_target {
+        ann_target
+    } else {
+        info!("Pool did not provide ann_target, buggy pool");
+        util::sleep_ms(5_000).await;
+        return;
+    };
+    let mut m = am.m.lock().await;
+    let mut top = 0;
+    for bi in update.update_blocks {
+        if let Some(rw) = m.recent_work[(bi.header.height as usize) % RECENT_WORK_BUF].as_ref() {
+            if rw.header.height > bi.header.height {
+                // Old
+                return;
+            }
+        }
+        top = max(bi.header.height, top);
+        m.recent_work[(bi.header.height as usize) % RECENT_WORK_BUF] = Some(bi);
+    }
+    m.currently_mining = max(m.currently_mining, top - update.conf.mine_old_anns as i32);
 
+    // We're synced to the tip, begin mining (or start mining new anns)
+    let job = if let Some(x) = m.recent_work[(m.currently_mining as usize) % RECENT_WORK_BUF] {
+        x
+    } else {
+        // We don't have the work yet
+        return;
+    };
+    match m.send_handlers.try_send(HandlersMsg {
+        urls: update.conf.submit_ann_urls,
+        parent_block_height: job.header.height,
+    }) {
+        Ok(_) => (),
+        Err(e) => info!("Error sending handler list, trying again later [{}]", e),
+    };
+
+    info!(
+        "Start mining with parent_block_height: [{} @ {}] old: [{}]",
+        hex::encode(job.header.hash),
+        job.header.height,
+        update.conf.mine_old_anns
+    );
+    // Reverse the parent block hash because hashes in bitcoin are always expressed backward
+    let mut rev_hash = job.header.hash;
+    rev_hash.reverse();
+    match annminer::start(
+        &am.miner,
+        rev_hash,
+        job.header.height,
+        ann_target,
+        job.sig_key,
+    ) {
+        Err(e) => warn!("Error starting annminer {}", e),
+        _ => (),
+    }
+}
 async fn update_work_loop(am: &AnnMine) {
     let mut chan = poolclient::update_chan(&am.pcli).await;
     loop {
-        let update = if let Ok(x) = chan.recv().await {
-            x
-        } else {
-            info!("Unable to get data from chan");
-            util::sleep_ms(5_000).await;
-            continue;
-        };
-        let pbh = update.work.height - 1;
-        let mut m = am.m.lock().await;
-        m.recent_work[(pbh as usize) % RECENT_WORK_BUF] = Some(WorkData {
-            signing_key: update.work.signing_key,
-            parent_block_hash: update.work.header.hash_prev_block,
-            parent_block_height: update.work.height - 1,
-            ann_target: update.work.ann_target,
-        });
-        if m.top_work_number > pbh {
-            info!("Old work");
-            continue;
-        }
-        m.top_work_number = pbh;
-        if update.work.height < update.conf.current_height {
-            // this is normal, it means we're syncing up old work
-            continue;
-        }
-
-        let mine_old = if SUPPORT_OLD_HANDLER {
-            if update.conf.mine_old_anns > 1 {
-                update.conf.mine_old_anns - 2
-            } else {
-                0
-            }
-        } else {
-            update.conf.mine_old_anns
-        } as i32;
-
-        // We're synced to the tip, begin mining (or start mining new anns)
-        let job = if let Some(x) = m.recent_work[((pbh - mine_old) as usize) % RECENT_WORK_BUF] {
-            x
-        } else {
-            // We don't have the old work yet
-            continue;
-        };
-        match m.send_handlers.try_send(HandlersMsg {
-            urls: update.conf.submit_ann_urls,
-            parent_block_height: job.parent_block_height,
-        }) {
-            Ok(_) => (),
-            Err(e) => info!("Error sending handler list, trying again later [{}]", e),
-        };
-
-        let signing_key = if util::is_zero(&job.signing_key) {
-            None
-        } else {
-            Some(&job.signing_key[..])
-        };
-        debug!(
-            "Start mining with parent_block_height: [{}] top: [{}] old: [{}]",
-            job.parent_block_height, pbh, mine_old
-        );
-        match annminer::start(
-            &am.miner,
-            &job.parent_block_hash[..],
-            job.parent_block_height,
-            job.ann_target,
-            signing_key,
-        ) {
-            Err(e) => warn!("Error starting annminer {}", e),
-            _ => (),
-        }
+        update_work_cycle(am, &mut chan).await;
     }
 }
 
@@ -505,6 +493,7 @@ async fn uploader_loop(am: &AnnMine) {
 }
 
 pub async fn start(am: &AnnMine) -> Result<()> {
+    poolclient::start(&am.pcli).await;
     packetcrypt_util::async_spawn!(am, {
         update_work_loop(&am).await;
     });

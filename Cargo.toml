@@ -20,12 +20,13 @@ packetcrypt-sys = { version = "0.3", path = "packetcrypt-sys" }
 packetcrypt-util = { version = "0.3", path = "packetcrypt-util" }
 packetcrypt-pool = { version = "0.3", path = "packetcrypt-pool" }
 packetcrypt-annmine = { version = "0.3", path = "packetcrypt-annmine" }
+# packetcrypt-blkmine = { version = "0.3", path = "packetcrypt-blkmine" }
 packetcrypt-annhandler = { version = "0.3", path = "packetcrypt-annhandler" }
 crossbeam-channel = "0.4"
 log = "0.4"
 clap = "2.33"
 num_cpus = "1.13"
-leak-detect-allocator = { version = "0.1", git = "https://github.com/cjdelisle/leak-detect-allocator", rev = "627fdf89645f18ac35dabd7dfbd7d5a0357da8a2", optional = true }
+leak-detect-allocator = { version = "0.1", git = "https://github.com/cjdelisle/leak-detect-allocator", rev = "f8bcc56fdeb5ef74ed228e41fd6195dd2f368a90", optional = true }
 
 [features]
 leak_detect = ["leak-detect-allocator"]

@@ -25,6 +25,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1fd36ffbb1fb7c834eac128ea8d0e310c5aeb635548f9d58861e1308d46e71c"
 
 [[package]]
+name = "array-init"
+version = "0.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23589ecb866b460d3a0f1278834750268c607e8e28a1b982c907219f3178cd72"
+dependencies = [
+ "nodrop",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -658,8 +667,8 @@ checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
 name = "leak-detect-allocator"
-version = "0.1.1"
-source = "git+https://github.com/cjdelisle/leak-detect-allocator?rev=627fdf89645f18ac35dabd7dfbd7d5a0357da8a2#627fdf89645f18ac35dabd7dfbd7d5a0357da8a2"
+version = "0.1.2"
+source = "git+https://github.com/cjdelisle/leak-detect-allocator?rev=f8bcc56fdeb5ef74ed228e41fd6195dd2f368a90#f8bcc56fdeb5ef74ed228e41fd6195dd2f368a90"
 dependencies = [
  "backtrace",
  "heapless",
@@ -781,6 +790,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "nodrop"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
+
+[[package]]
 name = "num-bigint"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -883,6 +898,7 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "bytes",
+ "hex",
  "log",
  "packetcrypt-sys",
  "packetcrypt-util",
@@ -927,12 +943,14 @@ dependencies = [
  "bytes",
  "crossbeam-channel",
  "env_logger",
+ "hex",
  "jemallocator",
  "log",
  "rand",
  "regex",
  "reqwest",
  "serde",
+ "serde-hex",
  "serde_json",
  "sha2",
  "tokio",
@@ -1146,6 +1164,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-hex"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca37e3e4d1b39afd7ff11ee4e947efae85adfddf4841787bfa47c470e96dc26d"
+dependencies = [
+ "array-init",
+ "serde",
+ "smallvec",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.116"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1218,6 +1247,15 @@ name = "slab"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c111b5bd5695e56cffe5129854aa230b39c93a305372fdbb2668ca2394eea9f8"
+
+[[package]]
+name = "smallvec"
+version = "0.6.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7b0758c52e15a8b5e3691eae6cc559f08eee9406e548a4477ba4e67770a82b6"
+dependencies = [
+ "maybe-uninit",
+]
 
 [[package]]
 name = "socket2"

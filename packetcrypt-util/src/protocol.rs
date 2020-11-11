@@ -2,6 +2,7 @@
 use anyhow::{bail, Result};
 use bytes::{Buf, Bytes};
 use serde::{Deserialize, Serialize};
+use serde_hex::{SerHex, SerHexOpt, StrictPfx};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -54,6 +55,9 @@ pub struct AnnPostReply {
 #[derive(Deserialize, Debug, Clone, Default, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MasterConf {
+    #[serde(with = "SerHexOpt::<StrictPfx>")]
+    pub tip_hash: Option<[u8; 32]>,
+
     pub current_height: i32,
     pub master_url: String,
     pub submit_ann_urls: Vec<String>,
@@ -64,6 +68,7 @@ pub struct MasterConf {
     pub soft_version: u32,
     pub ann_versions: Vec<u8>,
     pub mine_old_anns: u32,
+    pub ann_target: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -85,6 +90,34 @@ pub struct Work {
     pub height: i32,
     pub coinbase_no_witness: Bytes,
     pub coinbase_merkle: Vec<Bytes>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockInfoHeader {
+    #[serde(with = "SerHex::<StrictPfx>")]
+    pub hash: [u8; 32],
+    pub height: i32,
+    pub version: u32,
+    #[serde(with = "SerHex::<StrictPfx>")]
+    pub version_hex: [u8; 4],
+    #[serde(with = "SerHex::<StrictPfx>")]
+    pub merkleroot: [u8; 32],
+    pub time: u32,
+    pub nonce: u32,
+    #[serde(with = "SerHex::<StrictPfx>")]
+    pub bits: [u8; 4],
+    pub difficulty: f64,
+    #[serde(with = "SerHex::<StrictPfx>")]
+    pub previousblockhash: [u8; 32],
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockInfo {
+    pub header: BlockInfoHeader,
+    #[serde(with = "SerHexOpt::<StrictPfx>")]
+    pub sig_key: Option<[u8; 32]>,
 }
 
 pub fn blockheader_decode(out: &mut BlockHeader, b: &mut Bytes) -> Result<()> {

@@ -8,7 +8,7 @@ use packetcrypt_pool::paymakerclient::{self, PaymakerClient};
 use packetcrypt_pool::poolcfg::AnnHandlerCfg;
 use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
-use packetcrypt_util::protocol::{AnnPostReply, AnnsEvent, IndexFile};
+use packetcrypt_util::protocol::{AnnPostReply, AnnsEvent, BlockInfo, IndexFile, MasterConf};
 use packetcrypt_util::{hash, util};
 use regex::Regex;
 use std::cmp::{max, min};
@@ -129,7 +129,7 @@ fn hash_num_ok(pnr: &AnnPostMeta, ann: &PacketCryptAnn, dedup: u64, conf: &Confi
             debug!("zero content hash sver 2, failing the ann");
             false
         } else {
-            true
+            (ann.hard_nonce() as usize % conf.handler_count) == conf.handler_num
         }
     } else {
         (ann.hard_nonce() as usize % conf.handler_count) == conf.handler_num
@@ -150,9 +150,15 @@ fn validate_anns(
             bail!("empty ann entry");
         };
         let unsigned = util::is_zero(ann.signing_key());
-        if unsigned && conf.signing_key != ann.signing_key() {
-            bail!("wrong signing key");
-        } else if conf.parent_block_height != ann.parent_block_height() {
+        if unsigned {
+        } else if let Some(sk) = conf.signing_key {
+            if sk != ann.signing_key() {
+                bail!("wrong signing key");
+            }
+        } else {
+            bail!("unexpected signed ann");
+        }
+        if conf.parent_block_height != ann.parent_block_height() {
             bail!(
                 "wrong parent block height, want {} got {}",
                 conf.parent_block_height,
@@ -168,8 +174,12 @@ fn validate_anns(
             bail!("unsupported ann version");
         } else if (dedup.hash as u8 ^ w.random) < w.global.skip_check_chance {
             // fallthrough
-        } else if let Err(x) = check_ann(ann, &conf.parent_block_hash, &mut w.vctx) {
-            bail!("check_ann() -> {}", x);
+        } else {
+            let mut pbh = conf.parent_block_hash;
+            pbh.reverse();
+            if let Err(x) = check_ann(ann, &pbh, &mut w.vctx) {
+                bail!("check_ann() -> {}", x);
+            }
         }
         res.unsigned += unsigned as u32;
         // higher number represents less work
@@ -298,18 +308,17 @@ fn process_batch(
     Ok(())
 }
 
-fn process_update(w: &mut Worker, upd: PoolUpdate) {
+fn process_update(w: &mut Worker, conf: &MasterConf, bi: BlockInfo) {
     let g = w.global.clone();
-    // note: this work.height is related to the *previous* block, so if we
-    // take this height then we will have a mismatching hash, so we take height - 1
-    let hash_height = upd.work.height - 1;
-    let mut output = get_output(&g, hash_height).lock().unwrap();
-    if hash_height != output.config.parent_block_height {
-        if hash_height < output.config.parent_block_height {
+    // note: this conf.current_height is the next height to be made, so we subtract 1
+    let mut output = get_output(&g, bi.header.height).lock().unwrap();
+    if bi.header.height != output.config.parent_block_height {
+        if bi.header.height < output.config.parent_block_height {
             info!(
                 "Ignoring old work: height: {} because we already have {}",
-                hash_height, output.config.parent_block_height
+                bi.header.height, output.config.parent_block_height
             );
+            return;
         }
         let out = &mut *output;
         while out.out.len() > 0 {
@@ -317,19 +326,18 @@ fn process_update(w: &mut Worker, upd: PoolUpdate) {
         }
         out.dedup_tbl.clear();
         out.time_of_last_write = util::now_ms();
-        debug!("New work: height: {}", upd.work.height);
-    } else if upd.work.header.hash_prev_block != output.config.parent_block_hash {
+        debug!("New work: height: {}", bi.header.height);
+    } else if bi.header.hash != output.config.parent_block_hash {
         info!(
             "Change of parent block {} -> {}",
-            hex::encode(upd.work.header.hash_prev_block),
+            hex::encode(bi.header.hash),
             hex::encode(output.config.parent_block_hash)
         );
         output.out.clear();
         output.dedup_tbl.clear();
         output.time_of_last_write = util::now_ms();
     }
-    output.config.handler_num = if let Some(x) = upd
-        .conf
+    output.config.handler_num = if let Some(x) = conf
         .submit_ann_urls
         .iter()
         .position(|u| u == &g.cfg.public_url)
@@ -340,15 +348,15 @@ fn process_update(w: &mut Worker, upd: PoolUpdate) {
             "This annhandler's URL {} is not in the list from the pool",
             &g.cfg.public_url
         );
-        output.config.parent_block_height = 0;
+        output.config.parent_block_height = -1;
         return;
     };
-    output.config.handler_count = upd.conf.submit_ann_urls.len();
-    output.config.ann_version = *upd.conf.ann_versions.get(0).unwrap_or(&1);
-    output.config.signing_key = upd.work.signing_key;
-    output.config.parent_block_hash = upd.work.header.hash_prev_block;
-    output.config.min_work = upd.work.ann_target;
-    output.config.parent_block_height = hash_height;
+    output.config.handler_count = conf.submit_ann_urls.len();
+    output.config.ann_version = *conf.ann_versions.get(0).unwrap_or(&1);
+    output.config.signing_key = bi.sig_key;
+    output.config.parent_block_hash = bi.header.hash;
+    output.config.min_work = conf.ann_target.unwrap();
+    output.config.parent_block_height = bi.header.height;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -364,7 +372,7 @@ struct Config {
 
     // Refuse any ann signed with a different key, consider
     // anns unsigned if they don't bear any signature at all
-    signing_key: [u8; 32],
+    signing_key: Option<[u8; 32]>,
 
     // Hash of the parent block to expect for anns at this height
     parent_block_hash: [u8; 32],
@@ -483,7 +491,9 @@ fn worker_loop(g: Arc<Global>) {
         loop {
             match pc_update_recv.try_recv() {
                 Ok(upd) => {
-                    process_update(&mut w, upd);
+                    for bi in upd.update_blocks {
+                        process_update(&mut w, &upd.conf, bi);
+                    }
                     continue;
                 }
                 Err(TryRecvError::Empty) => {

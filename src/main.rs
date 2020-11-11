@@ -4,6 +4,7 @@ use clap::{App, Arg, SubCommand};
 use log::warn;
 use packetcrypt_annhandler::annhandler;
 use packetcrypt_annmine::annmine;
+//use packetcrypt_blkmine::blkmine;
 use packetcrypt_pool::{paymakerclient, poolcfg};
 use packetcrypt_util::{poolclient, util};
 use tokio::signal::unix::{signal, SignalKind};
@@ -61,7 +62,7 @@ async fn ah_main(config: &str, handler: &str) -> Result<()> {
     };
     let ah_workdir = poolcfg::get_ah_workdir(&cfg.root_workdir, &hconf);
 
-    let pc = poolclient::new(&cfg.master_url);
+    let pc = poolclient::new(&cfg.master_url, 6);
     poolclient::start(&pc).await;
 
     let pmc = paymakerclient::new(
@@ -84,6 +85,22 @@ async fn ah_main(config: &str, handler: &str) -> Result<()> {
 
 const DEFAULT_ADDR: &str = "pkt1q6hqsqhqdgqfd8t3xwgceulu7k9d9w5t2amath0qxyfjlvl3s3u4sjza2g2";
 
+fn warn_if_addr_default(payment_addr: &str) {
+    if payment_addr == DEFAULT_ADDR {
+        warn!(
+            "--paymentaddr was not specified, coins will be mined for {}",
+            DEFAULT_ADDR
+        );
+    }
+}
+
+// async fn blk_main(ba: blkmine::BlkArgs) -> Result<()> {
+//     warn_if_addr_default(&ba.payment_addr);
+//     let bm = blkmine::new(ba).await?;
+//     blkmine::start(&bm).await?;
+//     util::sleep_forever().await
+// }
+
 async fn ann_main(
     pool_master: &str,
     threads: usize,
@@ -91,24 +108,15 @@ async fn ann_main(
     uploads: usize,
     upload_timeout: usize,
 ) -> Result<()> {
-    if payment_addr == DEFAULT_ADDR {
-        warn!(
-            "--paymentaddr was not specified, coins will be mined for {}",
-            DEFAULT_ADDR
-        );
-    }
-    let pc = poolclient::new(pool_master);
-    poolclient::start(&pc).await;
-    let am = annmine::new(
-        &pc,
-        annmine::AnnMineCfg {
-            miner_id: util::rand_u32(),
-            workers: threads,
-            uploaders: uploads,
-            pay_to: String::from(payment_addr),
-            upload_timeout,
-        },
-    )
+    warn_if_addr_default(payment_addr);
+    let am = annmine::new(annmine::AnnMineCfg {
+        master_url: pool_master.to_string(),
+        miner_id: util::rand_u32(),
+        workers: threads,
+        uploaders: uploads,
+        pay_to: String::from(payment_addr),
+        upload_timeout,
+    })
     .await?;
     annmine::start(&am).await?;
 
@@ -212,6 +220,55 @@ async fn main() -> Result<()> {
                         .index(1),
                 ),
         )
+        /*.subcommand(
+            SubCommand::with_name("blk")
+                .about("Run block miner")
+                .arg(
+                    Arg::with_name("paymentaddr")
+                        .short("p")
+                        .long("paymentaddr")
+                        .help("Address to request payment for mining")
+                        .default_value(DEFAULT_ADDR),
+                )
+                .arg(
+                    Arg::with_name("threads")
+                        .short("t")
+                        .long("threads")
+                        .help("Number of threads to mine with")
+                        .default_value(&cpus_str)
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("uploads")
+                        .short("u")
+                        .long("uploads")
+                        .help("Max concurrent uploads")
+                        .default_value("20")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("downloads")
+                        .short("d")
+                        .long("downloads")
+                        .help("Max concurrent downloads (per handler)")
+                        .default_value("30")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("workdir")
+                        .short("w")
+                        .long("workdir")
+                        .help("Work directory")
+                        .default_value("./datastore/blkmine")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("pool")
+                        .help("The pool server to use")
+                        .required(true)
+                        .index(1),
+                ),
+        )*/
         .get_matches();
 
     util::setup_env(matches.occurrences_of("v")).await?;
@@ -228,6 +285,17 @@ async fn main() -> Result<()> {
         let config = get_str!(ah, "config");
         let handler = get_str!(ah, "handler");
         ah_main(config, handler).await?;
-    }
+    } /* else if let Some(blk) = matches.subcommand_matches("blk") {
+          blk_main(blkmine::BlkArgs {
+              miner_id: util::rand_u32(),
+              payment_addr: get_str!(blk, "paymentaddr").into(),
+              threads: get_usize!(blk, "threads"),
+              uploads: get_usize!(blk, "uploads"),
+              downloads: get_usize!(blk, "downloads"),
+              workdir: get_str!(blk, "workdir").into(),
+              pool_master: get_str!(blk, "pool").into(),
+          })
+          .await?;
+      }*/
     Ok(())
 }

@@ -4,7 +4,6 @@ use bytes::Buf;
 use log::warn;
 use packetcrypt_sys::PacketCryptAnn;
 use packetcrypt_util::{hash, util};
-use std::convert::TryInto;
 use std::os::raw::c_int;
 use std::os::raw::c_void;
 use std::sync::atomic::AtomicPtr;
@@ -61,29 +60,21 @@ pub fn new(miner_id: u32, workers: usize) -> (AnnMiner, UnboundedReceiver<AnnRes
 
 const ANN_VERSION: c_int = 1;
 
-// pub fn stop(miner: &AnnMiner) {
-//     unsafe { packetcrypt_sys::AnnMiner_stop(*miner.miner.lock().unwrap().get_mut()) };
-// }
-
-// pub fn anns_per_second(miner: &AnnMiner) -> f64 {
-//     unsafe { packetcrypt_sys::AnnMiner_getAnnsPerSecond(*miner.miner.lock().unwrap().get_mut()) }
-// }
-
 pub fn start(
     miner: &AnnMiner,
-    parent_block_hash: &[u8],
+    parent_block_hash: [u8; 32],
     parent_block_height: i32,
     target: u32,
-    signing_key: Option<&[u8]>,
+    signing_key: Option<[u8; 32]>,
 ) -> Result<()> {
     let mut req = packetcrypt_sys::AnnMiner_Request_t {
         contentLen: 0,
         contentType: 0,
         maxAnnsPerSecond: 0, // 0 is unlimited
-        parentBlockHash: parent_block_hash.try_into()?,
+        parentBlockHash: parent_block_hash,
         parentBlockHeight: parent_block_height as u32,
         signingKey: if let Some(x) = signing_key {
-            x.try_into()?
+            x
         } else {
             [0; 32]
         },
