@@ -24,7 +24,7 @@ pub struct PoolClientS {
 pub type PoolClient = Arc<PoolClientS>;
 
 pub fn new(url: &str, history_depth: i32) -> PoolClient {
-    let (tx, _) = broadcast::channel::<PoolUpdate>(3);
+    let (tx, _) = broadcast::channel::<PoolUpdate>(32);
     Arc::new(PoolClientS {
         m: RwLock::new(PoolClientM {
             mc: None,

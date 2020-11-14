@@ -63,7 +63,6 @@ async fn ah_main(config: &str, handler: &str) -> Result<()> {
     let ah_workdir = poolcfg::get_ah_workdir(&cfg.root_workdir, &hconf);
 
     let pc = poolclient::new(&cfg.master_url, 6);
-    poolclient::start(&pc).await;
 
     let pmc = paymakerclient::new(
         &pc,
@@ -78,6 +77,8 @@ async fn ah_main(config: &str, handler: &str) -> Result<()> {
 
     let ah = annhandler::new(&pc, &pmc, ah_workdir, hconf).await?;
     annhandler::start(&ah).await;
+
+    poolclient::start(&pc).await;
 
     // All of the threads and jobs are setup, put the main thread to sleep
     util::sleep_forever().await
