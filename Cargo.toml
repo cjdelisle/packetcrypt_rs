@@ -20,7 +20,7 @@ packetcrypt-sys = { version = "0.3", path = "packetcrypt-sys" }
 packetcrypt-util = { version = "0.3", path = "packetcrypt-util" }
 packetcrypt-pool = { version = "0.3", path = "packetcrypt-pool" }
 packetcrypt-annmine = { version = "0.3", path = "packetcrypt-annmine" }
-# packetcrypt-blkmine = { version = "0.3", path = "packetcrypt-blkmine" }
+packetcrypt-blkmine = { version = "0.3", path = "packetcrypt-blkmine" }
 packetcrypt-annhandler = { version = "0.3", path = "packetcrypt-annhandler" }
 crossbeam-channel = "0.4"
 log = "0.4"

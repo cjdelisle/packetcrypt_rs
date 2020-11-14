@@ -4,7 +4,7 @@ use clap::{App, Arg, SubCommand};
 use log::warn;
 use packetcrypt_annhandler::annhandler;
 use packetcrypt_annmine::annmine;
-//use packetcrypt_blkmine::blkmine;
+use packetcrypt_blkmine::blkmine;
 use packetcrypt_pool::{paymakerclient, poolcfg};
 use packetcrypt_util::{poolclient, util};
 use tokio::signal::unix::{signal, SignalKind};
@@ -94,12 +94,12 @@ fn warn_if_addr_default(payment_addr: &str) {
     }
 }
 
-// async fn blk_main(ba: blkmine::BlkArgs) -> Result<()> {
-//     warn_if_addr_default(&ba.payment_addr);
-//     let bm = blkmine::new(ba).await?;
-//     blkmine::start(&bm).await?;
-//     util::sleep_forever().await
-// }
+async fn blk_main(ba: blkmine::BlkArgs) -> Result<()> {
+    warn_if_addr_default(&ba.payment_addr);
+    let bm = blkmine::new(ba).await?;
+    blkmine::start(&bm).await?;
+    util::sleep_forever().await
+}
 
 async fn ann_main(
     pool_master: &str,
@@ -220,7 +220,7 @@ async fn main() -> Result<()> {
                         .index(1),
                 ),
         )
-        /*.subcommand(
+        .subcommand(
             SubCommand::with_name("blk")
                 .about("Run block miner")
                 .arg(
@@ -247,9 +247,9 @@ async fn main() -> Result<()> {
                         .takes_value(true),
                 )
                 .arg(
-                    Arg::with_name("downloads")
+                    Arg::with_name("downloaders")
                         .short("d")
-                        .long("downloads")
+                        .long("downloaders")
                         .help("Max concurrent downloads (per handler)")
                         .default_value("30")
                         .takes_value(true),
@@ -268,7 +268,7 @@ async fn main() -> Result<()> {
                         .required(true)
                         .index(1),
                 ),
-        )*/
+        )
         .get_matches();
 
     util::setup_env(matches.occurrences_of("v")).await?;
@@ -285,17 +285,17 @@ async fn main() -> Result<()> {
         let config = get_str!(ah, "config");
         let handler = get_str!(ah, "handler");
         ah_main(config, handler).await?;
-    } /* else if let Some(blk) = matches.subcommand_matches("blk") {
-          blk_main(blkmine::BlkArgs {
-              miner_id: util::rand_u32(),
-              payment_addr: get_str!(blk, "paymentaddr").into(),
-              threads: get_usize!(blk, "threads"),
-              uploads: get_usize!(blk, "uploads"),
-              downloads: get_usize!(blk, "downloads"),
-              workdir: get_str!(blk, "workdir").into(),
-              pool_master: get_str!(blk, "pool").into(),
-          })
-          .await?;
-      }*/
+    } else if let Some(blk) = matches.subcommand_matches("blk") {
+        blk_main(blkmine::BlkArgs {
+            miner_id: util::rand_u32(),
+            payment_addr: get_str!(blk, "paymentaddr").into(),
+            threads: get_usize!(blk, "threads"),
+            uploads: get_usize!(blk, "uploads"),
+            downloader_count: get_usize!(blk, "downloaders"),
+            workdir: get_str!(blk, "workdir").into(),
+            pool_master: get_str!(blk, "pool").into(),
+        })
+        .await?;
+    }
     Ok(())
 }

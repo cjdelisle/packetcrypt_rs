@@ -72,6 +72,7 @@ pub struct MasterConf {
 }
 
 #[derive(Debug, Clone, Default)]
+#[repr(C)]
 pub struct BlockHeader {
     pub version: u32,
     pub hash_prev_block: [u8; 32],
@@ -110,6 +111,13 @@ pub struct BlockInfoHeader {
     pub difficulty: f64,
     #[serde(with = "SerHex::<StrictPfx>")]
     pub previousblockhash: [u8; 32],
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnIndex {
+    pub highest_ann_file: i64,
+    pub files: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, Copy)]

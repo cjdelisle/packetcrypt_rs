@@ -10,3 +10,8 @@ edition = "2018"
 packetcrypt-util = { version = "0.3", path = "../packetcrypt-util" }
 tokio = { version = "0.2", features = ["macros","sync","fs","signal"], default-features = false }
 anyhow = "1.0"
+log = "0.4"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"], default-features = false }
+mmap = "0.1"
+bytes = "0.5"
