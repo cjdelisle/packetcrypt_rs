@@ -944,7 +944,6 @@ dependencies = [
  "crossbeam-channel",
  "env_logger",
  "hex",
- "jemallocator",
  "log",
  "rand",
  "regex",
