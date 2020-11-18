@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use anyhow::{bail, Result};
+use log::{debug, error, info};
 use mmap::MapOption::{MapReadable, MapWritable};
 use mmap::MemoryMap;
 use packetcrypt_util::protocol;
@@ -15,7 +16,9 @@ fn mmap(max_anns: usize) -> Result<MemoryMap> {
     fallback_mmap(max_anns)
 }
 
+#[cfg(target_os = "linux")]
 const MB: usize = 1024 * 1024;
+#[cfg(target_os = "linux")]
 const GB: usize = 1024 * MB;
 
 #[cfg(target_os = "linux")]
@@ -52,14 +55,16 @@ pub struct Ann {
     pub data: [u8; 1024],
 }
 
+#[repr(C)]
 pub struct MineRes {
     pub high_nonce: u32,
     pub low_nonce: u32,
     pub ann_nums: [u32; 4],
 }
 
+#[repr(C)]
 pub struct WorkInfo {
-    pub header: protocol::BlockHeader,
+    pub header: [u8; 80],
     pub results: [MineRes; NUM_MINER_RESULTS],
 }
 
@@ -68,7 +73,7 @@ pub struct BlkSlab {
     pub max_anns: usize,
     work_info: &'static mut [WorkInfo],
     anns: &'static mut [Ann],
-    index_table: &'static [u32],
+    index_table: &'static mut [u32],
 }
 unsafe impl Sync for BlkSlab {}
 unsafe impl Send for BlkSlab {}
@@ -78,13 +83,19 @@ fn alloc_slice<'a, T>(ptr: &mut usize, len: &mut usize, count: usize) -> Result<
     if *len < l {
         bail!("Not enough space, need {} have {}", l, *len);
     }
-    let out = std::slice::from_raw_parts_mut(*ptr as *mut T, count);
+    let out = unsafe { std::slice::from_raw_parts_mut(*ptr as *mut T, count) };
     *len -= l;
     *ptr += l;
     Ok(out)
 }
 
-pub fn put_ann(bs: &BlkSlab, ann: &[u8], index: u32) {}
+pub fn put_ann(bs: &BlkSlab, ann: &[u8], index: u32) {
+    error!("put_ann() called, not yet implemented");
+}
+
+pub fn put_work(bs: &BlkSlab, blk_hdr: &[u8], index_tbl: &[u32]) {
+    error!("put_ann() called, not yet implemented");
+}
 
 pub fn alloc(max_mem: usize) -> Result<BlkSlab> {
     let annbuf = mmap(max_mem)?;

@@ -9,6 +9,10 @@ pub fn compress_sha256(buf: &[u8]) -> [u8; 32] {
     s.finalize().try_into().unwrap()
 }
 
+pub fn compress_dsha256(buf: &[u8]) -> [u8; 32] {
+    compress_sha256(&compress_sha256(buf)[..])
+}
+
 pub fn compress32(buf: &[u8]) -> [u8; 32] {
     Params::new()
         .hash_length(32)

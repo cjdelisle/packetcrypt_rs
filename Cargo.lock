@@ -936,8 +936,10 @@ version = "0.3.1"
 dependencies = [
  "anyhow",
  "bytes",
+ "hex-literal",
  "log",
  "mmap",
+ "packetcrypt-sys",
  "packetcrypt-util",
  "serde",
  "serde_json",

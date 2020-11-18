@@ -1,0 +1,305 @@
+/**
+ * (C) Copyright 2019
+ * Caleb James DeLisle
+ *
+ * SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
+ *
+ * This is a Library Header File, it is intended to be included in other projects without
+ * affecting the license of those projects.
+ */
+#include "packetcrypt/PacketCrypt.h"
+#include "packetcrypt/BlockMine.h"
+#include "CryptoCycle.h"
+#include "Time.h"
+#include "Work.h"
+#include "Hash.h"
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <sys/mman.h>
+#include <stddef.h>
+#include <pthread.h>
+#include <signal.h>
+#include <assert.h>
+#include <stdlib.h>
+
+typedef struct HeaderAndIndex_s {
+    PacketCrypt_BlockHeader_t header;
+    uint32_t index[0];
+} HeaderAndIndex_t;
+
+typedef struct Worker_s Worker_t;
+
+// Fields shared between threads
+typedef struct Global_s {
+    // Altered while mining, but should not be altering the *same* anns
+    // It's the job of the caller to know which slots are taken and which aren't.
+    PacketCrypt_Announce_t* anns;
+
+    // Altered only when workers are stopped
+    HeaderAndIndex_t* hai;
+    uint32_t annCount;
+    uint32_t effectiveTarget;
+
+    // Synchronization
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+
+    // Set once and left alone
+    BlockMine_Callback_t cb;
+    void* cbc;
+} Global_t;
+
+typedef struct BlockMine_pvt_s {
+    BlockMine_t pub;
+    uint64_t maxmem;
+
+    Worker_t* workers;
+    int numWorkers;
+
+    Global_t g;
+} BlockMine_pvt_t;
+
+#define TRY_MAP(maxmem, flags) do { \
+    void* ptr = mmap(NULL, maxmem, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|flags, -1, 0); \
+    if (ptr != MAP_FAILED) { return ptr; } \
+} while (0)
+
+static void* mapBuf(uint64_t maxmem) {
+    #ifdef MAP_HUGETLB
+        #ifdef MAP_HUGE_1GB
+            TRY_MAP(maxmem, MAP_HUGETLB|MAP_HUGE_1GB);
+        #endif
+        #ifdef MAP_HUGE_2MB
+            TRY_MAP(maxmem, MAP_HUGETLB|MAP_HUGE_2MB);
+        #endif
+    #endif
+    TRY_MAP(maxmem, 0);
+    return MAP_FAILED;
+}
+
+enum ThreadState {
+    ThreadState_STOPPED,
+    ThreadState_RUNNING,
+    ThreadState_SHUTDOWN,
+};
+
+struct Worker_s {
+    CryptoCycle_State_t pcState;
+
+    Global_t* g;
+    pthread_t thread;
+
+    uint32_t nonceId;
+    uint32_t lowNonce;
+
+    sig_atomic_t hashesPerSecond;
+
+    enum ThreadState reqState;
+    enum ThreadState workerState;
+};
+
+#define HASHES_PER_CYCLE 2000
+
+// Worker
+static void mine(Worker_t* w)
+{
+    Time t;
+    Time_BEGIN(t);
+
+    PacketCrypt_BlockHeader_t hdr;
+    Buf_OBJCPY(&hdr, &w->g->hai->header);
+    hdr.nonce = w->nonceId;
+
+    uint32_t lowNonce = w->lowNonce;
+
+    for (;;) {
+        // if (hdr.timeSeconds != (uint32_t) t.tv0.tv_sec && !w->bm->beDeterministic) {
+        //     lowNonce = 0;
+        //     hdr.timeSeconds = (uint32_t) t.tv0.tv_sec;
+        // }
+        Buf32_t hdrHash;
+        Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
+
+        for (int i = 0; i < HASHES_PER_CYCLE; i++) {
+            CryptoCycle_init(&w->pcState, &hdrHash, ++lowNonce);
+            //MineResult_t res;
+            BlockMine_Res_t res;
+            for (int j = 0; j < 4; j++) {
+                uint64_t x = res.ann_nums[j] = CryptoCycle_getItemNo(&w->pcState) % w->g->annCount;
+                CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &w->g->anns[x];
+                assert(CryptoCycle_update(&w->pcState, it));
+            }
+            CryptoCycle_smul(&w->pcState);
+            CryptoCycle_final(&w->pcState);
+            if (!Work_check(w->pcState.bytes, w->g->effectiveTarget)) { continue; }
+            res.low_nonce = lowNonce;
+            res.high_nonce = hdr.nonce;
+            //Buf_OBJCPY(&res.hdr, &hdr);
+            if (w->g->cb) {
+                w->g->cb(&res, w->g->cbc);
+            }
+            w->lowNonce = lowNonce;
+            return;
+        }
+        Time_END(t);
+        w->hashesPerSecond = ((HASHES_PER_CYCLE * 1024) / (Time_MICROS(t) / 1024));
+        Time_NEXT(t);
+        if (w->reqState != ThreadState_RUNNING) {
+            w->lowNonce = lowNonce;
+            return;
+        }
+    }
+}
+
+// Worker
+static void* thread(void* vWorker)
+{
+    //fprintf(stderr, "Thread [%ld] startup\n", (long)pthread_self());
+    Worker_t* w = vWorker;
+    pthread_mutex_lock(&w->g->lock);
+    for (;;) {
+        enum ThreadState rs = w->reqState;
+        w->workerState = rs;
+        switch (rs) {
+            case ThreadState_RUNNING: {
+                pthread_mutex_unlock(&w->g->lock);
+                mine(w);
+                pthread_mutex_lock(&w->g->lock);
+                break;
+            }
+            case ThreadState_STOPPED: {
+                pthread_cond_wait(&w->g->cond, &w->g->lock);
+                break;
+            }
+            case ThreadState_SHUTDOWN: {
+                pthread_mutex_unlock(&w->g->lock);
+                //fprintf(stderr, "Thread [%ld] end\n", (long)pthread_self());
+                return NULL;
+            }
+        }
+    }
+}
+
+// Main thread
+BlockMine_t* BlockMine_create(uint64_t maxmem, int threads, BlockMine_Callback_t cb, void* cbc) {
+    void* ptr = mapBuf(maxmem);
+    if (ptr == MAP_FAILED) { return NULL; }
+    BlockMine_pvt_t* out = calloc(sizeof(BlockMine_pvt_t), 1);
+    Worker_t* workers = calloc(sizeof(Worker_t), threads);
+    if (!out || !workers) {
+        assert(!munmap(ptr, maxmem));
+        free(out);
+        free(workers);
+        return NULL;
+    }
+    uint64_t maxAnns = (maxmem - 80) / 1024;
+    while (maxAnns * 1024 + maxAnns * 4 + 80 > maxmem) {
+        // make room for the index
+        maxAnns--;
+    } 
+
+    out->pub.maxAnns = maxAnns;
+    out->maxmem = maxmem;
+    out->workers = workers;
+    out->numWorkers = threads;
+
+    out->g.anns = (PacketCrypt_Announce_t*) ptr;
+    out->g.hai = (HeaderAndIndex_t*) (&out->g.anns[maxAnns]);
+    // Lazy man's assertion
+    out->g.hai->index[maxAnns - 1] = 0;
+    out->g.annCount = 0; // set when we begin mining
+    out->g.effectiveTarget = 0; // set when we begin mining
+    assert(!pthread_mutex_init(&out->g.lock, NULL));
+    assert(!pthread_cond_init(&out->g.cond, NULL));
+    out->g.cb = cb;
+    out->g.cbc = cbc;
+
+    for (int i = 0; i < threads; i++) {
+        out->workers[i].g = &out->g;
+        out->workers[i].nonceId = i;
+        assert(!pthread_create(&out->workers[i].thread, NULL, thread, &out->workers[i]));
+    }
+
+    return &out->pub;
+}
+
+// Main thread
+static void waitState(BlockMine_pvt_t* ctx, enum ThreadState desiredState) {
+    for (int i = 0; i < 100000; i++) {
+        enum ThreadState ts = desiredState;
+        pthread_mutex_lock(&ctx->g.lock);
+        for (int i = 0; i < ctx->numWorkers; i++) {
+            ts = ctx->workers[i].workerState;
+            if (ts != desiredState) { break; }
+        }
+        pthread_mutex_unlock(&ctx->g.lock);
+        if (ts == desiredState) {
+            return;
+        }
+        Time_nsleep(100000);
+    }
+    assert(0 && "threads did not stop in 10 secs");
+}
+
+// Main thread
+static void reqState(BlockMine_pvt_t* ctx, enum ThreadState desiredState) {
+    for (int i = 0; i < ctx->numWorkers; i++) {
+        ctx->workers[i].reqState = desiredState;
+    }
+}
+
+// Main thread
+void BlockMine_destroy(BlockMine_t* bm) {
+    BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
+    pthread_mutex_lock(&ctx->g.lock);
+    for (int i = 0; i < ctx->numWorkers; i++) {
+        ctx->workers[i].reqState = ThreadState_SHUTDOWN;
+    }
+    pthread_mutex_unlock(&ctx->g.lock);
+    pthread_cond_broadcast(&ctx->g.cond);
+    waitState(ctx, ThreadState_SHUTDOWN);
+    
+    assert(!pthread_cond_destroy(&ctx->g.cond));
+    assert(!pthread_mutex_destroy(&ctx->g.lock));
+    free(ctx->workers);
+    assert(!munmap(ctx->g.anns, ctx->maxmem));
+    free(ctx);
+}
+
+// Any thread can call this
+// But you must not specify an ann index which is currently being mined
+void BlockMine_updateAnn(const BlockMine_t* bm, uint32_t index, const PacketCrypt_Announce_t* ann)
+{
+    assert(index < bm->maxAnns);
+    BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
+    Buf_OBJCPY(&ctx->g.anns[index], ann);
+}
+
+// Any thread
+int64_t BlockMine_getHashesPerSecond(const BlockMine_t* bm) {
+    const BlockMine_pvt_t* ctx = (const BlockMine_pvt_t*) bm;
+    int64_t out = 0;
+    for (int i = 0; i < ctx->numWorkers; i++) {
+        out += ctx->workers[i].hashesPerSecond;
+    }
+    return out;
+}
+
+// Main thread
+void BlockMine_mine(BlockMine_t* bm,
+    const PacketCrypt_BlockHeader_t* header,
+    uint32_t annCount,
+    const uint32_t* annIndexes,
+    uint32_t effectiveTarget)
+{
+    BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
+    reqState(ctx, ThreadState_STOPPED);
+    waitState(ctx, ThreadState_STOPPED);
+    ctx->g.annCount = annCount;
+    ctx->g.effectiveTarget = effectiveTarget;
+    Buf_OBJCPY(&ctx->g.hai->header, header);
+    memcpy(ctx->g.hai->index, annIndexes, annCount * 4);
+    reqState(ctx, ThreadState_RUNNING);
+    pthread_cond_broadcast(&ctx->g.cond);
+}

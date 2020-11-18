@@ -2,7 +2,7 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-mod difficulty;
+pub mod difficulty;
 
 use std::convert::TryInto;
 
@@ -86,6 +86,15 @@ pub fn check_ann(
         _ => Err("UNKNOWN"),
     }
 }
+
+pub struct BlockMiner {
+    raw: *mut BlockMine_t,
+    capacity: u32,
+    size: u32,
+    root_hash: Option<[u8; 32]>,
+}
+unsafe impl Send for BlockMiner {}
+unsafe impl Sync for BlockMiner {}
 
 #[cfg(test)]
 mod tests {

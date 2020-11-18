@@ -134,9 +134,14 @@ macro_rules! get_str {
     };
 }
 macro_rules! get_usize {
-    ($m:ident, $s:expr) => {{
+    ($m:ident, $s:expr) => {
+        get_num!($m, $s, usize)
+    };
+}
+macro_rules! get_num {
+    ($m:ident, $s:expr, $n:ident) => {{
         let s = get_str!($m, $s);
-        if let Ok(u) = s.parse::<usize>() {
+        if let Ok(u) = s.parse::<$n>() {
             u
         } else {
             println!("Unable to parse argument {} as number [{}]", $s, s);
@@ -240,14 +245,6 @@ async fn main() -> Result<()> {
                         .takes_value(true),
                 )
                 .arg(
-                    Arg::with_name("uploads")
-                        .short("u")
-                        .long("uploads")
-                        .help("Max concurrent uploads")
-                        .default_value("20")
-                        .takes_value(true),
-                )
-                .arg(
                     Arg::with_name("downloaders")
                         .short("d")
                         .long("downloaders")
@@ -256,11 +253,19 @@ async fn main() -> Result<()> {
                         .takes_value(true),
                 )
                 .arg(
-                    Arg::with_name("workdir")
-                        .short("w")
-                        .long("workdir")
-                        .help("Work directory")
-                        .default_value("./datastore/blkmine")
+                    Arg::with_name("minfree")
+                        .short("m")
+                        .long("minfree")
+                        .help("Minimum fraction of free space to keep in work buffer")
+                        .default_value("0.1")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("memorysizemb")
+                        .short("b")
+                        .long("memorysizemb")
+                        .help("Size of memory work buffer in MB")
+                        .default_value("4096")
                         .takes_value(true),
                 )
                 .arg(
@@ -288,12 +293,11 @@ async fn main() -> Result<()> {
         ah_main(config, handler).await?;
     } else if let Some(blk) = matches.subcommand_matches("blk") {
         blk_main(blkmine::BlkArgs {
-            miner_id: util::rand_u32(),
+            max_mem: get_usize!(blk, "memorysizemb") * 1024 * 1024,
+            min_free_space: get_num!(blk, "minfree", f64),
             payment_addr: get_str!(blk, "paymentaddr").into(),
             threads: get_usize!(blk, "threads"),
-            uploads: get_usize!(blk, "uploads"),
             downloader_count: get_usize!(blk, "downloaders"),
-            workdir: get_str!(blk, "workdir").into(),
             pool_master: get_str!(blk, "pool").into(),
         })
         .await?;
