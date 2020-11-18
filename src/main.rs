@@ -9,7 +9,7 @@ use packetcrypt_pool::{paymakerclient, poolcfg};
 use packetcrypt_util::{poolclient, util};
 use tokio::signal::unix::{signal, SignalKind};
 
-#[cfg(not(feature = "leak_detect"))]
+#[cfg(feature = "jemalloc")]
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
