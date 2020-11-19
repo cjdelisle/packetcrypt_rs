@@ -7,9 +7,10 @@ use packetcrypt_annmine::annmine;
 use packetcrypt_blkmine::blkmine;
 use packetcrypt_pool::{paymakerclient, poolcfg};
 use packetcrypt_util::{poolclient, util};
+#[cfg(not(target_os = "windows"))]
 use tokio::signal::unix::{signal, SignalKind};
 
-#[cfg(not(feature = "leak_detect"))]
+#[cfg(feature = "jemalloc")]
 #[global_allocator]
 static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
@@ -38,6 +39,7 @@ async fn leak_detect() -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
 async fn exiter() -> Result<()> {
     let mut s = signal(SignalKind::user_defined2())?;
     tokio::spawn(async move {
@@ -45,6 +47,11 @@ async fn exiter() -> Result<()> {
         println!("Got SIGUSR2, calling process::exit()");
         std::process::exit(252);
     });
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+async fn exiter() -> Result<()> {
     Ok(())
 }
 
@@ -156,7 +163,7 @@ async fn main() -> Result<()> {
     exiter().await?;
     let cpus_str = format!("{}", num_cpus::get());
     let matches = App::new("packetcrypt")
-        .version("0.1.1")
+        .version("0.4.0")
         .author("Caleb James DeLisle <cjd@cjdns.fr>")
         .about("Bandwidth hard proof of work algorithm")
         .setting(clap::AppSettings::ArgRequiredElseHelp)
