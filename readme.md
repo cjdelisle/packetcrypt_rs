@@ -20,23 +20,26 @@ All of the others can be found in
 [the C PacketCrypt project](https://github.com/cjdelisle/PacketCrypt).
 
 ## Install
-* Install rust if you haven't, see: [rustup](https://rustup.rs/)
-* Install using cargo: `cargo install packetcrypt`
+First install rust if you haven't, see: [rustup](https://rustup.rs/)
+
+    git clone https://github.com/cjdelisle/packetcrypt_rs
+    cd packetcrypt_rs
+    cargo build --release
 
 ## Mine announcements
 
-* `packetcrypt ann <pool url> --paymentaddr <your PKT addr>`
+* `./target/release/packetcrypt ann <pool url> --paymentaddr <your PKT addr>`
 
-For more information `packetcrypt help ann`
+For more information `./target/release/packetcrypt help ann`
 
 ## Run an Announcement Handler
 If you're running a pool, you can use the Rust announcement handler as follows:
-* `packetcrypt ah -C /path/to/pool.toml`
+* `./target/release/packetcrypt ah -C /path/to/pool.toml`
 
 See [pool.example.toml](https://github.com/cjdelisle/packetcrypt_rs/blob/master/pool.example.toml)
 for information about what should be in your pool.toml file.
 
-For more information `packetcrypt help ah`
+For more information `./target/release/packetcrypt help ah`
 
 ## Env vars
 * `RUST_LOG=packetcrypt=debug` for better logging
@@ -46,6 +49,9 @@ For more information `packetcrypt help ah`
 To run with memory leak detection, build with `cargo build --features leak_detect` and while
 it is running send a SIGUSR1 signal, this will cause it to write out all of it's long lived memory
 to a file.
+
+## Jemalloc
+You may achieve better performance by building with `cargo build --release --features jemalloc`
 
 ## License
 
