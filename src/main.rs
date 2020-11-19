@@ -7,6 +7,7 @@ use packetcrypt_annmine::annmine;
 //use packetcrypt_blkmine::blkmine;
 use packetcrypt_pool::{paymakerclient, poolcfg};
 use packetcrypt_util::{poolclient, util};
+#[cfg(not(target_os = "windows"))]
 use tokio::signal::unix::{signal, SignalKind};
 
 #[cfg(feature = "jemalloc")]
@@ -38,6 +39,7 @@ async fn leak_detect() -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
 async fn exiter() -> Result<()> {
     let mut s = signal(SignalKind::user_defined2())?;
     tokio::spawn(async move {
@@ -45,6 +47,11 @@ async fn exiter() -> Result<()> {
         println!("Got SIGUSR2, calling process::exit()");
         std::process::exit(252);
     });
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+async fn exiter() -> Result<()> {
     Ok(())
 }
 
