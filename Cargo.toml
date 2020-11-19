@@ -1,6 +1,6 @@
 [package]
 name = "packetcrypt"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Caleb James DeLisle <cjd@cjdns.fr>"]
 edition = "2018"
 license = "LGPL-2.1-only OR LGPL-3.0-only"
@@ -15,12 +15,12 @@ hex-literal = "0.3"
 tokio = { version = "0.2", features = ["macros","sync","fs","signal"], default-features = false }
 toml = "0.5"
 anyhow = "1.0"
-packetcrypt-sys = { version = "0.3", path = "packetcrypt-sys" }
-packetcrypt-util = { version = "0.3", path = "packetcrypt-util" }
-packetcrypt-pool = { version = "0.3", path = "packetcrypt-pool" }
-packetcrypt-annmine = { version = "0.3", path = "packetcrypt-annmine" }
-# packetcrypt-blkmine = { version = "0.3", path = "packetcrypt-blkmine" }
-packetcrypt-annhandler = { version = "0.3", path = "packetcrypt-annhandler" }
+packetcrypt-sys = { version = "0.4", path = "packetcrypt-sys" }
+packetcrypt-util = { version = "0.4", path = "packetcrypt-util" }
+packetcrypt-pool = { version = "0.4", path = "packetcrypt-pool" }
+packetcrypt-annmine = { version = "0.4", path = "packetcrypt-annmine" }
+# packetcrypt-blkmine = { version = "0.4", path = "packetcrypt-blkmine" }
+packetcrypt-annhandler = { version = "0.4", path = "packetcrypt-annhandler" }
 crossbeam-channel = "0.4"
 log = "0.4"
 clap = "2.33"
