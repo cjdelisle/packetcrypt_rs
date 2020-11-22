@@ -644,11 +644,15 @@ const PC_VERSION: u64 = 2;
 fn share_id(block_header: &[u8], low_nonce: u32) -> u32 {
     let x = hash::compress32(block_header);
     let mut out: u32 = 0;
-    for n in &x[4..0] {
+    let mut i = 4;
+    loop {
+        i -= 1;
         out <<= 8;
-        out |= *n as u32;
+        out |= x[i] as u32;
+        if i == 0 {
+            return out ^ low_nonce;
+        }
     }
-    return out ^ low_nonce;
 }
 
 async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
