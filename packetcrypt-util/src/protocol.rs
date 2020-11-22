@@ -2,7 +2,7 @@
 use anyhow::{bail, Result};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
-use serde_hex::{SerHex, SerHexOpt, SerHexSeq, StrictPfx};
+use serde_hex::{SerHex, SerHexOpt, SerHexSeq, Strict, StrictPfx};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -209,9 +209,9 @@ pub fn put_varint(num: u64, b: &mut BytesMut) {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct BlkShare {
-    #[serde(with = "SerHexSeq::<StrictPfx>")]
+    #[serde(with = "SerHexSeq::<Strict>")]
     pub coinbase_commit: Bytes,
 
-    #[serde(with = "SerHexSeq::<StrictPfx>")]
+    #[serde(with = "SerHexSeq::<Strict>")]
     pub header_and_proof: Bytes,
 }
