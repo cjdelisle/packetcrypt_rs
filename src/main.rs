@@ -69,7 +69,7 @@ async fn ah_main(config: &str, handler: &str) -> Result<()> {
     };
     let ah_workdir = poolcfg::get_ah_workdir(&cfg.root_workdir, &hconf);
 
-    let pc = poolclient::new(&cfg.master_url, 6);
+    let pc = poolclient::new(&cfg.master_url, 6, 5);
 
     let pmc = paymakerclient::new(
         &pc,

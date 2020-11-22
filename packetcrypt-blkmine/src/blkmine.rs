@@ -387,7 +387,6 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
     let mut cnw = bytes::BytesMut::from(&next_work.coinbase_no_witness[..]);
     let pos = if let Some(pos) = cnw[..]
         .windows(COINBASE_COMMIT_LEN)
-        .rev()
         .position(|w| w == COINBASE_COMMIT_PATTERN)
     {
         pos
@@ -463,7 +462,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
 }
 
 pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
-    let pcli = poolclient::new(&ba.pool_master, 1);
+    let pcli = poolclient::new(&ba.pool_master, 1, 5);
     let block_miner = BlkMiner::new(ba.max_mem as u64, ba.threads as u32)?;
     let max_anns = block_miner.max_anns;
     Ok(BlkMine(Arc::new(BlkMineS {

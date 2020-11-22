@@ -2,7 +2,7 @@
 use anyhow::{bail, Result};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
-use serde_hex::{SerHex, SerHexOpt, SerHexSeq, Strict, StrictPfx};
+use serde_hex::{SerHex, SerHexOpt, SerHexSeq, Strict};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -76,7 +76,7 @@ pub struct AnnPostReply {
 #[derive(Deserialize, Debug, Clone, Default, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MasterConf {
-    #[serde(with = "SerHexOpt::<StrictPfx>")]
+    #[serde(with = "SerHexOpt::<Strict>")]
     pub tip_hash: Option<[u8; 32]>,
 
     pub current_height: i32,
@@ -116,20 +116,20 @@ pub struct Work {
 #[derive(Serialize, Deserialize, Debug, Clone, Default, Copy)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockInfoHeader {
-    #[serde(with = "SerHex::<StrictPfx>")]
+    #[serde(with = "SerHex::<Strict>")]
     pub hash: [u8; 32],
     pub height: i32,
     pub version: u32,
-    #[serde(with = "SerHex::<StrictPfx>")]
+    #[serde(with = "SerHex::<Strict>")]
     pub version_hex: [u8; 4],
-    #[serde(with = "SerHex::<StrictPfx>")]
+    #[serde(with = "SerHex::<Strict>")]
     pub merkleroot: [u8; 32],
     pub time: u32,
     pub nonce: u32,
-    #[serde(with = "SerHex::<StrictPfx>")]
+    #[serde(with = "SerHex::<Strict>")]
     pub bits: [u8; 4],
     pub difficulty: f64,
-    #[serde(with = "SerHex::<StrictPfx>")]
+    #[serde(with = "SerHex::<Strict>")]
     pub previousblockhash: [u8; 32],
 }
 
@@ -144,7 +144,7 @@ pub struct AnnIndex {
 #[serde(rename_all = "camelCase")]
 pub struct BlockInfo {
     pub header: BlockInfoHeader,
-    #[serde(with = "SerHexOpt::<StrictPfx>")]
+    #[serde(with = "SerHexOpt::<Strict>")]
     pub sig_key: Option<[u8; 32]>,
 }
 

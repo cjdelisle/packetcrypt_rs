@@ -86,7 +86,7 @@ const UPLOAD_CHANNEL_LEN: usize = 200;
 const PREFETCH_HISTORY_DEPTH: i32 = 6;
 
 pub async fn new(cfg: AnnMineCfg) -> Result<AnnMine> {
-    let pcli = poolclient::new(&cfg.master_url, PREFETCH_HISTORY_DEPTH);
+    let pcli = poolclient::new(&cfg.master_url, PREFETCH_HISTORY_DEPTH, 30);
     let (miner, recv_ann) = annminer::new(cfg.miner_id, cfg.workers);
     let (send_upload, recv_upload) = mpsc::channel(UPLOAD_CHANNEL_LEN);
     let (send_handlers, recv_handlers) = mpsc::channel(32);

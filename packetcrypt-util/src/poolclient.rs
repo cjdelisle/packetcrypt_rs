@@ -18,18 +18,20 @@ pub struct PoolClientM {
 pub struct PoolClientS {
     m: RwLock<PoolClientM>,
     pub url: String,
+    poll_seconds: u64,
     notify: broadcast::Sender<PoolUpdate>,
     history_depth: i32,
 }
 pub type PoolClient = Arc<PoolClientS>;
 
-pub fn new(url: &str, history_depth: i32) -> PoolClient {
+pub fn new(url: &str, history_depth: i32, poll_seconds: u64) -> PoolClient {
     let (tx, _) = broadcast::channel::<PoolUpdate>(32);
     Arc::new(PoolClientS {
         m: RwLock::new(PoolClientM {
             mc: None,
             chain: HashMap::new(),
         }),
+        poll_seconds,
         url: String::from(url),
         notify: tx,
         history_depth,
@@ -164,7 +166,7 @@ async fn cfg_loop(pcli: &PoolClient) {
                 info!("Failed to send conf update to channel");
             }
         }
-        util::sleep_ms(30_000).await;
+        util::sleep_ms(1_000 * pcli.poll_seconds).await;
     }
 }
 
