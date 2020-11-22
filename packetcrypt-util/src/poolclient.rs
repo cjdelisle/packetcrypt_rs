@@ -17,7 +17,7 @@ pub struct PoolClientM {
 #[derive(Debug)]
 pub struct PoolClientS {
     m: RwLock<PoolClientM>,
-    url: String,
+    pub url: String,
     notify: broadcast::Sender<PoolUpdate>,
     history_depth: i32,
 }

@@ -941,6 +941,7 @@ dependencies = [
  "mmap",
  "packetcrypt-sys",
  "packetcrypt-util",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

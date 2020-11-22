@@ -105,7 +105,7 @@ fn warn_if_addr_default(payment_addr: &str) {
 async fn blk_main(ba: blkmine::BlkArgs) -> Result<()> {
     warn_if_addr_default(&ba.payment_addr);
     let bm = blkmine::new(ba).await?;
-    blkmine::start(&bm).await?;
+    bm.start().await?;
     util::sleep_forever().await
 }
 
@@ -261,7 +261,7 @@ async fn main() -> Result<()> {
                 )
                 .arg(
                     Arg::with_name("minfree")
-                        .short("m")
+                        .short("f")
                         .long("minfree")
                         .help("Minimum fraction of free space to keep in work buffer")
                         .default_value("0.1")
@@ -269,7 +269,7 @@ async fn main() -> Result<()> {
                 )
                 .arg(
                     Arg::with_name("memorysizemb")
-                        .short("b")
+                        .short("m")
                         .long("memorysizemb")
                         .help("Size of memory work buffer in MB")
                         .default_value("4096")
@@ -280,6 +280,14 @@ async fn main() -> Result<()> {
                         .help("The pool server to use")
                         .required(true)
                         .index(1),
+                )
+                .arg(
+                    Arg::with_name("uploadtimeout")
+                        .short("T")
+                        .long("uploadtimeout")
+                        .help("How long to wait for a reply before aborting an upload")
+                        .default_value("30")
+                        .takes_value(true),
                 ),
         )
         .get_matches();
@@ -306,6 +314,7 @@ async fn main() -> Result<()> {
             threads: get_usize!(blk, "threads"),
             downloader_count: get_usize!(blk, "downloaders"),
             pool_master: get_str!(blk, "pool").into(),
+            upload_timeout: get_usize!(blk, "uploadtimeout"),
         })
         .await?;
     }

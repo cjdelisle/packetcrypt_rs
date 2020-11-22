@@ -17,3 +17,4 @@ serde = { version = "1.0", features = ["derive"], default-features = false }
 mmap = "0.1"
 bytes = "0.5"
 hex-literal = "0.3"
+reqwest = { version = "0.10", features = ["stream"], default-features = false }

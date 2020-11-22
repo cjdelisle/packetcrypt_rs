@@ -22,6 +22,9 @@
 #include <signal.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <errno.h>
 
 typedef struct HeaderAndIndex_s {
     PacketCrypt_BlockHeader_t header;
@@ -39,6 +42,7 @@ typedef struct Global_s {
     // Altered only when workers are stopped
     HeaderAndIndex_t* hai;
     uint32_t annCount;
+    uint32_t maxAnns;
     uint32_t effectiveTarget;
 
     // Synchronization
@@ -60,12 +64,17 @@ typedef struct BlockMine_pvt_s {
     Global_t g;
 } BlockMine_pvt_t;
 
+#ifndef MAP_ANONYMOUS
+    #define MAP_ANONYMOUS MAP_ANON
+#endif
+
 #define TRY_MAP(maxmem, flags) do { \
-    void* ptr = mmap(NULL, maxmem, PROT_READ|PROT_WRITE, MAP_ANONYMOUS|flags, -1, 0); \
+    void* ptr = mmap(NULL, maxmem, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS|flags, -1, 0); \
     if (ptr != MAP_FAILED) { return ptr; } \
 } while (0)
 
 static void* mapBuf(uint64_t maxmem) {
+    printf("Attempting to map [%llu] bytes of memory\n", (unsigned long long)maxmem);
     #ifdef MAP_HUGETLB
         #ifdef MAP_HUGE_1GB
             TRY_MAP(maxmem, MAP_HUGETLB|MAP_HUGE_1GB);
@@ -75,6 +84,7 @@ static void* mapBuf(uint64_t maxmem) {
         #endif
     #endif
     TRY_MAP(maxmem, 0);
+    printf("Map failed [%s]\n", strerror(errno));
     return MAP_FAILED;
 }
 
@@ -126,7 +136,10 @@ static void mine(Worker_t* w)
             //MineResult_t res;
             BlockMine_Res_t res;
             for (int j = 0; j < 4; j++) {
-                uint64_t x = res.ann_nums[j] = CryptoCycle_getItemNo(&w->pcState) % w->g->annCount;
+                uint64_t itnum = res.ann_llocs[j] = CryptoCycle_getItemNo(&w->pcState) % w->g->annCount;
+                assert(itnum < w->g->annCount);
+                uint64_t x = res.ann_mlocs[j] = w->g->hai->index[itnum];
+                assert(x < w->g->maxAnns);
                 CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &w->g->anns[x];
                 assert(CryptoCycle_update(&w->pcState, it));
             }
@@ -140,7 +153,6 @@ static void mine(Worker_t* w)
                 w->g->cb(&res, w->g->cbc);
             }
             w->lowNonce = lowNonce;
-            return;
         }
         Time_END(t);
         w->hashesPerSecond = ((HASHES_PER_CYCLE * 1024) / (Time_MICROS(t) / 1024));
@@ -209,6 +221,7 @@ BlockMine_t* BlockMine_create(uint64_t maxmem, int threads, BlockMine_Callback_t
     // Lazy man's assertion
     out->g.hai->index[maxAnns - 1] = 0;
     out->g.annCount = 0; // set when we begin mining
+    out->g.maxAnns = maxAnns;
     out->g.effectiveTarget = 0; // set when we begin mining
     assert(!pthread_mutex_init(&out->g.lock, NULL));
     assert(!pthread_cond_init(&out->g.cond, NULL));
@@ -269,11 +282,18 @@ void BlockMine_destroy(BlockMine_t* bm) {
 
 // Any thread can call this
 // But you must not specify an ann index which is currently being mined
-void BlockMine_updateAnn(const BlockMine_t* bm, uint32_t index, const PacketCrypt_Announce_t* ann)
+void BlockMine_updateAnn(const BlockMine_t* bm, uint32_t index, const uint8_t* ann)
 {
     assert(index < bm->maxAnns);
     BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
-    Buf_OBJCPY(&ctx->g.anns[index], ann);
+    memcpy(&ctx->g.anns[index], ann, 1024);
+}
+
+void BlockMine_getAnn(const BlockMine_t* bm, uint32_t index, uint8_t* annOut)
+{
+    assert(index < bm->maxAnns);
+    BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
+    memcpy(annOut, &ctx->g.anns[index], 1024);
 }
 
 // Any thread
@@ -288,7 +308,7 @@ int64_t BlockMine_getHashesPerSecond(const BlockMine_t* bm) {
 
 // Main thread
 void BlockMine_mine(BlockMine_t* bm,
-    const PacketCrypt_BlockHeader_t* header,
+    const uint8_t* header,
     uint32_t annCount,
     const uint32_t* annIndexes,
     uint32_t effectiveTarget)
@@ -298,8 +318,19 @@ void BlockMine_mine(BlockMine_t* bm,
     waitState(ctx, ThreadState_STOPPED);
     ctx->g.annCount = annCount;
     ctx->g.effectiveTarget = effectiveTarget;
-    Buf_OBJCPY(&ctx->g.hai->header, header);
+    memcpy(&ctx->g.hai->header, header, sizeof(PacketCrypt_BlockHeader_t));
+    // Assertion
+    memset(ctx->g.hai->index, 0xff, ctx->pub.maxAnns * 4);
     memcpy(ctx->g.hai->index, annIndexes, annCount * 4);
+    for (uint32_t i = 0; i < annCount; i++) {
+        assert(annIndexes[i] < ctx->g.maxAnns);
+    }
     reqState(ctx, ThreadState_RUNNING);
     pthread_cond_broadcast(&ctx->g.cond);
+}
+
+void BlockMine_stop(BlockMine_t* bm) {
+    BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
+    reqState(ctx, ThreadState_STOPPED);
+    waitState(ctx, ThreadState_STOPPED);
 }

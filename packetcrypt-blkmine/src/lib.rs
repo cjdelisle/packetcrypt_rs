@@ -1,4 +1,5 @@
-pub mod blkmine;
-mod blkslab;
+mod blkminer;
 mod downloader;
 mod prooftree;
+
+pub mod blkmine;

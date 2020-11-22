@@ -87,15 +87,6 @@ pub fn check_ann(
     }
 }
 
-pub struct BlockMiner {
-    raw: *mut BlockMine_t,
-    capacity: u32,
-    size: u32,
-    root_hash: Option<[u8; 32]>,
-}
-unsafe impl Send for BlockMiner {}
-unsafe impl Sync for BlockMiner {}
-
 #[cfg(test)]
 mod tests {
     use super::*;

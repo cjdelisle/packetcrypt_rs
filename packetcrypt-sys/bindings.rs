@@ -725,13 +725,14 @@ extern "C" {
 pub struct BlockMine_Res_s {
     pub high_nonce: u32,
     pub low_nonce: u32,
-    pub ann_nums: [u32; 4usize],
+    pub ann_mlocs: [u32; 4usize],
+    pub ann_llocs: [u32; 4usize],
 }
 #[test]
 fn bindgen_test_layout_BlockMine_Res_s() {
     assert_eq!(
         ::std::mem::size_of::<BlockMine_Res_s>(),
-        24usize,
+        40usize,
         concat!("Size of: ", stringify!(BlockMine_Res_s))
     );
     assert_eq!(
@@ -760,13 +761,23 @@ fn bindgen_test_layout_BlockMine_Res_s() {
         )
     );
     assert_eq!(
-        unsafe { &(*(::std::ptr::null::<BlockMine_Res_s>())).ann_nums as *const _ as usize },
+        unsafe { &(*(::std::ptr::null::<BlockMine_Res_s>())).ann_mlocs as *const _ as usize },
         8usize,
         concat!(
             "Offset of field: ",
             stringify!(BlockMine_Res_s),
             "::",
-            stringify!(ann_nums)
+            stringify!(ann_mlocs)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Res_s>())).ann_llocs as *const _ as usize },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Res_s),
+            "::",
+            stringify!(ann_llocs)
         )
     );
 }
@@ -815,11 +826,10 @@ extern "C" {
     pub fn BlockMine_destroy(bm: *mut BlockMine_t);
 }
 extern "C" {
-    pub fn BlockMine_updateAnn(
-        bm: *const BlockMine_t,
-        index: u32,
-        ann: *const PacketCrypt_Announce_t,
-    );
+    pub fn BlockMine_updateAnn(bm: *const BlockMine_t, mloc: u32, ann: *const u8);
+}
+extern "C" {
+    pub fn BlockMine_getAnn(bm: *const BlockMine_t, mloc: u32, annOut: *mut u8);
 }
 extern "C" {
     pub fn BlockMine_getHashesPerSecond(bm: *const BlockMine_t) -> i64;
@@ -827,9 +837,12 @@ extern "C" {
 extern "C" {
     pub fn BlockMine_mine(
         bm: *mut BlockMine_t,
-        header: *const PacketCrypt_BlockHeader_t,
+        header: *const u8,
         annCount: u32,
         annIndexes: *const u32,
         effectiveTarget: u32,
     );
+}
+extern "C" {
+    pub fn BlockMine_stop(bm: *mut BlockMine_t);
 }

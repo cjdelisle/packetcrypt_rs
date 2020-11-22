@@ -16,7 +16,9 @@ struct ProofTree_s {
 };
 
 ProofTree_t* ProofTree_create(uint32_t maxAnns) {
-    return (ProofTree_t*) PacketCryptProof_allocTree(maxAnns);
+    PacketCryptProof_Tree_t* tree = PacketCryptProof_allocTree(maxAnns);
+    tree->totalAnnsZeroIncluded = 1;
+    return (ProofTree_t*) tree;
 }
 void ProofTree_destroy(ProofTree_t* pt) {
     PacketCryptProof_freeTree(&pt->tree);
@@ -27,8 +29,10 @@ void ProofTree_clear(ProofTree_t* pt) {
 }
 
 void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc) {
-    memcpy(pt->tree.entries[pt->tree.totalAnnsZeroIncluded].hash.bytes, hash, 32);
-    pt->tree.entries[pt->tree.totalAnnsZeroIncluded].start = mloc;
+    uint64_t idx = pt->tree.totalAnnsZeroIncluded - 1;
+    memcpy(pt->tree.entries[idx].hash.bytes, hash, 32);
+    pt->tree.entries[idx].start = mloc;
+    pt->tree.totalAnnsZeroIncluded++;
 }
 
 uint32_t ProofTree_compute(ProofTree_t* pt, uint8_t* hashOut, uint32_t* mlocOut) {

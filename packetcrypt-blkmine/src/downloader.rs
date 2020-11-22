@@ -7,6 +7,17 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
 
+// Maximum number of files to queue for download, prevents memory leak if
+// the miner cannot keep up with the ann handlers.
+const MAX_QUEUE_LENGTH: usize = 5_000;
+
+#[derive(Clone)]
+pub struct Stats {
+    pub downloading: usize,
+    pub downloaded: usize,
+    pub queued: usize,
+}
+
 struct DownloaderM {
     downloading: usize,
     downloaded: usize,
@@ -19,7 +30,7 @@ pub trait OnAnns: Send + Sync {
 }
 
 pub struct DownloaderS<T: OnAnns> {
-    onanns: Arc<T>,
+    onanns: T,
     downloader_count: usize,
     url_base: String,
     m: Mutex<DownloaderM>,
@@ -33,6 +44,14 @@ struct AhPollWorker<T: OnAnns> {
     wakeup: broadcast::Receiver<()>,
 }
 
+async fn done_downloading<T: OnAnns>(apw: &AhPollWorker<T>, success: bool) {
+    let mut ahp_l = apw.ahp.m.lock().await;
+    ahp_l.downloading -= 1;
+    if success {
+        ahp_l.downloaded += 1;
+    }
+}
+
 async fn poll_ann_handler_worker<T: OnAnns>(mut apw: AhPollWorker<T>) {
     let worker_id = format!("Ann dl worker [{} {}]", apw.url_base, apw.worker_num);
     loop {
@@ -42,7 +61,11 @@ async fn poll_ann_handler_worker<T: OnAnns>(mut apw: AhPollWorker<T>) {
                 info!("{} got stop request", worker_id);
                 return;
             }
-            ahp_l.to_download.pop_back()
+            let x = ahp_l.to_download.pop_back();
+            if x.is_some() {
+                ahp_l.downloading += 1;
+            }
+            x
         } {
             to_dl
         } else {
@@ -53,15 +76,23 @@ async fn poll_ann_handler_worker<T: OnAnns>(mut apw: AhPollWorker<T>) {
             continue;
         };
         let url = format!("{}/anns/{}", apw.url_base, to_dl);
-        let bin = match util::get_url_bin(&url).await {
+        //debug!("get {} ...", url);
+        let bin = match util::get_url_bin1(&url, &[404, 405]).await {
             Ok(x) => x,
             Err(e) => {
                 // We will not try to re-download the file because it might be gone
-                info!("{} error downloading file {}", worker_id, e);
+                info!("error downloading {}: {}", url, e);
+                done_downloading(&apw, false).await;
                 continue;
             }
         };
-        apw.ahp.onanns.on_anns(bin, &url);
+        done_downloading(&apw, true).await;
+        if let Some(bin) = bin {
+            //debug!("get {} done (ok)", url);
+            apw.ahp.onanns.on_anns(bin, &url);
+        } else {
+            debug!("get {} done (not found)", url);
+        }
     }
 }
 
@@ -77,7 +108,7 @@ async fn poll_ann_handlers<T: OnAnns + 'static>(downloader: &Downloader<T>) {
         tokio::spawn(async move { poll_ann_handler_worker(apw).await });
     }
     let index_url = format!("{}/anns/index.json", downloader.url_base);
-    let mut top_file = "".to_owned();
+    let mut top_file: Option<String> = None;
     loop {
         if downloader.m.lock().await.stop {
             info!(
@@ -105,20 +136,47 @@ async fn poll_ann_handlers<T: OnAnns + 'static>(downloader: &Downloader<T>) {
         };
         {
             let mut ahp_l = downloader.m.lock().await;
-            let ltf = top_file.clone();
             let mut new_files = 0;
-            for (f, i) in ai.files.drain(..).rev().zip(0..) {
-                if i == 0 {
-                    top_file = f.clone();
+            let mut seek_to = if let Some(tf) = &top_file {
+                let mut seek_to = None;
+                //debug!("Top file was {}", tf);
+                for f in ai.files.iter().rev() {
+                    if f == tf {
+                        //debug!("Found seek_to {}", tf);
+                        seek_to = Some(tf.clone());
+                        break;
+                    }
                 }
-                if ltf == f {
-                    break;
+                seek_to
+            } else {
+                None
+            };
+            if let Some(f) = ai.files.last() {
+                top_file = Some(f.clone());
+                //debug!("Top file is {}, Seeking to {:?}", f, seek_to);
+            }
+            for f in ai.files.drain(..) {
+                if let Some(st) = &seek_to {
+                    if st != &f {
+                        continue;
+                    }
+                    seek_to = None;
                 }
                 ahp_l.to_download.push_back(f);
                 new_files += 1;
             }
+            loop {
+                // Prevent the queue from growing forever
+                if ahp_l.to_download.len() < MAX_QUEUE_LENGTH {
+                    break;
+                }
+                ahp_l.to_download.pop_front();
+            }
             if new_files > 0 {
-                debug!("Got {} new files from {}", new_files, downloader.url_base);
+                debug!(
+                    "Queued {} new files from {}",
+                    new_files, downloader.url_base
+                );
                 if let Err(e) = wakeup_tx.send(()) {
                     info!("Failed to send to wakeup channel {:?}", e);
                     continue;
@@ -129,18 +187,14 @@ async fn poll_ann_handlers<T: OnAnns + 'static>(downloader: &Downloader<T>) {
     }
 }
 
-pub async fn new<T: OnAnns + 'static>(
-    downloader_count: usize,
-    url_base: String,
-    onanns: &Arc<T>,
-) -> Downloader<T>
+pub async fn new<T>(downloader_count: usize, url_base: String, onanns: &T) -> Downloader<T>
 where
-    T: OnAnns,
+    T: OnAnns + 'static + Clone,
 {
     Arc::new(DownloaderS {
         downloader_count,
         url_base,
-        onanns: Arc::clone(onanns),
+        onanns: onanns.clone(),
         m: Mutex::new(DownloaderM {
             downloading: 0,
             downloaded: 0,
@@ -166,4 +220,17 @@ pub async fn start<T: OnAnns + 'static>(downloader: &Downloader<T>) -> Result<()
 
 pub async fn stop<T: OnAnns>(downloader: &Downloader<T>) {
     downloader.m.lock().await.stop = true;
+}
+
+pub async fn stats<T: OnAnns>(downloader: &Downloader<T>, reset_downloade: bool) -> Stats {
+    let mut dl_l = downloader.m.lock().await;
+    let downloaded = dl_l.downloaded;
+    if reset_downloade {
+        dl_l.downloaded = 0;
+    }
+    Stats {
+        downloaded,
+        downloading: dl_l.downloading,
+        queued: dl_l.to_download.len(),
+    }
 }

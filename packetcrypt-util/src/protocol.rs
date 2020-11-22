@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use anyhow::{bail, Result};
-use bytes::{Buf, Bytes};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
-use serde_hex::{SerHex, SerHexOpt, StrictPfx};
+use serde_hex::{SerHex, SerHexOpt, SerHexSeq, StrictPfx};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +22,27 @@ pub struct AnnsEvent {
     pub target: u32,
     pub time: u64,
     pub event_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BlkShareEvent {
+    #[serde(rename = "type")]
+    pub blk_type: String,
+
+    pub pay_to: String,
+    pub block: bool,
+    pub time: u64,
+    pub event_id: String,
+    pub header_hash: Option<String>,
+    pub target: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct BlkShareReply {
+    pub warn: Vec<String>,
+    pub error: Vec<String>,
+    pub result: Option<BlkShareEvent>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -72,7 +93,6 @@ pub struct MasterConf {
 }
 
 #[derive(Debug, Clone, Default)]
-#[repr(C)]
 pub struct BlockHeader {
     pub version: u32,
     pub hash_prev_block: [u8; 32],
@@ -170,4 +190,28 @@ pub fn work_decode(out: &mut Work, b: &mut Bytes) -> Result<()> {
         b.advance(32);
     }
     Ok(())
+}
+
+pub fn put_varint(num: u64, b: &mut BytesMut) {
+    if num <= 0xfc {
+        b.put_u8(num as u8);
+    } else if num <= 0xffff {
+        b.put_u8(0xfd);
+        b.put_u16_le(num as u16);
+    } else if num <= 0xffffffff {
+        b.put_u8(0xfe);
+        b.put_u32_le(num as u32);
+    } else {
+        b.put_u8(0xff);
+        b.put_u64_le(num);
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct BlkShare {
+    #[serde(with = "SerHexSeq::<StrictPfx>")]
+    pub coinbase_commit: Bytes,
+
+    #[serde(with = "SerHexSeq::<StrictPfx>")]
+    pub header_and_proof: Bytes,
 }

@@ -18,9 +18,14 @@
 typedef struct BlockMine_Res_s {
     uint32_t high_nonce;
     uint32_t low_nonce;
-    uint32_t ann_nums[4];
+
+    // Memory locations of anns
+    uint32_t ann_mlocs[4];
+
+    // Logical locatiosn of anns
+    uint32_t ann_llocs[4];
 } BlockMine_Res_t;
-_Static_assert(sizeof(BlockMine_Res_t) == 24, "");
+_Static_assert(sizeof(BlockMine_Res_t) == 40, "");
 
 typedef struct BlockMine_s {
     uint32_t maxAnns;
@@ -31,14 +36,18 @@ BlockMine_t* BlockMine_create(uint64_t maxmem, int threads, BlockMine_Callback_t
 
 void BlockMine_destroy(BlockMine_t* bm);
 
-void BlockMine_updateAnn(const BlockMine_t* bm, uint32_t index, const PacketCrypt_Announce_t* ann);
+void BlockMine_updateAnn(const BlockMine_t* bm, uint32_t mloc, const uint8_t* ann);
+
+void BlockMine_getAnn(const BlockMine_t* bm, uint32_t mloc, uint8_t* annOut);
 
 int64_t BlockMine_getHashesPerSecond(const BlockMine_t* bm);
 
 void BlockMine_mine(BlockMine_t* bm,
-    const PacketCrypt_BlockHeader_t* header,
+    const uint8_t* header,
     uint32_t annCount,
     const uint32_t* annIndexes,
     uint32_t effectiveTarget);
+
+void BlockMine_stop(BlockMine_t* bm);
 
 #endif
