@@ -200,11 +200,6 @@ BlockMine_Create_t BlockMine_create(uint64_t maxmem, int threads, BlockMine_Call
         bmc.err = strerror(errno);
         return bmc;
     }
-    if (mlock(ptr, maxmem)) {
-        bmc.err = strerror(errno);
-        bmc.stage = "mlock()";
-        return bmc;
-    }
     BlockMine_pvt_t* out = calloc(sizeof(BlockMine_pvt_t), 1);
     Worker_t* workers = calloc(sizeof(Worker_t), threads);
     if (!out || !workers) {
