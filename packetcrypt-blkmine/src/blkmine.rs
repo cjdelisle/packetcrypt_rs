@@ -586,6 +586,13 @@ fn big_number(h: f64) -> String {
     return format!("{}", h);
 }
 
+fn pad_to(len: usize, mut x: String) -> String {
+    while x.len() < len {
+        x += " ";
+    }
+    x
+}
+
 async fn stats_loop(bm: &BlkMine) {
     loop {
         let unused = bm.inactive_infos.lock().unwrap().len();
@@ -599,10 +606,10 @@ async fn stats_loop(bm: &BlkMine) {
             downloading.push(st.downloading);
             queued.push(st.queued);
         }
-        let dlst = format!(
-            "spare: {} rdy: {} <- got: {:?} <- get: {:?} <- q: {:?}",
-            unused, ready, downloaded, downloading, queued
-        );
+        let spr = pad_to(23, format!("spare: {} rdy: {} ", unused, ready));
+        let got = pad_to(19, format!("<- got: {:?} ", downloaded));
+        let get = pad_to(19, format!("<- get: {:?} ", downloaded));
+        let dlst = format!("{} {} {} <- q: {:?}", spr, got, get, queued);
         let start_mining = match get_current_mining(bm) {
             None => {
                 info!("Not mining - {}", dlst);
@@ -618,15 +625,19 @@ async fn stats_loop(bm: &BlkMine) {
                 let anns = tree.lock().unwrap().size();
                 let shares = cm.shares;
                 cm.shares = 0;
-                info!(
-                    "shr: {} real: {}h/s eff: {}h/s - anns: {} @ {:#x} - {}",
-                    shares,
-                    big_number(hashrate),
-                    big_number(hashrate * hrm as f64),
-                    anns,
-                    cm.ann_min_work,
-                    dlst,
+
+                let shr = pad_to(8, format!("shr: {} ", shares));
+                let hr = pad_to(
+                    30,
+                    format!(
+                        "real: {}h/s eff: {}h/s ",
+                        big_number(hashrate),
+                        big_number(hashrate * hrm as f64)
+                    ),
                 );
+                let diff = packetcrypt_sys::difficulty::tar_to_difficulty(cm.ann_min_work);
+                let anns = pad_to(20, format!("anns: {} @ {}", anns, diff));
+                info!("{}{}{}{}", shr, hr, anns, dlst);
                 // Restart mining after 120s w/o a block
                 util::now_ms() - cm.time_started_ms > 120_000
             }
@@ -757,26 +768,32 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
             String::from_utf8_lossy(&resbytes[..])
         );
     };
-    if reply.error.len() > 0 {
-        warn!(
-            "handler [{}] replied with error [{:?}]",
-            &handler_url, reply.error
-        );
+    for e in &reply.error {
+        let ee = if e.contains("Validate_checkBlock_INSUF_POW") {
+            "Validate_checkBlock_INSUF_POW"
+        } else {
+            &e
+        };
+        warn!("handler [{}] replied with error [{}]", &handler_url, ee);
     }
-    if reply.warn.len() > 0 {
-        warn!(
-            "handler [{}] replied with warnings [{:?}]",
-            &handler_url, reply.warn
-        );
+    for w in &reply.warn {
+        warn!("handler [{}] replied with warning [{}]", &handler_url, w);
     }
-    let result = if let Some(x) = reply.result {
-        x
-    } else {
-        bail!(
-            "handler [{}] replied with no result [{}]",
-            &handler_url,
-            String::from_utf8_lossy(&resbytes[..])
-        );
+    //Validate_checkBlock_INSUF_POW
+    let result = match reply.result {
+        protocol::MaybeBlkShareEvent::Bse(bse) => bse,
+        protocol::MaybeBlkShareEvent::Str(_) => {
+            if reply.error.len() > 0 {
+                // We don't need to continue to complain
+                // The issue was raised already above
+                return Ok(());
+            }
+            bail!(
+                "handler [{}] replied with no result [{}]",
+                &handler_url,
+                String::from_utf8_lossy(&resbytes[..])
+            );
+        }
     };
     if let Some(hash) = result.header_hash {
         info!("BLOCK [{}]", hash);

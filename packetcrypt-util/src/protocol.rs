@@ -38,11 +38,18 @@ pub struct BlkShareEvent {
     pub target: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum MaybeBlkShareEvent {
+    Bse(BlkShareEvent),
+    Str(String),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BlkShareReply {
     pub warn: Vec<String>,
     pub error: Vec<String>,
-    pub result: Option<BlkShareEvent>,
+    pub result: MaybeBlkShareEvent,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]

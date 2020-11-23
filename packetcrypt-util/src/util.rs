@@ -5,6 +5,7 @@ use crossbeam_channel::Sender as SenderCB;
 use log::{error, info, trace, warn, LevelFilter};
 use regex::Regex;
 use std::env;
+use std::io::Write;
 use std::panic;
 use std::path::Path;
 use std::process;
@@ -198,6 +199,17 @@ pub async fn ensure_exists_dir(path: &str) -> Result<()> {
     Ok(())
 }
 
+fn now_sec() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+fn short_file(file: &str) -> &str {
+    file.rsplit('/').next().unwrap_or(file)
+}
+
 pub async fn setup_env(verbosity: u64) -> Result<()> {
     // If a thread panics, exit so that the process can be restarted
     let orig_hook = panic::take_hook();
@@ -214,6 +226,17 @@ pub async fn setup_env(verbosity: u64) -> Result<()> {
     };
 
     let mut log = env_logger::Builder::from_default_env();
+    log.format(|buf, record| {
+        writeln!(
+            buf,
+            "{} {} {}:{} {}",
+            now_sec(),
+            record.level(),
+            short_file(record.file().unwrap_or("?")),
+            record.line().unwrap_or(0),
+            record.args()
+        )
+    });
     if !rl.contains("tracing") {
         log.filter_module("tracing", LevelFilter::Warn);
     }
