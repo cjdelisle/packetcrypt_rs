@@ -62,6 +62,9 @@ struct CurrentMining {
     time_started_ms: u64,
     coinbase_commit: bytes::BytesMut,
     block_header: bytes::BytesMut,
+
+    // Number of shares found since last log report
+    shares: usize,
 }
 
 struct CurrentWork {
@@ -121,7 +124,13 @@ fn get_tree(bm: &BlkMine, active: bool) -> (&Mutex<ProofTree>, usize) {
 }
 
 fn get_current_mining(bm: &BlkMine) -> Option<CurrentMining> {
-    bm.current_mining.lock().unwrap().clone()
+    let mut cm_l = bm.current_mining.lock().unwrap();
+    let cm_o: &mut Option<CurrentMining> = &mut *cm_l;
+    let out = cm_o.clone();
+    if let Some(mut cm) = cm_o.as_mut() {
+        cm.shares = 0;
+    }
+    return out;
 }
 
 // Reclaims free space or poor quality AnnInfos which are not currently being mined
@@ -453,6 +462,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         time_started_ms: util::now_ms(),
         coinbase_commit,
         block_header,
+        shares: 0,
     });
     debug!(
         "Started mining {} with {} anns",
@@ -598,7 +608,7 @@ async fn stats_loop(bm: &BlkMine) {
                 info!("Not mining - {}", dlst);
                 true
             }
-            Some(cm) => {
+            Some(mut cm) => {
                 let hashrate = bm.block_miner.hashes_per_second() as f64;
                 let hrm = packetcrypt_sys::difficulty::pc_get_hashrate_multiplier(
                     cm.ann_min_work,
@@ -606,8 +616,11 @@ async fn stats_loop(bm: &BlkMine) {
                 );
                 let (tree, _) = get_tree(bm, true);
                 let anns = tree.lock().unwrap().size();
+                let shares = cm.shares;
+                cm.shares = 0;
                 info!(
-                    "real: {}h/s eff: {}h/s - anns: {} @ {:#x} - {}",
+                    "shr: {} real: {}h/s eff: {}h/s - anns: {} @ {:#x} - {}",
+                    shares,
                     big_number(hashrate),
                     big_number(hashrate * hrm as f64),
                     anns,
@@ -657,11 +670,12 @@ fn share_id(block_header: &[u8], low_nonce: u32) -> u32 {
 async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
     // Get the header and commit
     let (mut header_and_proof, coinbase_commit) = {
-        let cm_l = bm.current_mining.lock().unwrap();
-        let cm = match &*cm_l {
+        let mut cm_l = bm.current_mining.lock().unwrap();
+        let cm = match &mut *cm_l {
             Some(x) => x,
             None => bail!("no current_mining"),
         };
+        cm.shares += 1;
         (cm.block_header.clone(), cm.coinbase_commit.clone())
     };
 
@@ -764,12 +778,15 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
             String::from_utf8_lossy(&resbytes[..])
         );
     };
-    info!(
-        "handler [{}] replied {}: {}",
-        &handler_url,
-        if result.block { "block " } else { "share" },
-        result.header_hash.unwrap_or(result.event_id),
-    );
+    if let Some(hash) = result.header_hash {
+        info!("BLOCK [{}]", hash);
+    } else {
+        debug!(
+            "handler [{}] replied share: {}",
+            &handler_url,
+            result.header_hash.unwrap_or(result.event_id),
+        );
+    }
     Ok(())
 }
 
@@ -791,7 +808,7 @@ async fn get_share_loop(bm: &BlkMine) {
             }
         }
 
-        info!("\n\nshare {} {}\n\n", share.high_nonce, share.low_nonce);
+        debug!("share {} {}", share.high_nonce, share.low_nonce);
         match post_share(bm, share).await {
             Err(e) => {
                 warn!("{}", e);
