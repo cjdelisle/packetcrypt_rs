@@ -2,10 +2,11 @@
 use anyhow::{bail, Result};
 use log::warn;
 use packetcrypt_sys::{BlockMine_Res_t, BlockMine_t};
-use std::os::raw::c_int;
-use std::os::raw::c_void;
+use std::ffi::CStr;
+use std::os::raw::{c_char, c_int, c_void};
 use std::pin::Pin;
 use std::sync::Mutex;
+use std::sync::RwLock;
 
 #[derive(Default)]
 pub struct BlkResult {
@@ -38,8 +39,7 @@ pub unsafe extern "C" fn on_share_found(resp: *mut BlockMine_Res_t, vctx: *mut c
 
 pub struct BlkMiner {
     _cbc: Pin<Box<CallbackCtx>>,
-    miner: *mut BlockMine_t,
-    lock: std::sync::Mutex<()>,
+    miner: RwLock<*mut BlockMine_t>,
     pub receiver: Mutex<Option<tokio::sync::mpsc::Receiver<BlkResult>>>,
     pub max_anns: u32,
 }
@@ -47,11 +47,18 @@ unsafe impl Send for BlkMiner {}
 unsafe impl Sync for BlkMiner {}
 impl Drop for BlkMiner {
     fn drop(&mut self) {
-        let m = self.miner;
-        let _ = self.lock.lock().unwrap();
+        let m_l = self.miner.write().unwrap();
         unsafe {
-            packetcrypt_sys::BlockMine_destroy(m);
+            packetcrypt_sys::BlockMine_destroy(*m_l);
         }
+    }
+}
+
+unsafe fn mk_str(ptr: *const c_char) -> &'static str {
+    if ptr.is_null() {
+        "<null>"
+    } else {
+        CStr::from_ptr(ptr).to_str().unwrap()
     }
 }
 
@@ -63,43 +70,49 @@ impl BlkMiner {
         });
         let ptr = (&mut *cbc as *mut CallbackCtx) as *mut c_void;
         let (max_anns, miner) = unsafe {
-            let miner = packetcrypt_sys::BlockMine_create(
+            let res = packetcrypt_sys::BlockMine_create(
                 maxmem,
                 threads as c_int,
                 Some(on_share_found),
                 ptr,
             );
-            if miner.is_null() {
-                bail!("Unable to create block miner, probably could not map memory");
+            match res.miner.as_mut() {
+                Some(miner) => (miner.maxAnns, miner),
+                None => bail!(
+                    "Failed to create block miner: During [{}] got [{}]",
+                    mk_str(res.stage),
+                    mk_str(res.err),
+                ),
             }
-            ((*miner).maxAnns, miner)
         };
         Ok(BlkMiner {
             _cbc: cbc,
-            miner,
+            miner: RwLock::new(miner),
             receiver: Mutex::new(Some(receiver)),
             max_anns,
-            lock: Mutex::new(()),
         })
     }
     pub fn get_ann(&self, index: u32, ann_out: &mut [u8]) {
+        let m_l = self.miner.read().unwrap();
         unsafe {
-            packetcrypt_sys::BlockMine_getAnn(self.miner, index, ann_out.as_mut_ptr());
+            packetcrypt_sys::BlockMine_getAnn(*m_l, index, ann_out.as_mut_ptr());
         }
     }
     pub fn put_ann(&self, index: u32, ann: &[u8]) {
+        let m_l = self.miner.read().unwrap();
         unsafe {
-            packetcrypt_sys::BlockMine_updateAnn(self.miner, index, ann.as_ptr());
+            packetcrypt_sys::BlockMine_updateAnn(*m_l, index, ann.as_ptr());
         }
     }
     pub fn hashes_per_second(&self) -> i64 {
-        unsafe { packetcrypt_sys::BlockMine_getHashesPerSecond(self.miner) }
+        let m_l = self.miner.read().unwrap();
+        unsafe { packetcrypt_sys::BlockMine_getHashesPerSecond(*m_l) }
     }
     pub fn mine(&self, block_header: &[u8], ann_indexes: &[u32], target: u32) {
-        let _ = self.lock.lock().unwrap();
+        let m_l = self.miner.write().unwrap();
         unsafe {
             packetcrypt_sys::BlockMine_mine(
-                self.miner,
+                *m_l,
                 block_header.as_ptr(),
                 ann_indexes.len() as u32,
                 ann_indexes.as_ptr(),
@@ -108,7 +121,7 @@ impl BlkMiner {
         }
     }
     pub fn stop(&self) {
-        let _ = self.lock.lock().unwrap();
-        unsafe { packetcrypt_sys::BlockMine_stop(self.miner) }
+        let m_l = self.miner.write().unwrap();
+        unsafe { packetcrypt_sys::BlockMine_stop(*m_l) }
     }
 }

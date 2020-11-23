@@ -31,8 +31,14 @@ typedef struct BlockMine_s {
     uint32_t maxAnns;
 } BlockMine_t;
 
+typedef struct BlockMine_Create_s {
+    const char* err;
+    const char* stage;
+    BlockMine_t* miner;
+} BlockMine_Create_t;
+
 typedef void (* BlockMine_Callback_t)(BlockMine_Res_t* res, void* ctx);
-BlockMine_t* BlockMine_create(uint64_t maxmem, int threads, BlockMine_Callback_t cb, void* ctx);
+BlockMine_Create_t BlockMine_create(uint64_t maxmem, int threads, BlockMine_Callback_t cb, void* cbc);
 
 void BlockMine_destroy(BlockMine_t* bm);
 

@@ -74,7 +74,6 @@ typedef struct BlockMine_pvt_s {
 } while (0)
 
 static void* mapBuf(uint64_t maxmem) {
-    printf("Attempting to map [%llu] bytes of memory\n", (unsigned long long)maxmem);
     #ifdef MAP_HUGETLB
         #ifdef MAP_HUGE_1GB
             TRY_MAP(maxmem, MAP_HUGETLB|MAP_HUGE_1GB);
@@ -84,7 +83,6 @@ static void* mapBuf(uint64_t maxmem) {
         #endif
     #endif
     TRY_MAP(maxmem, 0);
-    printf("Map failed [%s]\n", strerror(errno));
     return MAP_FAILED;
 }
 
@@ -194,16 +192,28 @@ static void* thread(void* vWorker)
 }
 
 // Main thread
-BlockMine_t* BlockMine_create(uint64_t maxmem, int threads, BlockMine_Callback_t cb, void* cbc) {
+BlockMine_Create_t BlockMine_create(uint64_t maxmem, int threads, BlockMine_Callback_t cb, void* cbc) {
+    BlockMine_Create_t bmc = { .miner = NULL, };
     void* ptr = mapBuf(maxmem);
-    if (ptr == MAP_FAILED) { return NULL; }
+    if (ptr == MAP_FAILED) {
+        bmc.stage = "mmap()";
+        bmc.err = strerror(errno);
+        return bmc;
+    }
+    if (mlock(ptr, maxmem)) {
+        bmc.err = strerror(errno);
+        bmc.stage = "mlock()";
+        return bmc;
+    }
     BlockMine_pvt_t* out = calloc(sizeof(BlockMine_pvt_t), 1);
     Worker_t* workers = calloc(sizeof(Worker_t), threads);
     if (!out || !workers) {
+        bmc.err = strerror(errno);
+        bmc.stage = "malloc()";
         assert(!munmap(ptr, maxmem));
         free(out);
         free(workers);
-        return NULL;
+        return bmc;
     }
     uint64_t maxAnns = (maxmem - 80) / 1024;
     while (maxAnns * 1024 + maxAnns * 4 + 80 > maxmem) {
@@ -234,7 +244,9 @@ BlockMine_t* BlockMine_create(uint64_t maxmem, int threads, BlockMine_Callback_t
         assert(!pthread_create(&out->workers[i].thread, NULL, thread, &out->workers[i]));
     }
 
-    return &out->pub;
+    bmc.miner = &out->pub;
+
+    return bmc;
 }
 
 // Main thread

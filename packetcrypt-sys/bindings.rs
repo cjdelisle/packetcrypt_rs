@@ -811,6 +811,57 @@ fn bindgen_test_layout_BlockMine_s() {
     );
 }
 pub type BlockMine_t = BlockMine_s;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct BlockMine_Create_s {
+    pub err: *const ::std::os::raw::c_char,
+    pub stage: *const ::std::os::raw::c_char,
+    pub miner: *mut BlockMine_t,
+}
+#[test]
+fn bindgen_test_layout_BlockMine_Create_s() {
+    assert_eq!(
+        ::std::mem::size_of::<BlockMine_Create_s>(),
+        24usize,
+        concat!("Size of: ", stringify!(BlockMine_Create_s))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<BlockMine_Create_s>(),
+        8usize,
+        concat!("Alignment of ", stringify!(BlockMine_Create_s))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Create_s>())).err as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Create_s),
+            "::",
+            stringify!(err)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Create_s>())).stage as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Create_s),
+            "::",
+            stringify!(stage)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Create_s>())).miner as *const _ as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Create_s),
+            "::",
+            stringify!(miner)
+        )
+    );
+}
+pub type BlockMine_Create_t = BlockMine_Create_s;
 pub type BlockMine_Callback_t = ::std::option::Option<
     unsafe extern "C" fn(res: *mut BlockMine_Res_t, ctx: *mut ::std::os::raw::c_void),
 >;
@@ -819,8 +870,8 @@ extern "C" {
         maxmem: u64,
         threads: ::std::os::raw::c_int,
         cb: BlockMine_Callback_t,
-        ctx: *mut ::std::os::raw::c_void,
-    ) -> *mut BlockMine_t;
+        cbc: *mut ::std::os::raw::c_void,
+    ) -> BlockMine_Create_t;
 }
 extern "C" {
     pub fn BlockMine_destroy(bm: *mut BlockMine_t);
