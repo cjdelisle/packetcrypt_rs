@@ -16,7 +16,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <sys/mman.h>
 #include <stddef.h>
 #include <pthread.h>
 #include <signal.h>
@@ -73,6 +72,17 @@ typedef struct BlockMine_pvt_s {
     if (ptr != MAP_FAILED) { return ptr; } \
 } while (0)
 
+#ifdef _WIN64
+#define MAP_FAILED NULL
+static void* mapBuf(uint64_t maxmem) {
+    return malloc(maxmem);
+}
+static int munmap(void* buf, uint64_t _len) {
+    free(buf);
+    return 0;
+}
+#else
+#include <sys/mman.h>
 static void* mapBuf(uint64_t maxmem) {
     #ifdef MAP_HUGETLB
         #ifdef MAP_HUGE_1GB
@@ -85,6 +95,7 @@ static void* mapBuf(uint64_t maxmem) {
     TRY_MAP(maxmem, 0);
     return MAP_FAILED;
 }
+#endif
 
 enum ThreadState {
     ThreadState_STOPPED,
