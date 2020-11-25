@@ -183,7 +183,7 @@ async fn poll_ann_handlers<T: OnAnns + 'static>(downloader: &Downloader<T>) {
                 }
             }
         }
-        util::sleep_ms(30_000).await;
+        util::sleep_ms(5_000).await;
     }
 }
 
