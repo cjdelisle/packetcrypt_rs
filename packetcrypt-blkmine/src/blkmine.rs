@@ -608,7 +608,7 @@ async fn stats_loop(bm: &BlkMine) {
         }
         let spr = pad_to(23, format!("spare: {} rdy: {} ", unused, ready));
         let got = pad_to(19, format!("<- got: {:?} ", downloaded));
-        let get = pad_to(19, format!("<- get: {:?} ", downloaded));
+        let get = pad_to(19, format!("<- get: {:?} ", downloading));
         let dlst = format!("{} {} {} <- q: {:?}", spr, got, get, queued);
         let start_mining = match get_current_mining(bm) {
             None => {
