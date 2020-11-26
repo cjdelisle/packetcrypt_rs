@@ -606,7 +606,7 @@ async fn stats_loop(bm: &BlkMine) {
             downloading.push(st.downloading);
             queued.push(st.queued);
         }
-        let spr = pad_to(23, format!("spare: {} rdy: {} ", unused, ready));
+        let spr = pad_to(27, format!("spare: {} rdy: {} ", unused, ready));
         let got = pad_to(19, format!("<- got: {:?} ", downloaded));
         let get = pad_to(19, format!("<- get: {:?} ", downloading));
         let dlst = format!("{} {} {} <- q: {:?}", spr, got, get, queued);
