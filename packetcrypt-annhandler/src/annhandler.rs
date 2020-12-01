@@ -34,6 +34,7 @@ const WRITE_EVERY_MS: u64 = 30_000;
 const POOL_UPDATE_QUEUE_LEN: usize = 20;
 const RECV_WAIT_MS: u64 = 1000;
 const FILE_WRITE_WORKERS: usize = 10;
+const FILE_DELETE_WORKERS: usize = 20;
 
 fn mk_dedups(w: &mut Worker) {
     w.dedups.clear();
@@ -76,6 +77,9 @@ pub struct Global {
     // Write file jobs
     write_file_send: tokio::sync::mpsc::UnboundedSender<WriteJob>,
     write_file_recv: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<WriteJob>>,
+
+    delete_recv: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<String>>,
+    delete_send: tokio::sync::mpsc::UnboundedSender<String>,
 
     sockaddr: std::net::SocketAddr,
 
@@ -556,6 +560,7 @@ pub async fn new(
 
     let (submit_send, submit_recv) = crossbeam_channel::bounded(cfg.input_queue_len);
     let (write_file_send, write_file_recv) = tokio::sync::mpsc::unbounded_channel();
+    let (delete_send, delete_recv) = tokio::sync::mpsc::unbounded_channel();
     let (pc_update_send, pc_update_recv) = crossbeam_channel::bounded(POOL_UPDATE_QUEUE_LEN);
     let global = Arc::new(Global {
         outputs: *outputs,
@@ -570,6 +575,8 @@ pub async fn new(
         skip_check_chance: 255 * cfg.skip_check_chance as u8,
         write_file_send,
         write_file_recv: tokio::sync::Mutex::new(write_file_recv),
+        delete_send,
+        delete_recv: tokio::sync::Mutex::new(delete_recv),
         cfg,
         ann_file_regex,
         anndir,
@@ -637,7 +644,7 @@ async fn handle_submit(
     }
 }
 
-pub async fn write_file_loop(ah: &AnnHandler) {
+async fn write_file_loop(ah: &AnnHandler) {
     loop {
         let job = if let Some(x) = ah.write_file_recv.lock().await.recv().await {
             x
@@ -663,13 +670,31 @@ pub async fn write_file_loop(ah: &AnnHandler) {
     }
 }
 
-pub async fn try_maintanence(ah: &AnnHandler) -> Result<()> {
+async fn delete_loop(ah: &AnnHandler) {
+    loop {
+        let file = {
+            if let Some(x) = ah.delete_recv.lock().await.recv().await {
+                x
+            } else {
+                continue;
+            }
+        };
+        trace!("deleting old ann file [{}]", file);
+        match tokio::fs::remove_file(file).await {
+            Ok(_) => (),
+            Err(e) => {
+                error!("remove_file() -> {}", e);
+            }
+        }
+    }
+}
+
+async fn try_maintanence(ah: &AnnHandler) -> Result<()> {
     let mut files = util::numbered_files(&ah.anndir, &ah.ann_file_regex).await?;
     files.sort_by(|a, b| b.1.cmp(&a.1));
     if files.len() > ah.cfg.files_to_keep {
         for f in files.drain(ah.cfg.files_to_keep..) {
-            trace!("deleting old ann file [{}]", f.0);
-            tokio::fs::remove_file(format!("{}/{}", &ah.anndir, f.0)).await?;
+            ah.delete_send.send(format!("{}/{}", &ah.anndir, f.0))?;
         }
     }
     let vecu8 = serde_json::to_vec(&IndexFile {
@@ -687,7 +712,7 @@ pub async fn try_maintanence(ah: &AnnHandler) -> Result<()> {
 
 const PAUSE_BETWEEN_MAINTANENCE_MS: u64 = 10_000;
 
-pub async fn maintanence_loop(ah: &AnnHandler) {
+async fn maintanence_loop(ah: &AnnHandler) {
     loop {
         if let Err(e) = try_maintanence(ah).await {
             error!("Failed maintanence loop [{}]", e);
@@ -723,6 +748,9 @@ pub async fn start(ah: &AnnHandler) {
 
     for _ in 0..FILE_WRITE_WORKERS {
         packetcrypt_util::async_spawn!(ah, { write_file_loop(&ah).await });
+    }
+    for _ in 0..FILE_DELETE_WORKERS {
+        packetcrypt_util::async_spawn!(ah, { delete_loop(&ah).await });
     }
 
     packetcrypt_util::async_spawn!(ah, { maintanence_loop(&ah).await });
