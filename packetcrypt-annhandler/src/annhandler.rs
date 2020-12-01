@@ -78,8 +78,7 @@ pub struct Global {
     write_file_send: tokio::sync::mpsc::UnboundedSender<WriteJob>,
     write_file_recv: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<WriteJob>>,
 
-    delete_recv: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<String>>,
-    delete_send: tokio::sync::mpsc::UnboundedSender<String>,
+    delete_list: tokio::sync::Mutex<VecDeque<String>>,
 
     sockaddr: std::net::SocketAddr,
 
@@ -560,7 +559,6 @@ pub async fn new(
 
     let (submit_send, submit_recv) = crossbeam_channel::bounded(cfg.input_queue_len);
     let (write_file_send, write_file_recv) = tokio::sync::mpsc::unbounded_channel();
-    let (delete_send, delete_recv) = tokio::sync::mpsc::unbounded_channel();
     let (pc_update_send, pc_update_recv) = crossbeam_channel::bounded(POOL_UPDATE_QUEUE_LEN);
     let global = Arc::new(Global {
         outputs: *outputs,
@@ -575,8 +573,7 @@ pub async fn new(
         skip_check_chance: 255 * cfg.skip_check_chance as u8,
         write_file_send,
         write_file_recv: tokio::sync::Mutex::new(write_file_recv),
-        delete_send,
-        delete_recv: tokio::sync::Mutex::new(delete_recv),
+        delete_list: tokio::sync::Mutex::new(VecDeque::new()),
         cfg,
         ann_file_regex,
         anndir,
@@ -673,7 +670,7 @@ async fn write_file_loop(ah: &AnnHandler) {
 async fn delete_loop(ah: &AnnHandler) {
     loop {
         let file = {
-            if let Some(x) = ah.delete_recv.lock().await.recv().await {
+            if let Some(x) = ah.delete_list.lock().await.pop_back() {
                 x
             } else {
                 continue;
@@ -693,8 +690,12 @@ async fn try_maintanence(ah: &AnnHandler) -> Result<()> {
     let mut files = util::numbered_files(&ah.anndir, &ah.ann_file_regex).await?;
     files.sort_by(|a, b| b.1.cmp(&a.1));
     if files.len() > ah.cfg.files_to_keep {
+        let mut delete_list_l = ah.delete_list.lock().await;
         for f in files.drain(ah.cfg.files_to_keep..) {
-            ah.delete_send.send(format!("{}/{}", &ah.anndir, f.0))?;
+            let x = format!("{}/{}", &ah.anndir, f.0);
+            if !delete_list_l.contains(&x) {
+                delete_list_l.push_front(x);
+            }
         }
     }
     let vecu8 = serde_json::to_vec(&IndexFile {
