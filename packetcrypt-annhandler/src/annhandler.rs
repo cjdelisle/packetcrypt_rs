@@ -227,7 +227,7 @@ fn enqueue_write(w: &mut Worker, output: &mut Output) {
         let l = min(OUT_ANN_CAP, output.out.len());
         output.out.drain(..l).collect()
     };
-    //debug!("enqueue_write() with {} anns", anns.len());
+    trace!("enqueue_write() with {} anns", anns.len());
     w.write_jobs.push_back(WriteJob {
         handler_num: output.config.handler_num,
         parent_block_height: output.config.parent_block_height,
@@ -644,11 +644,13 @@ pub async fn write_file_loop(ah: &AnnHandler) {
         } else {
             continue;
         };
+        let f = format!(
+            "anns_{}_{}_{}.bin",
+            job.parent_block_height, job.handler_num, job.fileno
+        );
+        trace!("Writing file {}", f);
         match util::write_file(
-            &format!(
-                "anns_{}_{}_{}.bin",
-                job.parent_block_height, job.handler_num, job.fileno
-            ),
+            &f,
             &ah.tmpdir,
             &ah.anndir,
             job.anns.iter().map(|ann| &ann.bytes),

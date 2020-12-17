@@ -264,7 +264,7 @@ impl downloader::OnAnns for BlkMine {
                     let age = max(0, cw.work.height - stats.parent_block_height) as u32;
                     let ann_effective_work =
                         pc_degrade_announcement_target(stats.ann_min_work, age);
-                    if ann_effective_work == 0xffffffff {
+                    if age > 3 && ann_effective_work == 0xffffffff {
                         debug!("Discarding {} because it is already out of date", url);
                         return;
                     }
