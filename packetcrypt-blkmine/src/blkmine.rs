@@ -728,7 +728,11 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
         for (i, x) in (0..).zip(share.ann_llocs.iter()) {
             llocs64[i] = *x as u64;
         }
-        tree_l.mk_proof(&llocs64).unwrap()
+        match tree_l.mk_proof(&llocs64) {
+            Ok(b) => b,
+            // TODO(cjd): "Ann number out of range" every so often, random big number
+            Err(e) => bail!("Mystery error - tree.mk_proof() -> {}", e),
+        }
     };
 
     let proof_len = 4 + // low_nonce
