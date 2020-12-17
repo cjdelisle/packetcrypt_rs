@@ -257,16 +257,20 @@ impl downloader::OnAnns for BlkMine {
         } as u32;
 
         let stats = get_ann_stats(anns.slice(0..1024));
-        match get_current_mining(&self) {
-            Some(cm) => {
-                let age = max(0, cm.mining_height - stats.parent_block_height) as u32;
-                let ann_effective_work = pc_degrade_announcement_target(stats.ann_min_work, age);
-                if ann_effective_work == 0xffffffff {
-                    debug!("Discarding {} because it is already out of date", url);
-                    return;
+        {
+            let cw_l = self.current_work.lock().unwrap();
+            match &*cw_l {
+                Some(cw) => {
+                    let age = max(0, cw.work.height - stats.parent_block_height) as u32;
+                    let ann_effective_work =
+                        pc_degrade_announcement_target(stats.ann_min_work, age);
+                    if ann_effective_work == 0xffffffff {
+                        debug!("Discarding {} because it is already out of date", url);
+                        return;
+                    }
                 }
+                None => (),
             }
-            None => (),
         }
 
         // Try to get unused space to place them
