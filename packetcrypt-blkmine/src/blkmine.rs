@@ -256,6 +256,19 @@ impl downloader::OnAnns for BlkMine {
             return;
         } as u32;
 
+        let stats = get_ann_stats(anns.slice(0..1024));
+        match get_current_mining(&self) {
+            Some(cm) => {
+                let age = max(0, cm.mining_height - stats.parent_block_height) as u32;
+                let ann_effective_work = pc_degrade_announcement_target(stats.ann_min_work, age);
+                if ann_effective_work == 0xffffffff {
+                    debug!("Discarding {} because it is already out of date", url);
+                    return;
+                }
+            }
+            None => (),
+        }
+
         // Try to get unused space to place them
         let free = get_free(self, count);
 
@@ -332,7 +345,7 @@ fn reload_anns(
             );
         }
     }
-    debug!("reload_anns() processing {} anns", v.len());
+    debug!("reload_anns() processing {} ann files", v.len());
     // Sort by effective work, lowest numbers (most work) first
     v.sort_by(|a, b| a.ann_effective_work.cmp(&b.ann_effective_work));
 
