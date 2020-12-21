@@ -17,7 +17,7 @@ pub struct BlkResult {
 }
 
 // This should be small so we don't have tons of (stale) shares piling up
-const SHARE_CHAN_SZ: usize = 4;
+const SHARE_CHAN_SZ: usize = 16;
 
 struct CallbackCtx {
     sender: Mutex<tokio::sync::mpsc::Sender<BlkResult>>,

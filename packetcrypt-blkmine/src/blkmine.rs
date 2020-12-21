@@ -489,7 +489,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
 }
 
 pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
-    let pcli = poolclient::new(&ba.pool_master, 1, 5);
+    let pcli = poolclient::new(&ba.pool_master, 1, 1);
     let block_miner = BlkMiner::new(ba.max_mem as u64, ba.threads as u32)?;
     let max_anns = block_miner.max_anns;
     Ok(BlkMine(Arc::new(BlkMineS {
