@@ -11,7 +11,7 @@
 #include "Buf.h"
 #include "CryptoCycle.h"
 #include "Work.h"
-#include "Time.h"
+#include "PTime.h"
 #include "Announce.h"
 #include "packetcrypt/PacketCrypt.h"
 #include "packetcrypt/AnnMiner.h"
