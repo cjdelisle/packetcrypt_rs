@@ -249,7 +249,7 @@ fn submit_anns(
     match send_upload.try_send(tip) {
         Ok(_) => (),
         Err(tokio::sync::mpsc::error::TrySendError::Full(tip)) => {
-            info!("Failed to submit {} anns to {}", tip.anns.len(), tip.url);
+            debug!("Failed to submit {} anns to {}", tip.anns.len(), tip.url);
             am.lost_anns.fetch_add(tip.anns.len(), Ordering::Relaxed);
         }
         Err(tokio::sync::mpsc::error::TrySendError::Closed(tip)) => {
