@@ -5,6 +5,7 @@ use crossbeam_channel::Sender as SenderCB;
 use log::{error, info, trace, warn, LevelFilter};
 use regex::Regex;
 use std::env;
+use std::io::Write;
 use std::panic;
 use std::path::Path;
 use std::process;
@@ -23,6 +24,25 @@ pub fn now_ms() -> u64 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
         .as_millis() as u64
+}
+
+pub async fn get_url_bin1(url: &str, ignore_statuses: &[u16]) -> Result<Option<bytes::Bytes>> {
+    loop {
+        let res = reqwest::get(url).await?;
+        return match res.status() {
+            reqwest::StatusCode::OK => Ok(Some(res.bytes().await?)),
+            reqwest::StatusCode::MULTIPLE_CHOICES => {
+                continue;
+            }
+            st => {
+                if ignore_statuses.contains(&st.as_u16()) {
+                    Ok(None)
+                } else {
+                    Err(format_err!("Status code was {:?}", st))
+                }
+            }
+        };
+    }
 }
 
 pub async fn get_url_bin(url: &str) -> Result<bytes::Bytes> {
@@ -179,6 +199,17 @@ pub async fn ensure_exists_dir(path: &str) -> Result<()> {
     Ok(())
 }
 
+fn now_sec() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+fn short_file(file: &str) -> &str {
+    file.rsplit('/').next().unwrap_or(file)
+}
+
 pub async fn setup_env(verbosity: u64) -> Result<()> {
     // If a thread panics, exit so that the process can be restarted
     let orig_hook = panic::take_hook();
@@ -195,6 +226,17 @@ pub async fn setup_env(verbosity: u64) -> Result<()> {
     };
 
     let mut log = env_logger::Builder::from_default_env();
+    log.format(|buf, record| {
+        writeln!(
+            buf,
+            "{} {} {}:{} {}",
+            now_sec(),
+            record.level(),
+            short_file(record.file().unwrap_or("?")),
+            record.line().unwrap_or(0),
+            record.args()
+        )
+    });
     if !rl.contains("tracing") {
         log.filter_module("tracing", LevelFilter::Warn);
     }
@@ -231,4 +273,22 @@ use rand::RngCore;
 
 pub fn rand_u32() -> u32 {
     OsRng.next_u32()
+}
+
+pub fn big_number(h: f64) -> String {
+    let mut h2 = h;
+    for t in ["", "K", "M", "G", "T", "P", "E", "Y", "Z"].iter() {
+        if h2 < 10000.0 {
+            return format!("{} {}", h2 as u32, t);
+        }
+        h2 /= 1000.0;
+    }
+    return format!("{}", h);
+}
+
+pub fn pad_to(len: usize, mut x: String) -> String {
+    while x.len() < len {
+        x += " ";
+    }
+    x
 }

@@ -4,7 +4,7 @@ use clap::{App, Arg, SubCommand};
 use log::warn;
 use packetcrypt_annhandler::annhandler;
 use packetcrypt_annmine::annmine;
-//use packetcrypt_blkmine::blkmine;
+use packetcrypt_blkmine::blkmine;
 use packetcrypt_pool::{paymakerclient, poolcfg};
 use packetcrypt_util::{poolclient, util};
 #[cfg(not(target_os = "windows"))]
@@ -69,7 +69,7 @@ async fn ah_main(config: &str, handler: &str) -> Result<()> {
     };
     let ah_workdir = poolcfg::get_ah_workdir(&cfg.root_workdir, &hconf);
 
-    let pc = poolclient::new(&cfg.master_url, 6);
+    let pc = poolclient::new(&cfg.master_url, 6, 5);
 
     let pmc = paymakerclient::new(
         &pc,
@@ -102,12 +102,12 @@ fn warn_if_addr_default(payment_addr: &str) {
     }
 }
 
-// async fn blk_main(ba: blkmine::BlkArgs) -> Result<()> {
-//     warn_if_addr_default(&ba.payment_addr);
-//     let bm = blkmine::new(ba).await?;
-//     blkmine::start(&bm).await?;
-//     util::sleep_forever().await
-// }
+async fn blk_main(ba: blkmine::BlkArgs) -> Result<()> {
+    warn_if_addr_default(&ba.payment_addr);
+    let bm = blkmine::new(ba).await?;
+    bm.start().await?;
+    util::sleep_forever().await
+}
 
 async fn ann_main(
     pool_master: &str,
@@ -141,9 +141,14 @@ macro_rules! get_str {
     };
 }
 macro_rules! get_usize {
-    ($m:ident, $s:expr) => {{
+    ($m:ident, $s:expr) => {
+        get_num!($m, $s, usize)
+    };
+}
+macro_rules! get_num {
+    ($m:ident, $s:expr, $n:ident) => {{
         let s = get_str!($m, $s);
-        if let Ok(u) = s.parse::<usize>() {
+        if let Ok(u) = s.parse::<$n>() {
             u
         } else {
             println!("Unable to parse argument {} as number [{}]", $s, s);
@@ -228,7 +233,7 @@ async fn main() -> Result<()> {
                         .index(1),
                 ),
         )
-        /*.subcommand(
+        .subcommand(
             SubCommand::with_name("blk")
                 .about("Run block miner")
                 .arg(
@@ -247,27 +252,27 @@ async fn main() -> Result<()> {
                         .takes_value(true),
                 )
                 .arg(
-                    Arg::with_name("uploads")
-                        .short("u")
-                        .long("uploads")
-                        .help("Max concurrent uploads")
-                        .default_value("20")
-                        .takes_value(true),
-                )
-                .arg(
-                    Arg::with_name("downloads")
+                    Arg::with_name("downloaders")
                         .short("d")
-                        .long("downloads")
+                        .long("downloaders")
                         .help("Max concurrent downloads (per handler)")
                         .default_value("30")
                         .takes_value(true),
                 )
                 .arg(
-                    Arg::with_name("workdir")
-                        .short("w")
-                        .long("workdir")
-                        .help("Work directory")
-                        .default_value("./datastore/blkmine")
+                    Arg::with_name("minfree")
+                        .short("f")
+                        .long("minfree")
+                        .help("Minimum fraction of free space to keep in work buffer")
+                        .default_value("0.1")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("memorysizemb")
+                        .short("m")
+                        .long("memorysizemb")
+                        .help("Size of memory work buffer in MB")
+                        .default_value("4096")
                         .takes_value(true),
                 )
                 .arg(
@@ -275,8 +280,16 @@ async fn main() -> Result<()> {
                         .help("The pool server to use")
                         .required(true)
                         .index(1),
+                )
+                .arg(
+                    Arg::with_name("uploadtimeout")
+                        .short("T")
+                        .long("uploadtimeout")
+                        .help("How long to wait for a reply before aborting an upload")
+                        .default_value("30")
+                        .takes_value(true),
                 ),
-        )*/
+        )
         .get_matches();
 
     util::setup_env(matches.occurrences_of("v")).await?;
@@ -293,17 +306,17 @@ async fn main() -> Result<()> {
         let config = get_str!(ah, "config");
         let handler = get_str!(ah, "handler");
         ah_main(config, handler).await?;
-    } /* else if let Some(blk) = matches.subcommand_matches("blk") {
-          blk_main(blkmine::BlkArgs {
-              miner_id: util::rand_u32(),
-              payment_addr: get_str!(blk, "paymentaddr").into(),
-              threads: get_usize!(blk, "threads"),
-              uploads: get_usize!(blk, "uploads"),
-              downloads: get_usize!(blk, "downloads"),
-              workdir: get_str!(blk, "workdir").into(),
-              pool_master: get_str!(blk, "pool").into(),
-          })
-          .await?;
-      }*/
+    } else if let Some(blk) = matches.subcommand_matches("blk") {
+        blk_main(blkmine::BlkArgs {
+            max_mem: get_usize!(blk, "memorysizemb") * 1024 * 1024,
+            min_free_space: get_num!(blk, "minfree", f64),
+            payment_addr: get_str!(blk, "paymentaddr").into(),
+            threads: get_usize!(blk, "threads"),
+            downloader_count: get_usize!(blk, "downloaders"),
+            pool_master: get_str!(blk, "pool").into(),
+            upload_timeout: get_usize!(blk, "uploadtimeout"),
+        })
+        .await?;
+    }
     Ok(())
 }

@@ -141,6 +141,19 @@ pub fn pc_is_min_ann_diff_ok(ann_tar: u32) -> bool {
     false
 }
 
+pub fn tar_to_difficulty(ann_tar: u32) -> String {
+    if is_valid(ann_tar) {
+        let tar = bn_for_compact(ann_tar);
+        if !tar.is_zero() {
+            let work = work_for_tar(tar);
+            if !work.is_zero() && work.bits() < 257 {
+                return work.to_string();
+            }
+        }
+    }
+    "<invalid>".to_owned()
+}
+
 #[cfg(all(test, feature = "difficulty-test"))]
 mod tests {
     use num_traits::Zero;

@@ -650,3 +650,250 @@ extern "C" {
 extern "C" {
     pub fn AnnMiner_getAnnsPerSecond(ctx: *const AnnMiner_t) -> f64;
 }
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ProofTree_s {
+    _unused: [u8; 0],
+}
+pub type ProofTree_t = ProofTree_s;
+extern "C" {
+    pub fn ProofTree_create(maxAnns: u32) -> *mut ProofTree_t;
+}
+extern "C" {
+    pub fn ProofTree_destroy(arg1: *mut ProofTree_t);
+}
+extern "C" {
+    pub fn ProofTree_clear(arg1: *mut ProofTree_t);
+}
+extern "C" {
+    pub fn ProofTree_append(arg1: *mut ProofTree_t, hash: *const u8, mloc: u32);
+}
+extern "C" {
+    pub fn ProofTree_compute(arg1: *mut ProofTree_t, hashOut: *mut u8, mlocOut: *mut u32) -> u32;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ProofTree_Proof_s {
+    pub size: u32,
+    pub data: *mut u8,
+}
+#[test]
+fn bindgen_test_layout_ProofTree_Proof_s() {
+    assert_eq!(
+        ::std::mem::size_of::<ProofTree_Proof_s>(),
+        16usize,
+        concat!("Size of: ", stringify!(ProofTree_Proof_s))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<ProofTree_Proof_s>(),
+        8usize,
+        concat!("Alignment of ", stringify!(ProofTree_Proof_s))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<ProofTree_Proof_s>())).size as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(ProofTree_Proof_s),
+            "::",
+            stringify!(size)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<ProofTree_Proof_s>())).data as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(ProofTree_Proof_s),
+            "::",
+            stringify!(data)
+        )
+    );
+}
+pub type ProofTree_Proof_t = ProofTree_Proof_s;
+extern "C" {
+    pub fn ProofTree_mkProof(
+        arg1: *mut ProofTree_t,
+        annNumbers: *const u64,
+    ) -> *mut ProofTree_Proof_t;
+}
+extern "C" {
+    pub fn ProofTree_destroyProof(arg1: *mut ProofTree_Proof_t);
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct BlockMine_Res_s {
+    pub high_nonce: u32,
+    pub low_nonce: u32,
+    pub ann_mlocs: [u32; 4usize],
+    pub ann_llocs: [u32; 4usize],
+}
+#[test]
+fn bindgen_test_layout_BlockMine_Res_s() {
+    assert_eq!(
+        ::std::mem::size_of::<BlockMine_Res_s>(),
+        40usize,
+        concat!("Size of: ", stringify!(BlockMine_Res_s))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<BlockMine_Res_s>(),
+        4usize,
+        concat!("Alignment of ", stringify!(BlockMine_Res_s))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Res_s>())).high_nonce as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Res_s),
+            "::",
+            stringify!(high_nonce)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Res_s>())).low_nonce as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Res_s),
+            "::",
+            stringify!(low_nonce)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Res_s>())).ann_mlocs as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Res_s),
+            "::",
+            stringify!(ann_mlocs)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Res_s>())).ann_llocs as *const _ as usize },
+        24usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Res_s),
+            "::",
+            stringify!(ann_llocs)
+        )
+    );
+}
+pub type BlockMine_Res_t = BlockMine_Res_s;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct BlockMine_s {
+    pub maxAnns: u32,
+}
+#[test]
+fn bindgen_test_layout_BlockMine_s() {
+    assert_eq!(
+        ::std::mem::size_of::<BlockMine_s>(),
+        4usize,
+        concat!("Size of: ", stringify!(BlockMine_s))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<BlockMine_s>(),
+        4usize,
+        concat!("Alignment of ", stringify!(BlockMine_s))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_s>())).maxAnns as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_s),
+            "::",
+            stringify!(maxAnns)
+        )
+    );
+}
+pub type BlockMine_t = BlockMine_s;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct BlockMine_Create_s {
+    pub err: *const ::std::os::raw::c_char,
+    pub stage: *const ::std::os::raw::c_char,
+    pub miner: *mut BlockMine_t,
+}
+#[test]
+fn bindgen_test_layout_BlockMine_Create_s() {
+    assert_eq!(
+        ::std::mem::size_of::<BlockMine_Create_s>(),
+        24usize,
+        concat!("Size of: ", stringify!(BlockMine_Create_s))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<BlockMine_Create_s>(),
+        8usize,
+        concat!("Alignment of ", stringify!(BlockMine_Create_s))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Create_s>())).err as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Create_s),
+            "::",
+            stringify!(err)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Create_s>())).stage as *const _ as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Create_s),
+            "::",
+            stringify!(stage)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Create_s>())).miner as *const _ as usize },
+        16usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Create_s),
+            "::",
+            stringify!(miner)
+        )
+    );
+}
+pub type BlockMine_Create_t = BlockMine_Create_s;
+pub type BlockMine_Callback_t = ::std::option::Option<
+    unsafe extern "C" fn(res: *mut BlockMine_Res_t, ctx: *mut ::std::os::raw::c_void),
+>;
+extern "C" {
+    pub fn BlockMine_create(
+        maxmem: u64,
+        threads: ::std::os::raw::c_int,
+        cb: BlockMine_Callback_t,
+        cbc: *mut ::std::os::raw::c_void,
+    ) -> BlockMine_Create_t;
+}
+extern "C" {
+    pub fn BlockMine_destroy(bm: *mut BlockMine_t);
+}
+extern "C" {
+    pub fn BlockMine_updateAnn(bm: *const BlockMine_t, mloc: u32, ann: *const u8);
+}
+extern "C" {
+    pub fn BlockMine_getAnn(bm: *const BlockMine_t, mloc: u32, annOut: *mut u8);
+}
+extern "C" {
+    pub fn BlockMine_getHashesPerSecond(bm: *const BlockMine_t) -> i64;
+}
+extern "C" {
+    pub fn BlockMine_mine(
+        bm: *mut BlockMine_t,
+        header: *const u8,
+        annCount: u32,
+        annIndexes: *const u32,
+        effectiveTarget: u32,
+    );
+}
+extern "C" {
+    pub fn BlockMine_stop(bm: *mut BlockMine_t);
+}

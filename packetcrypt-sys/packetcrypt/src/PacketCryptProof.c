@@ -131,11 +131,6 @@ static int sortingComparitor(const void* negIfFirst, const void* posIfFirst)
 uint64_t PacketCryptProof_prepareTree(PacketCryptProof_Tree_t* tree) {
     uint64_t totalAnns = tree->totalAnnsZeroIncluded - 1;
 
-    // store the index so the caller can sort their buffer
-    for (uint64_t i = 0; i < totalAnns; i++) {
-        tree->entries[i].start = i;
-        tree->entries[i].end = UINT64_MAX;
-    }
     // sort
     qsort(tree->entries, totalAnns, sizeof(Entry_t), sortingComparitor);
 

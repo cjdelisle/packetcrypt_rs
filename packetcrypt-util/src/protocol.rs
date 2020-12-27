@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use anyhow::{bail, Result};
-use bytes::{Buf, Bytes};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
-use serde_hex::{SerHex, SerHexOpt, StrictPfx};
+use serde_hex::{SerHex, SerHexOpt, SerHexSeq, Strict};
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +22,34 @@ pub struct AnnsEvent {
     pub target: u32,
     pub time: u64,
     pub event_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BlkShareEvent {
+    #[serde(rename = "type")]
+    pub blk_type: String,
+
+    pub pay_to: String,
+    pub block: bool,
+    pub time: u64,
+    pub event_id: String,
+    pub header_hash: Option<String>,
+    pub target: u32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum MaybeBlkShareEvent {
+    Bse(BlkShareEvent),
+    Str(String),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct BlkShareReply {
+    pub warn: Vec<String>,
+    pub error: Vec<String>,
+    pub result: MaybeBlkShareEvent,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -55,7 +83,7 @@ pub struct AnnPostReply {
 #[derive(Deserialize, Debug, Clone, Default, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct MasterConf {
-    #[serde(with = "SerHexOpt::<StrictPfx>")]
+    #[serde(with = "SerHexOpt::<Strict>")]
     pub tip_hash: Option<[u8; 32]>,
 
     pub current_height: i32,
@@ -95,28 +123,35 @@ pub struct Work {
 #[derive(Serialize, Deserialize, Debug, Clone, Default, Copy)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockInfoHeader {
-    #[serde(with = "SerHex::<StrictPfx>")]
+    #[serde(with = "SerHex::<Strict>")]
     pub hash: [u8; 32],
     pub height: i32,
     pub version: u32,
-    #[serde(with = "SerHex::<StrictPfx>")]
+    #[serde(with = "SerHex::<Strict>")]
     pub version_hex: [u8; 4],
-    #[serde(with = "SerHex::<StrictPfx>")]
+    #[serde(with = "SerHex::<Strict>")]
     pub merkleroot: [u8; 32],
     pub time: u32,
     pub nonce: u32,
-    #[serde(with = "SerHex::<StrictPfx>")]
+    #[serde(with = "SerHex::<Strict>")]
     pub bits: [u8; 4],
     pub difficulty: f64,
-    #[serde(with = "SerHex::<StrictPfx>")]
+    #[serde(with = "SerHex::<Strict>")]
     pub previousblockhash: [u8; 32],
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnIndex {
+    pub highest_ann_file: i64,
+    pub files: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, Copy)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockInfo {
     pub header: BlockInfoHeader,
-    #[serde(with = "SerHexOpt::<StrictPfx>")]
+    #[serde(with = "SerHexOpt::<Strict>")]
     pub sig_key: Option<[u8; 32]>,
 }
 
@@ -162,4 +197,28 @@ pub fn work_decode(out: &mut Work, b: &mut Bytes) -> Result<()> {
         b.advance(32);
     }
     Ok(())
+}
+
+pub fn put_varint(num: u64, b: &mut BytesMut) {
+    if num <= 0xfc {
+        b.put_u8(num as u8);
+    } else if num <= 0xffff {
+        b.put_u8(0xfd);
+        b.put_u16_le(num as u16);
+    } else if num <= 0xffffffff {
+        b.put_u8(0xfe);
+        b.put_u32_le(num as u32);
+    } else {
+        b.put_u8(0xff);
+        b.put_u64_le(num);
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct BlkShare {
+    #[serde(with = "SerHexSeq::<Strict>")]
+    pub coinbase_commit: Bytes,
+
+    #[serde(with = "SerHexSeq::<Strict>")]
+    pub header_and_proof: Bytes,
 }
