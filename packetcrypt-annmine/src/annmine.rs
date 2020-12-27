@@ -9,6 +9,7 @@ use packetcrypt_util::protocol::{AnnPostReply, BlockInfo};
 use packetcrypt_util::util;
 use std::cmp::max;
 use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver};
 use tokio::sync::Mutex;
@@ -42,13 +43,6 @@ struct AnnsPerSecond {
     count: usize,
 }
 
-#[derive(Default, Clone, Copy, Debug)]
-struct GoodRate {
-    produced: usize,
-    accepted: usize,
-    time_sec: usize,
-}
-
 struct AnnMineM {
     currently_mining: i32,
     recent_work: [Option<BlockInfo>; RECENT_WORK_BUF],
@@ -58,8 +52,6 @@ struct AnnMineM {
     send_upload: Option<Sender<AnnBatch>>,
     send_anns_per_second: Option<Sender<[AnnsPerSecond; STATS_SECONDS_TO_KEEP]>>,
     recv_anns_per_second: Option<Receiver<[AnnsPerSecond; STATS_SECONDS_TO_KEEP]>>,
-    send_goodrate: Sender<GoodRate>,
-    recv_goodrate: Option<Receiver<GoodRate>>,
 }
 
 pub struct AnnMineS {
@@ -69,6 +61,11 @@ pub struct AnnMineS {
     recv_upload: Mutex<Receiver<AnnBatch>>,
     cfg: AnnMineCfg,
     upload_num: AtomicUsize,
+
+    lost_anns: AtomicUsize,
+    inflight_anns: AtomicUsize,
+    accepted_anns: AtomicUsize,
+    rejected_anns: AtomicUsize,
 }
 pub type AnnMine = Arc<AnnMineS>;
 
@@ -91,7 +88,6 @@ pub async fn new(cfg: AnnMineCfg) -> Result<AnnMine> {
     let (send_upload, recv_upload) = mpsc::channel(UPLOAD_CHANNEL_LEN);
     let (send_handlers, recv_handlers) = mpsc::channel(32);
     let (send_anns_per_second, recv_anns_per_second) = mpsc::channel(32);
-    let (send_goodrate, recv_goodrate) = mpsc::channel(64);
     Ok(Arc::new(AnnMineS {
         m: Arc::new(Mutex::new(AnnMineM {
             currently_mining: -1,
@@ -102,14 +98,16 @@ pub async fn new(cfg: AnnMineCfg) -> Result<AnnMine> {
             send_upload: Some(send_upload),
             send_anns_per_second: Some(send_anns_per_second),
             recv_anns_per_second: Some(recv_anns_per_second),
-            send_goodrate,
-            recv_goodrate: Some(recv_goodrate),
         })),
         miner,
         pcli,
         recv_upload: Mutex::new(recv_upload),
         cfg,
         upload_num: AtomicUsize::new(0),
+        lost_anns: AtomicUsize::new(0),
+        inflight_anns: AtomicUsize::new(0),
+        accepted_anns: AtomicUsize::new(0),
+        rejected_anns: AtomicUsize::new(0),
     }))
 }
 
@@ -235,6 +233,7 @@ fn check_get_handlers(
 }
 
 fn submit_anns(
+    am: &AnnMine,
     handler: &mut Handler,
     send_upload: &mut Sender<AnnBatch>,
     next_parent_block_height: i32,
@@ -249,7 +248,13 @@ fn submit_anns(
     trace!("Submit [{}] to [{}]", tip.anns.len(), tip.url);
     match send_upload.try_send(tip) {
         Ok(_) => (),
-        Err(e) => info!("Failed to submit anns for upload {}", e),
+        Err(tokio::sync::mpsc::error::TrySendError::Full(tip)) => {
+            info!("Failed to submit {} anns to {}", tip.anns.len(), tip.url);
+            am.lost_anns.fetch_add(tip.anns.len(), Ordering::Relaxed);
+        }
+        Err(tokio::sync::mpsc::error::TrySendError::Closed(tip)) => {
+            warn!("Failed to submit anns to {}, channel closed", tip.url);
+        }
     }
 }
 
@@ -315,19 +320,19 @@ async fn handle_ann_loop(am: &AnnMine) {
                 handler.tip.parent_block_height,
                 parent_block_height
             );
-            submit_anns(handler, &mut send_upload, parent_block_height);
+            submit_anns(am, handler, &mut send_upload, parent_block_height);
         }
 
         handler.tip.anns.push(ann_struct.ann);
         if handler.tip.anns.len() >= MAX_ANN_BATCH_SIZE
             || handler.tip.create_time + MAX_MS_BETWEEN_POSTS < now
         {
-            submit_anns(handler, &mut send_upload, parent_block_height);
+            submit_anns(am, handler, &mut send_upload, parent_block_height);
         }
     }
 }
 
-async fn upload_batch(am: &AnnMine, mut batch: AnnBatch, upload_n: usize) -> Result<u32> {
+async fn upload_batch(am: &AnnMine, mut batch: AnnBatch, upload_n: usize) -> Result<usize> {
     debug!(
         "[{}] uploading [{}] anns to [{}]",
         upload_n,
@@ -402,7 +407,7 @@ async fn upload_batch(am: &AnnMine, mut batch: AnnBatch, upload_n: usize) -> Res
             upload_n, &*batch.url, reply.warn
         );
     }
-    Ok(result.accepted)
+    Ok(result.accepted as usize)
 }
 
 fn format_kbps(mut kbps: f64) -> String {
@@ -416,26 +421,12 @@ fn format_kbps(mut kbps: f64) -> String {
 }
 
 async fn stats_loop(am: &AnnMine) {
-    let (mut recv_anns_per_second, mut recv_goodrate) = {
+    let mut recv_anns_per_second = {
         let mut m = am.m.lock().await;
-        (
-            m.recv_anns_per_second.take().unwrap(),
-            m.recv_goodrate.take().unwrap(),
-        )
+        m.recv_anns_per_second.take().unwrap()
     };
     let mut time_of_last_msg: u64 = 0;
-    let mut goodrate_slots: [GoodRate; STATS_SECONDS_TO_KEEP] =
-        [GoodRate::default(); STATS_SECONDS_TO_KEEP];
     loop {
-        while let Ok(gr) = recv_goodrate.try_recv() {
-            let slot = &mut goodrate_slots[gr.time_sec % STATS_SECONDS_TO_KEEP];
-            if slot.time_sec != gr.time_sec {
-                *slot = gr;
-            } else {
-                slot.accepted += gr.accepted;
-                slot.produced += gr.produced;
-            }
-        }
         let raps = if let Some(x) = recv_anns_per_second.recv().await {
             x
         } else {
@@ -446,17 +437,29 @@ async fn stats_loop(am: &AnnMine) {
         if now - time_of_last_msg > 10_000 {
             let aps = raps[..].iter().map(|a| a.count).fold(0, |acc, x| acc + x)
                 / (STATS_SECONDS_TO_KEEP - 1);
-            let goodrate = goodrate_slots[..]
-                .iter()
-                .fold((0, 0), |acc, gr| (acc.0 + gr.accepted, acc.1 + gr.produced));
-            let rate = if goodrate.1 > 0 {
-                goodrate.0 as f32 / goodrate.1 as f32
+            let kbps = aps as f64 * 8.0;
+
+            let lost_anns = am.lost_anns.swap(0, Ordering::Relaxed);
+            let inflight_anns = am.inflight_anns.load(Ordering::Relaxed);
+            let accepted_anns = am.accepted_anns.swap(0, Ordering::Relaxed);
+            let rejected_anns = am.rejected_anns.swap(0, Ordering::Relaxed);
+
+            let total_anns = lost_anns + rejected_anns + accepted_anns;
+
+            let rate = if total_anns > 0 {
+                accepted_anns as f32 / total_anns as f32
             } else {
                 1.0
             };
-            let kbps = aps as f64 * 8.0;
             if kbps > 0.0 {
-                info!("{} ok: {}%", format_kbps(kbps), (rate * 100.0) as u32,);
+                info!(
+                    "{} overflow: {} uploading: {} accept/reject: {} - goodrate: {}%",
+                    util::pad_to(11, format_kbps(kbps)),
+                    util::pad_to(3, format!("{}", lost_anns)),
+                    util::pad_to(6, format!("{}", inflight_anns)),
+                    util::pad_to(10, format!("{}/{}", accepted_anns, rejected_anns)),
+                    (rate * 100.0) as u32,
+                );
             }
             time_of_last_msg = now;
         }
@@ -464,7 +467,6 @@ async fn stats_loop(am: &AnnMine) {
 }
 
 async fn uploader_loop(am: &AnnMine) {
-    let mut send_goodrate = am.m.lock().await.send_goodrate.clone();
     loop {
         let batch = if let Some(x) = am.recv_upload.lock().await.recv().await {
             x
@@ -476,19 +478,19 @@ async fn uploader_loop(am: &AnnMine) {
             .upload_num
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let url = Arc::clone(&batch.url);
-        let mut goodrate = GoodRate {
-            produced: batch.anns.len(),
-            accepted: 0,
-            time_sec: util::now_ms() as usize / 1000,
-        };
+        let count = batch.anns.len();
+        am.inflight_anns.fetch_add(count, Ordering::Relaxed);
         match upload_batch(am, batch, upload_n).await {
-            Ok(accepted) => goodrate.accepted = accepted as usize,
+            Ok(accepted) => {
+                am.accepted_anns.fetch_add(accepted, Ordering::Relaxed);
+                if count > accepted {
+                    let rejected = count - accepted;
+                    am.rejected_anns.fetch_add(rejected, Ordering::Relaxed);
+                }
+            }
             Err(e) => warn!("[{}] Error uploading ann batch to {}: {}", upload_n, url, e),
         };
-        match send_goodrate.try_send(goodrate) {
-            Ok(_) => (),
-            Err(e) => warn!("Unable to send goodrate to channel {}", e),
-        };
+        am.inflight_anns.fetch_sub(count, Ordering::Relaxed);
     }
 }
 

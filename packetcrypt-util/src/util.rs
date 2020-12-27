@@ -274,3 +274,21 @@ use rand::RngCore;
 pub fn rand_u32() -> u32 {
     OsRng.next_u32()
 }
+
+pub fn big_number(h: f64) -> String {
+    let mut h2 = h;
+    for t in ["", "K", "M", "G", "T", "P", "E", "Y", "Z"].iter() {
+        if h2 < 10000.0 {
+            return format!("{} {}", h2 as u32, t);
+        }
+        h2 /= 1000.0;
+    }
+    return format!("{}", h);
+}
+
+pub fn pad_to(len: usize, mut x: String) -> String {
+    while x.len() < len {
+        x += " ";
+    }
+    x
+}

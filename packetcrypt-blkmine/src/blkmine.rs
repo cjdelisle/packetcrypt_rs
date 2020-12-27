@@ -592,24 +592,6 @@ async fn update_work_loop(bm: &BlkMine) {
     }
 }
 
-fn big_number(h: f64) -> String {
-    let mut h2 = h;
-    for t in ["", "K", "M", "G", "T", "P", "E", "Y", "Z"].iter() {
-        if h2 < 10000.0 {
-            return format!("{} {}", h2 as u32, t);
-        }
-        h2 /= 1000.0;
-    }
-    return format!("{}", h);
-}
-
-fn pad_to(len: usize, mut x: String) -> String {
-    while x.len() < len {
-        x += " ";
-    }
-    x
-}
-
 async fn stats_loop(bm: &BlkMine) {
     loop {
         let unused = bm.inactive_infos.lock().unwrap().len();
@@ -623,9 +605,9 @@ async fn stats_loop(bm: &BlkMine) {
             downloading.push(st.downloading);
             queued.push(st.queued);
         }
-        let spr = pad_to(27, format!("spare: {} rdy: {} ", unused, ready));
-        let got = pad_to(19, format!("<- got: {:?} ", downloaded));
-        let get = pad_to(19, format!("<- get: {:?} ", downloading));
+        let spr = util::pad_to(27, format!("spare: {} rdy: {} ", unused, ready));
+        let got = util::pad_to(19, format!("<- got: {:?} ", downloaded));
+        let get = util::pad_to(19, format!("<- get: {:?} ", downloading));
         let dlst = format!("{} {} {} <- q: {:?}", spr, got, get, queued);
         let start_mining = match get_current_mining(bm) {
             None => {
@@ -643,20 +625,20 @@ async fn stats_loop(bm: &BlkMine) {
                 let shares = cm.shares;
                 cm.shares = 0;
 
-                let shr = pad_to(8, format!("shr: {} ", shares));
-                let hr = pad_to(
+                let shr = util::pad_to(8, format!("shr: {} ", shares));
+                let hr = util::pad_to(
                     30,
                     format!(
                         "real: {}h/s eff: {}h/s ",
-                        big_number(hashrate),
-                        big_number(hashrate * hrm as f64)
+                        util::big_number(hashrate),
+                        util::big_number(hashrate * hrm as f64)
                     ),
                 );
                 let diff = packetcrypt_sys::difficulty::tar_to_difficulty(cm.ann_min_work);
-                let anns = pad_to(20, format!("anns: {} @ {}", anns, diff));
+                let anns = util::pad_to(20, format!("anns: {} @ {}", anns, diff));
                 info!("{}{}{}{}", shr, hr, anns, dlst);
-                // Restart mining after 120s w/o a block
-                util::now_ms() - cm.time_started_ms > 120_000
+                // Restart mining after 45s w/o a block
+                util::now_ms() - cm.time_started_ms > 45_000
             }
         };
         if unused == 0 {
