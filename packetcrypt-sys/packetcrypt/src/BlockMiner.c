@@ -10,7 +10,7 @@
 #include "Hash.h"
 #include "PacketCryptProof.h"
 #include "CryptoCycle.h"
-#include "Time.h"
+#include "PTime.h"
 #include "Difficulty.h"
 #include "Work.h"
 #include "Util.h"

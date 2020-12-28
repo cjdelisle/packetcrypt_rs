@@ -99,6 +99,7 @@ fn main() {
 
     cfg.include("packetcrypt/include")
         .include("packetcrypt/src")
+        .flag("-Wno-implicit-function-declaration")
         .file("packetcrypt/src/Validate.c")
         .file("packetcrypt/src/AnnMerkle.c")
         .file("packetcrypt/src/AnnMiner.c")
@@ -109,7 +110,7 @@ fn main() {
         .file("packetcrypt/src/PcCompress.c")
         .file("packetcrypt/src/RandGen.c")
         .file("packetcrypt/src/RandHash_interpreted.c")
-        .file("packetcrypt/src/Time.c")
+        .file("packetcrypt/src/PTime.c")
         .file("packetcrypt/src/Work.c")
         .file("packetcrypt/src/ProofTree.c")
         .file("packetcrypt/src/BlockMine.c")
