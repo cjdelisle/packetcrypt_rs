@@ -10,7 +10,7 @@
 #include "packetcrypt/PacketCrypt.h"
 #include "packetcrypt/BlockMine.h"
 #include "CryptoCycle.h"
-#include "Time.h"
+#include "PTime.h"
 #include "Work.h"
 #include "Hash.h"
 
