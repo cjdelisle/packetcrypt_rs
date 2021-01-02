@@ -332,7 +332,12 @@ async fn handle_ann_loop(am: &AnnMine) {
     }
 }
 
-async fn upload_batch(am: &AnnMine, mut batch: AnnBatch, upload_n: usize) -> Result<usize> {
+async fn upload_batch(
+    am: &AnnMine,
+    client: &reqwest::Client,
+    mut batch: AnnBatch,
+    upload_n: usize,
+) -> Result<usize> {
     debug!(
         "[{}] uploading [{}] anns to [{}]",
         upload_n,
@@ -349,9 +354,7 @@ async fn upload_batch(am: &AnnMine, mut batch: AnnBatch, upload_n: usize) -> Res
     // The server wants to see "work num" which is the height of the next block
     // and the parent_block_height is the height of the most recent mined block.
     let worknum = batch.parent_block_height + 1;
-    let res = reqwest::ClientBuilder::new()
-        .timeout(Duration::from_secs(am.cfg.upload_timeout as u64))
-        .build()?
+    let res = client
         .post(&*batch.url)
         .header("x-pc-payto", &am.cfg.pay_to)
         .header("x-pc-sver", 1 as u32)
@@ -467,6 +470,10 @@ async fn stats_loop(am: &AnnMine) {
 }
 
 async fn uploader_loop(am: &AnnMine) {
+    let client = reqwest::ClientBuilder::new()
+        .timeout(Duration::from_secs(am.cfg.upload_timeout as u64))
+        .build()
+        .unwrap();
     loop {
         let batch = if let Some(x) = am.recv_upload.lock().await.recv().await {
             x
@@ -480,7 +487,7 @@ async fn uploader_loop(am: &AnnMine) {
         let url = Arc::clone(&batch.url);
         let count = batch.anns.len();
         am.inflight_anns.fetch_add(count, Ordering::Relaxed);
-        match upload_batch(am, batch, upload_n).await {
+        match upload_batch(am, &client, batch, upload_n).await {
             Ok(accepted) => {
                 am.accepted_anns.fetch_add(accepted, Ordering::Relaxed);
                 if count > accepted {
