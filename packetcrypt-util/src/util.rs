@@ -26,9 +26,13 @@ pub fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-pub async fn get_url_bin1(url: &str, ignore_statuses: &[u16]) -> Result<Option<bytes::Bytes>> {
+pub async fn get_url_bin2(
+    url: &str,
+    ignore_statuses: &[u16],
+    client: &reqwest::Client,
+) -> Result<Option<bytes::Bytes>> {
     loop {
-        let res = reqwest::get(url).await?;
+        let res = client.get(url).send().await?;
         return match res.status() {
             reqwest::StatusCode::OK => Ok(Some(res.bytes().await?)),
             reqwest::StatusCode::MULTIPLE_CHOICES => {
@@ -43,6 +47,10 @@ pub async fn get_url_bin1(url: &str, ignore_statuses: &[u16]) -> Result<Option<b
             }
         };
     }
+}
+
+pub async fn get_url_bin1(url: &str, ignore_statuses: &[u16]) -> Result<Option<bytes::Bytes>> {
+    get_url_bin2(url, ignore_statuses, &reqwest::Client::builder().build()?).await
 }
 
 pub async fn get_url_bin(url: &str) -> Result<bytes::Bytes> {

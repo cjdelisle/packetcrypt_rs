@@ -42,6 +42,7 @@ struct AhPollWorker<T: OnAnns> {
     worker_num: usize,
     ahp: Downloader<T>,
     wakeup: broadcast::Receiver<()>,
+    client: reqwest::Client,
 }
 
 async fn done_downloading<T: OnAnns>(apw: &AhPollWorker<T>, success: bool) {
@@ -77,7 +78,7 @@ async fn poll_ann_handler_worker<T: OnAnns>(mut apw: AhPollWorker<T>) {
         };
         let url = format!("{}/anns/{}", apw.url_base, to_dl);
         //debug!("get {} ...", url);
-        let bin = match util::get_url_bin1(&url, &[404, 405]).await {
+        let bin = match util::get_url_bin2(&url, &[404, 405], &apw.client).await {
             Ok(x) => x,
             Err(e) => {
                 // We will not try to re-download the file because it might be gone
@@ -104,6 +105,7 @@ async fn poll_ann_handlers<T: OnAnns + 'static>(downloader: &Downloader<T>) {
             worker_num,
             ahp: Arc::clone(downloader),
             wakeup: wakeup_tx.subscribe(),
+            client: reqwest::Client::builder().build().unwrap(),
         };
         tokio::spawn(async move { poll_ann_handler_worker(apw).await });
     }
