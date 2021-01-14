@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use anyhow::{bail, Result};
+use bytes::BufMut;
 use crossbeam_channel::{
     Receiver as ReceiverCB, RecvTimeoutError, Sender as SenderCB, TryRecvError,
 };
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, info, trace};
 use packetcrypt_pool::paymakerclient::{self, PaymakerClient};
 use packetcrypt_pool::poolcfg::AnnHandlerCfg;
 use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
-use packetcrypt_util::protocol::{AnnPostReply, AnnsEvent, BlockInfo, IndexFile, MasterConf};
+use packetcrypt_util::protocol::{AnnPostReply, AnnsEvent, BlockInfo, MasterConf};
 use packetcrypt_util::{hash, util};
 use regex::Regex;
 use std::cmp::{max, min};
+use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::convert::TryInto;
@@ -33,8 +35,6 @@ const OUT_ANN_CAP: usize = 1024;
 const WRITE_EVERY_MS: u64 = 30_000;
 const POOL_UPDATE_QUEUE_LEN: usize = 20;
 const RECV_WAIT_MS: u64 = 1000;
-const FILE_WRITE_WORKERS: usize = 10;
-const FILE_DELETE_WORKERS: usize = 20;
 
 fn mk_dedups(w: &mut Worker) {
     w.dedups.clear();
@@ -53,6 +53,12 @@ struct Output {
     time_of_last_write: u64,
     out: VecDeque<PacketCryptAnn>,
     dedup_tbl: VecDeque<u64>,
+}
+
+struct AnnTable {
+    files: HashMap<String, bytes::Bytes>,
+    filenames: VecDeque<String>,
+    top_file: usize,
 }
 
 pub struct Global {
@@ -74,19 +80,11 @@ pub struct Global {
 
     pmc: PaymakerClient,
 
-    // Write file jobs
-    write_file_send: tokio::sync::mpsc::UnboundedSender<WriteJob>,
-    write_file_recv: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<WriteJob>>,
-
-    delete_list: tokio::sync::Mutex<VecDeque<String>>,
+    ann_tbl: std::sync::RwLock<AnnTable>,
 
     sockaddr: std::net::SocketAddr,
 
-    ann_file_regex: Regex,
     skip_check_chance: u8,
-
-    anndir: String,
-    tmpdir: String,
 }
 
 struct Worker {
@@ -96,7 +94,6 @@ struct Worker {
     anns: Vec<Option<PacketCryptAnn>>,
     dedups: Vec<DedupEntry>,
     vctx: ValidateCtx,
-    write_jobs: VecDeque<WriteJob>,
 }
 
 const SUPPORT_V1: bool = true;
@@ -213,33 +210,36 @@ fn get_output(g: &Arc<Global>, parent_block_height: i32) -> &MutexB<Output> {
     &g.outputs[(parent_block_height as usize) % NUM_BLOCKS_TRACKING]
 }
 
-struct WriteJob {
-    handler_num: usize,
-    parent_block_height: i32,
-    fileno: usize,
-    anns: Vec<PacketCryptAnn>,
-}
-
 fn enqueue_write(w: &mut Worker, output: &mut Output) {
     output.time_of_last_write = util::now_ms();
-    let anns: Vec<_> = {
-        if output.out.len() == 0 {
-            debug!("Nothing to write");
-            return;
-        }
-        let l = min(OUT_ANN_CAP, output.out.len());
-        output.out.drain(..l).collect()
-    };
+    let len = min(OUT_ANN_CAP, output.out.len());
+    if len == 0 {
+        debug!("Nothing to write");
+        return;
+    }
+    let mut anns = bytes::BytesMut::with_capacity(len);
+    for a in output.out.drain(..len) {
+        anns.put(a.bytes);
+    }
     trace!("enqueue_write() with {} anns", anns.len());
-    w.write_jobs.push_back(WriteJob {
-        handler_num: output.config.handler_num,
-        parent_block_height: output.config.parent_block_height,
-        fileno: w
-            .global
-            .fileno
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        anns,
-    });
+    let top_file = w
+        .global
+        .fileno
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let f = format!(
+        "anns_{}_{}_{}.bin",
+        output.config.parent_block_height, output.config.handler_num, top_file,
+    );
+    let mut tbl = w.global.ann_tbl.write().unwrap();
+    tbl.files.insert(f.clone(), anns.freeze());
+    tbl.filenames.push_back(f);
+    tbl.top_file = top_file;
+
+    // Keep the number of files down
+    while tbl.filenames.len() > w.global.cfg.files_to_keep {
+        let f = tbl.filenames.pop_front().unwrap();
+        tbl.files.remove(&f);
+    }
 }
 
 fn optr<T>(o: Option<T>) -> Result<T> {
@@ -324,7 +324,7 @@ fn process_update(w: &mut Worker, conf: &MasterConf, bi: BlockInfo) {
             return;
         }
         let out = &mut *output;
-        while out.out.len() > 0 {
+        while !out.out.is_empty() {
             enqueue_write(w, out);
         }
         out.dedup_tbl.clear();
@@ -483,14 +483,8 @@ fn worker_loop(g: Arc<Global>) {
         anns: Vec::new(),
         dedups: Vec::new(),
         vctx: ValidateCtx::default(),
-        write_jobs: VecDeque::new(),
     };
     loop {
-        for j in w.write_jobs.drain(..) {
-            if let Err(e) = w.global.write_file_send.send(j) {
-                warn!("error sending to write_file_send {}", e);
-            }
-        }
         loop {
             match pc_update_recv.try_recv() {
                 Ok(upd) => {
@@ -522,12 +516,7 @@ fn worker_loop(g: Arc<Global>) {
 
 pub type AnnHandler = Arc<Global>;
 
-pub async fn new(
-    pc: &PoolClient,
-    pmc: &PaymakerClient,
-    workdir: String,
-    cfg: AnnHandlerCfg,
-) -> Result<AnnHandler> {
+pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> Result<AnnHandler> {
     if cfg.skip_check_chance > 1.0 || cfg.skip_check_chance < 0.0 {
         bail!(
             "skip_check_chance must be a number between 0 and 1, got {}",
@@ -549,16 +538,7 @@ pub async fn new(
         .try_into()
         .unwrap();
 
-    let anndir = format!("{}/anndir", workdir);
-    util::ensure_exists_dir(&anndir).await?;
-    let tmpdir = format!("{}/tmpdir", workdir);
-    util::ensure_exists_dir(&tmpdir).await?;
-
-    let ann_file_regex = Regex::new("^anns_[0-9]+_[0-9]+_([0-9]+).bin$")?;
-    let top_ann_file = util::highest_num_file(&anndir, &ann_file_regex).await?;
-
     let (submit_send, submit_recv) = crossbeam_channel::bounded(cfg.input_queue_len);
-    let (write_file_send, write_file_recv) = tokio::sync::mpsc::unbounded_channel();
     let (pc_update_send, pc_update_recv) = crossbeam_channel::bounded(POOL_UPDATE_QUEUE_LEN);
     let global = Arc::new(Global {
         outputs: *outputs,
@@ -567,20 +547,51 @@ pub async fn new(
         pc: pc.clone(),
         pc_update_recv,
         pc_update_send,
-        fileno: AtomicUsize::new(top_ann_file + 1),
+        fileno: AtomicUsize::new(0),
         pmc: pmc.clone(),
         sockaddr: ([0; 16], cfg.bind_port).into(),
         skip_check_chance: 255 * cfg.skip_check_chance as u8,
-        write_file_send,
-        write_file_recv: tokio::sync::Mutex::new(write_file_recv),
-        delete_list: tokio::sync::Mutex::new(VecDeque::new()),
+        ann_tbl: std::sync::RwLock::new(AnnTable {
+            files: HashMap::new(),
+            filenames: VecDeque::new(),
+            top_file: 0,
+        }),
         cfg,
-        ann_file_regex,
-        anndir,
-        tmpdir,
     });
 
     Ok(global)
+}
+
+async fn handle_get(
+    ah: AnnHandler,
+    filename: String,
+    passwd: Option<String>,
+) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
+    let tbl = ah.ann_tbl.read().unwrap();
+    if filename == "index.json" {
+        return Ok(Box::new(warp::reply::json(
+            &packetcrypt_util::protocol::AnnIndex {
+                highest_ann_file: tbl.top_file as i64,
+                files: tbl.filenames.iter().cloned().collect(),
+            },
+        )));
+    }
+    match &ah.cfg.block_miner_passwd {
+        None => (),
+        Some(p) => {
+            if passwd.as_deref() != Some(p) {
+                return Ok(Box::new(warp::reply::with_status(
+                    warp::reply::json(&"x-pc-passwd incorrect".to_owned()),
+                    warp::http::StatusCode::UNAUTHORIZED,
+                )));
+            }
+        }
+    }
+    if let Some(f) = tbl.files.get(&filename) {
+        Ok(Box::new(warp::http::Response::builder().body(f.clone())))
+    } else {
+        Err(warp::reject::not_found())
+    }
 }
 
 async fn handle_submit(
@@ -605,7 +616,7 @@ async fn handle_submit(
     }) {
         Ok(_) => {
             let reply = getreply.await.unwrap();
-            let ok = reply.error.len() == 0;
+            let ok = reply.error.is_empty();
             if let Some(res) = &reply.result {
                 if let Err(e) = paymakerclient::handle_paylog(&ah.pmc, &res).await {
                     error!("Unable to send paylog {}", e);
@@ -641,89 +652,6 @@ async fn handle_submit(
     }
 }
 
-async fn write_file_loop(ah: &AnnHandler) {
-    loop {
-        let job = if let Some(x) = ah.write_file_recv.lock().await.recv().await {
-            x
-        } else {
-            continue;
-        };
-        let f = format!(
-            "anns_{}_{}_{}.bin",
-            job.parent_block_height, job.handler_num, job.fileno
-        );
-        trace!("Writing file {}", f);
-        match util::write_file(
-            &f,
-            &ah.tmpdir,
-            &ah.anndir,
-            job.anns.iter().map(|ann| &ann.bytes),
-        )
-        .await
-        {
-            Ok(_) => (),
-            Err(e) => {
-                error!("write_file() -> {}", e);
-            }
-        }
-    }
-}
-
-async fn delete_loop(ah: &AnnHandler) {
-    loop {
-        let file = {
-            if let Some(x) = ah.delete_list.lock().await.pop_back() {
-                x
-            } else {
-                continue;
-            }
-        };
-        trace!("deleting old ann file [{}]", file);
-        match tokio::fs::remove_file(file).await {
-            Ok(_) => (),
-            Err(e) => {
-                error!("remove_file() -> {}", e);
-            }
-        }
-    }
-}
-
-async fn try_maintanence(ah: &AnnHandler) -> Result<()> {
-    let mut files = util::numbered_files(&ah.anndir, &ah.ann_file_regex).await?;
-    files.sort_by(|a, b| b.1.cmp(&a.1));
-    if files.len() > ah.cfg.files_to_keep {
-        let mut delete_list_l = ah.delete_list.lock().await;
-        for f in files.drain(ah.cfg.files_to_keep..) {
-            let x = format!("{}/{}", &ah.anndir, f.0);
-            if !delete_list_l.contains(&x) {
-                delete_list_l.push_front(x);
-            }
-        }
-    }
-    let vecu8 = serde_json::to_vec(&IndexFile {
-        highest_ann_file: files.get(0).map(|f| f.1).unwrap_or(0),
-        files: files.drain(0..).map(|f| f.0).rev().collect(),
-    })?;
-    util::write_file(
-        &String::from("index.json"),
-        &ah.tmpdir,
-        &ah.anndir,
-        std::iter::once(&bytes::Bytes::from(vecu8)),
-    )
-    .await
-}
-
-const PAUSE_BETWEEN_MAINTANENCE_MS: u64 = 10_000;
-
-async fn maintanence_loop(ah: &AnnHandler) {
-    loop {
-        if let Err(e) = try_maintanence(ah).await {
-            error!("Failed maintanence loop [{}]", e);
-        }
-        util::sleep_ms(PAUSE_BETWEEN_MAINTANENCE_MS).await;
-    }
-}
-
 pub async fn start(ah: &AnnHandler) {
     let sub = warp::post()
         .and(warp::path("submit"))
@@ -739,7 +667,14 @@ pub async fn start(ah: &AnnHandler) {
         .and(warp::header::<String>("x-pc-payto"))
         .and_then(handle_submit);
 
-    let anns = warp::path("anns").and(warp::fs::dir(ah.anndir.clone()));
+    let anns = warp::get()
+        .and((|ah: AnnHandler| warp::any().map(move || ah.clone()))(
+            ah.clone(),
+        ))
+        .and(warp::path("anns"))
+        .and(warp::path::param())
+        .and(warp::header::optional::<String>("x-pc-passwd"))
+        .and_then(handle_get);
 
     // Pipe new work updates through to a crossbeam channel
     util::tokio_bcast_to_crossbeam(
@@ -749,14 +684,6 @@ pub async fn start(ah: &AnnHandler) {
     )
     .await;
 
-    for _ in 0..FILE_WRITE_WORKERS {
-        packetcrypt_util::async_spawn!(ah, { write_file_loop(&ah).await });
-    }
-    for _ in 0..FILE_DELETE_WORKERS {
-        packetcrypt_util::async_spawn!(ah, { delete_loop(&ah).await });
-    }
-
-    packetcrypt_util::async_spawn!(ah, { maintanence_loop(&ah).await });
     packetcrypt_util::async_spawn!(ah, { warp::serve(sub.or(anns)).run(ah.sockaddr).await });
 
     for _ in 0..(ah.cfg.num_workers) {

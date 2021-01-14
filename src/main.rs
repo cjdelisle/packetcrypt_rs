@@ -82,7 +82,7 @@ async fn ah_main(config: &str, handler: &str) -> Result<()> {
     .await?;
     paymakerclient::start(&pmc).await;
 
-    let ah = annhandler::new(&pc, &pmc, ah_workdir, hconf).await?;
+    let ah = annhandler::new(&pc, &pmc, hconf).await?;
     annhandler::start(&ah).await;
 
     poolclient::start(&pc).await;

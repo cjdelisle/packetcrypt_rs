@@ -10,6 +10,7 @@ pub struct AnnHandlerCfg {
     pub public_url: String,
     pub bind_port: u16,
     pub files_to_keep: usize,
+    pub block_miner_passwd: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
