@@ -164,15 +164,14 @@ async fn update_work_cycle(am: &AnnMine, chan: &mut tokio::sync::broadcast::Rece
     // Reverse the parent block hash because hashes in bitcoin are always expressed backward
     let mut rev_hash = job.header.hash;
     rev_hash.reverse();
-    match annminer::start(
+    if let Err(e) = annminer::start(
         &am.miner,
         rev_hash,
         job.header.height,
         ann_target,
         job.sig_key,
     ) {
-        Err(e) => warn!("Error starting annminer {}", e),
-        _ => (),
+        warn!("Error starting annminer {}", e);
     }
 }
 async fn update_work_loop(am: &AnnMine) {
@@ -189,19 +188,15 @@ fn check_get_handlers(
     if let Some(mut h) = {
         // Busy poll the channel until we get to the last item
         let mut last: Option<HandlersMsg> = None;
-        loop {
-            if let Ok(x) = recv_handlers.try_recv() {
-                last = Some(x)
-            } else {
-                break;
-            }
+        while let Ok(x) = recv_handlers.try_recv() {
+            last = Some(x);
         }
         last
     } {
         if h.urls.iter().eq(handlers.iter().map(|x| &*x.url)) {
             handlers
         } else {
-            if handlers.len() > 0 {
+            if !handlers.is_empty() {
                 warn!(
                     "Change of handlers from {:?} to {:?}",
                     handlers.iter().map(|x| &*x.url).collect::<Vec<&String>>(),
@@ -281,7 +276,7 @@ async fn handle_ann_loop(am: &AnnMine) {
             continue;
         };
         //debug!("ann {}", ann_struct.ann.hard_nonce());
-        if handlers.len() < 1 {
+        if handlers.is_empty() {
             // no handlers yet
             continue;
         }
@@ -307,20 +302,24 @@ async fn handle_ann_loop(am: &AnnMine) {
         let parent_block_height = ann_struct.ann.parent_block_height();
         let hcount = handlers.len();
         let handler = &mut handlers[(ann_struct.dedup_hash as usize) % hcount];
-        if handler.tip.parent_block_height > parent_block_height {
-            debug!(
-                "Miner produced an old announcement, want parent_block_height {} got {}",
-                handler.tip.parent_block_height, parent_block_height
-            );
-            continue;
-        } else if handler.tip.parent_block_height < parent_block_height {
-            // this prints for each handler
-            trace!(
-                "New block number {} -> {}",
-                handler.tip.parent_block_height,
-                parent_block_height
-            );
-            submit_anns(am, handler, &mut send_upload, parent_block_height);
+        match handler.tip.parent_block_height.cmp(&parent_block_height) {
+            std::cmp::Ordering::Greater => {
+                debug!(
+                    "Miner produced an old announcement, want parent_block_height {} got {}",
+                    handler.tip.parent_block_height, parent_block_height
+                );
+                continue;
+            }
+            std::cmp::Ordering::Less => {
+                // this prints for each handler
+                trace!(
+                    "New block number {} -> {}",
+                    handler.tip.parent_block_height,
+                    parent_block_height
+                );
+                submit_anns(am, handler, &mut send_upload, parent_block_height);
+            }
+            std::cmp::Ordering::Equal => (),
         }
 
         handler.tip.anns.push(ann_struct.ann);
@@ -357,8 +356,8 @@ async fn upload_batch(
     let res = client
         .post(&*batch.url)
         .header("x-pc-payto", &am.cfg.pay_to)
-        .header("x-pc-sver", 1 as u32)
-        .header("x-pc-annver", 1 as u32)
+        .header("x-pc-sver", 1)
+        .header("x-pc-annver", 1)
         .header("x-pc-worknum", worknum)
         .body(body)
         .send()
@@ -399,12 +398,12 @@ async fn upload_batch(
             String::new()
         }
     );
-    if reply.error.len() > 0 {
+    if !reply.error.is_empty() {
         warn!(
             "[{}] handler [{}] replied with error [{:?}]",
             upload_n, &*batch.url, reply.error
         );
-    } else if reply.warn.len() > 0 {
+    } else if !reply.warn.is_empty() {
         warn!(
             "[{}] handler [{}] replied with warnings [{:?}]",
             upload_n, &*batch.url, reply.warn
@@ -438,8 +437,7 @@ async fn stats_loop(am: &AnnMine) {
         };
         let now = util::now_ms();
         if now - time_of_last_msg > 10_000 {
-            let aps = raps[..].iter().map(|a| a.count).fold(0, |acc, x| acc + x)
-                / (STATS_SECONDS_TO_KEEP - 1);
+            let aps = raps[..].iter().map(|a| a.count).sum::<usize>() / (STATS_SECONDS_TO_KEEP - 1);
             let kbps = aps as f64 * 8.0;
 
             let lost_anns = am.lost_anns.swap(0, Ordering::Relaxed);
