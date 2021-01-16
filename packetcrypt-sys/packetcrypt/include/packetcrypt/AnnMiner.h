@@ -30,16 +30,13 @@ typedef struct AnnMiner_Request_s {
     // a 32 byte pubkey, if all zeros then it is considered that the ann need not be signed
     uint8_t signingKey[32];
 
-    // Limit the number of announcements generated per second
-    uint32_t maxAnnsPerSecond;
-
     // the type of the announcement content
     uint32_t contentType;
 
     // the length of the content
     uint32_t contentLen;
 } AnnMiner_Request_t;
-_Static_assert(sizeof(AnnMiner_Request_t) == 84, "");
+_Static_assert(sizeof(AnnMiner_Request_t) == 80, "");
 
 AnnMiner_t* AnnMiner_create(
     uint32_t minerId,
@@ -69,8 +66,8 @@ void AnnMiner_stop(AnnMiner_t* miner);
 void AnnMiner_free(AnnMiner_t* miner);
 
 /**
- * Get the number of announcements per second at which the miner is currently mining.
+ * Get the number of encryption cycles per second at which the miner is currently mining.
  */
-double AnnMiner_getAnnsPerSecond(const AnnMiner_t* ctx);
+double AnnMiner_getEncryptionsPerSecond(const AnnMiner_t* ctx);
 
 #endif

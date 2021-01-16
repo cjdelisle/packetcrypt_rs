@@ -83,13 +83,9 @@ struct Worker_s {
     pthread_t thread;
 
     // read by the main thread
-    sig_atomic_t microsPerAnn;
+    sig_atomic_t encryptionsPerSecond; 
 
     uint32_t workerNum;
-
-    Time timeBetweenFinds;
-
-    uint32_t threadMinMicrosPerAnn;
 
     int softNonce;
     int softNonceMax;
@@ -192,38 +188,19 @@ static int annHash(Worker_t* restrict w, uint32_t nonce) {
     return 1;
 }
 
-#define HASHES_PER_CYCLE 8
+#define HASHES_PER_CYCLE 256
 
 static void search(Worker_t* restrict w)
 {
     int nonce = w->softNonce;
+    Time t;
+    Time_BEGIN(t);
     for (int i = 0; i < HASHES_PER_CYCLE; i++) {
         if (Util_likely(!annHash(w, nonce++))) { continue; }
-
         w->ctx->ann_found(w->ctx->callback_ctx, (uint8_t*) &w->ann);
-
-        // update time since last find
-        Time_END(w->timeBetweenFinds);
-        uint64_t micros = Time_MICROS(w->timeBetweenFinds);
-        // IIR with alpha of 0.25
-        uint32_t mpa = w->microsPerAnn = w->microsPerAnn * 3 / 4 + (micros / 4);
-        //fprintf(stderr, "Find in %llu micros (%u)\n", micros, w->microsPerAnn);
-        Time_NEXT(w->timeBetweenFinds);
-
-        //fprintf(stderr, "mpa = %u min = %u\n", mpa, w->threadMinMicrosPerAnn);
-        if (mpa < w->threadMinMicrosPerAnn) {
-            // Experimentation has shown that sleeping for as much time as it would take
-            // to find another ann keeps the number about right.
-            uint32_t sleepMicros = w->threadMinMicrosPerAnn;
-            // fprintf(stderr, "Ann production too fast, sleeping for %u microseconds\n",
-            //     sleepMicros);
-            struct timespec ts;
-            ts.tv_sec = sleepMicros / 1000000;
-            sleepMicros -= ts.tv_sec * 1000000;
-            ts.tv_nsec = sleepMicros * 1000;
-            nanosleep(&ts, NULL);
-        }
     }
+    Time_END(t);
+    w->encryptionsPerSecond = ((HASHES_PER_CYCLE * 1024) / (Time_MICROS(t) / 1024));
     w->softNonce = nonce;
 
     return;
@@ -348,18 +325,7 @@ void AnnMiner_start(AnnMiner_t* ctx, AnnMiner_Request_t* req, int version) {
         }
     }
 
-    uint32_t threadMinMicrosPerAnn = 0;
-    if (req->maxAnnsPerSecond) {
-        uint32_t minMicrosPerAnn = 1000000 / req->maxAnnsPerSecond;
-        threadMinMicrosPerAnn = minMicrosPerAnn * ctx->numWorkers;
-        //fprintf(stderr, "maps %u tmmpa = %u\n", req->maxAnnsPerSecond, threadMinMicrosPerAnn);
-    }
-
     for (int i = 0; i < ctx->numWorkers; i++) {
-        if (!ctx->active) {
-            Time_BEGIN(ctx->workers[i].timeBetweenFinds);
-        }
-        ctx->workers[i].threadMinMicrosPerAnn = threadMinMicrosPerAnn;
         setRequestedState(ctx, &ctx->workers[i], ThreadState_RUNNING);
     }
     pthread_cond_broadcast(&ctx->cond);
@@ -409,13 +375,11 @@ void AnnMiner_free(AnnMiner_t* ctx)
     freeCtx(ctx);
 }
 
-double AnnMiner_getAnnsPerSecond(const AnnMiner_t* ctx)
+double AnnMiner_getEncryptionsPerSecond(const AnnMiner_t* ctx)
 {
-    double totalAnnsPerMicrosecond = 0.0;
+    double totalEPS = 0.0;
     for (int i = 0; i < ctx->numWorkers; i++) {
-        double mpa = ctx->workers[i].microsPerAnn;
-        if (mpa == 0) { continue; }
-        totalAnnsPerMicrosecond += (1.0 / mpa);
+        totalEPS += ctx->workers[i].encryptionsPerSecond;
     }
-    return totalAnnsPerMicrosecond * 1000000.0;
+    return totalEPS;
 }

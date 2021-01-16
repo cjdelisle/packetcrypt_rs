@@ -444,6 +444,7 @@ async fn stats_loop(am: &AnnMine) {
             let inflight_anns = am.inflight_anns.load(Ordering::Relaxed);
             let accepted_anns = am.accepted_anns.swap(0, Ordering::Relaxed);
             let rejected_anns = am.rejected_anns.swap(0, Ordering::Relaxed);
+            let eps = annminer::encryptions_per_second(&am.miner);
 
             let total_anns = lost_anns + rejected_anns + accepted_anns;
 
@@ -454,7 +455,8 @@ async fn stats_loop(am: &AnnMine) {
             };
             if kbps > 0.0 {
                 info!(
-                    "{} overflow: {} uploading: {} accept/reject: {} - goodrate: {}%",
+                    "{} {} overflow: {} uploading: {} accept/reject: {} - goodrate: {}%",
+                    util::pad_to(10, format!("{}e/s", util::big_number(eps))),
                     util::pad_to(11, format_kbps(kbps)),
                     util::pad_to(3, format!("{}", lost_anns)),
                     util::pad_to(6, format!("{}", inflight_anns)),

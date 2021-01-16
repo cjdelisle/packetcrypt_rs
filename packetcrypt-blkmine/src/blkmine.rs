@@ -629,7 +629,7 @@ async fn stats_loop(bm: &BlkMine) {
                 let hr = util::pad_to(
                     30,
                     format!(
-                        "real: {}h/s eff: {}h/s ",
+                        "real: {}e/s eff: {} ",
                         util::big_number(hashrate),
                         util::big_number(hashrate * hrm as f64)
                     ),

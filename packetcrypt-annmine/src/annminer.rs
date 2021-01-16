@@ -58,6 +58,12 @@ pub fn new(miner_id: u32, workers: usize) -> (AnnMiner, UnboundedReceiver<AnnRes
     )
 }
 
+pub fn encryptions_per_second(miner: &AnnMiner) -> f64 {
+    unsafe {
+        packetcrypt_sys::AnnMiner_getEncryptionsPerSecond(*miner.miner.lock().unwrap().get_mut())
+    }
+}
+
 const ANN_VERSION: c_int = 1;
 
 pub fn start(
@@ -70,7 +76,6 @@ pub fn start(
     let mut req = packetcrypt_sys::AnnMiner_Request_t {
         contentLen: 0,
         contentType: 0,
-        maxAnnsPerSecond: 0, // 0 is unlimited
         parentBlockHash: parent_block_hash,
         parentBlockHeight: parent_block_height as u32,
         signingKey: if let Some(x) = signing_key {
