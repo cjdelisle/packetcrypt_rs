@@ -61,8 +61,8 @@ impl ProofTree {
         if self.size == 0 {
             return Err("no anns, cannot compute tree");
         }
-        let mut out = vec![0 as u32; self.size as usize];
-        let mut rh = [0 as u8; 32];
+        let mut out = vec![0u32; self.size as usize];
+        let mut rh = [0u8; 32];
         let out_p = out.as_mut_ptr();
         let rh_p = rh.as_mut_ptr();
         let count = unsafe { ProofTree_compute(self.raw, rh_p, out_p) };

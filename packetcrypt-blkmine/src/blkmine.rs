@@ -130,7 +130,7 @@ fn get_current_mining(bm: &BlkMine) -> Option<CurrentMining> {
     if let Some(mut cm) = cm_o.as_mut() {
         cm.shares = 0;
     }
-    return out;
+    out
 }
 
 // Reclaims free space or poor quality AnnInfos which are not currently being mined
@@ -335,7 +335,7 @@ fn reload_anns(
     v.append(&mut new_l);
     v.append(active_l);
     for ai in &mut v {
-        if ai.hashes.len() == 0 {
+        if ai.hashes.is_empty() {
             // This is the free space marker
             ai.ann_effective_work = u32::MAX;
         } else {
@@ -530,7 +530,7 @@ async fn downloader_loop(bm: &BlkMine) {
             }
         };
         if upd.conf.download_ann_urls != urls {
-            if urls.len() > 0 {
+            if !urls.is_empty() {
                 info!(
                     "Change of ann handler list {:?} -> {:?}",
                     urls, upd.conf.download_ann_urls
@@ -706,7 +706,7 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
     // Get the proof tree
     let pb = {
         let mut tree_l = get_tree(bm, true).0.lock().unwrap();
-        let mut llocs64 = [0 as u64; 4];
+        let mut llocs64 = [0u64; 4];
         for (i, x) in (0..).zip(share.ann_llocs.iter()) {
             llocs64[i] = *x as u64;
         }
@@ -733,7 +733,7 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
 
     // Get the anns
     for i in 0..4 {
-        let mut ann = [0 as u8; 1024];
+        let mut ann = [0u8; 1024];
         bm.block_miner.get_ann(share.ann_mlocs[i], &mut ann[..]);
         header_and_proof.put(&ann[..]);
     }
@@ -754,7 +754,7 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
         .build()?
         .post(&handler_url)
         .header("x-pc-payto", &bm.ba.payment_addr)
-        .header("x-pc-sver", 1 as u32)
+        .header("x-pc-sver", 1)
         .body(to_submit)
         .send()
         .await?;
@@ -786,7 +786,7 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
     let result = match reply.result {
         protocol::MaybeBlkShareEvent::Bse(bse) => bse,
         protocol::MaybeBlkShareEvent::Str(_) => {
-            if reply.error.len() > 0 {
+            if !reply.error.is_empty() {
                 // We don't need to continue to complain
                 // The issue was raised already above
                 return Ok(());
@@ -823,17 +823,14 @@ async fn get_share_loop(bm: &BlkMine) {
 
         loop {
             // Drain the channel to prevent stales
-            if let Err(_) = receiver.try_recv() {
+            if receiver.try_recv().is_err() {
                 break;
             }
         }
 
         debug!("share {} {}", share.high_nonce, share.low_nonce);
-        match post_share(bm, share).await {
-            Err(e) => {
-                warn!("{}", e);
-            }
-            Ok(_) => (),
+        if let Err(e) = post_share(bm, share).await {
+            warn!("{}", e);
         }
         // header_and_proof -> header (fix nonce) + pad + proof
         // commit -> done already

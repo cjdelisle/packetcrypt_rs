@@ -23,6 +23,7 @@ struct CallbackCtx {
     sender: Mutex<tokio::sync::mpsc::Sender<BlkResult>>,
 }
 
+#[allow(clippy::field_reassign_with_default)]
 pub unsafe extern "C" fn on_share_found(resp: *mut BlockMine_Res_t, vctx: *mut c_void) {
     let mut res = BlkResult::default();
     res.high_nonce = (*resp).high_nonce;

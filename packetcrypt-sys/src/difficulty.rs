@@ -109,6 +109,7 @@ pub fn pc_get_hashrate_multiplier(ann_tar: u32, ann_count: u64) -> u64 {
     }
 }
 
+#[allow(clippy::if_same_then_else)]
 #[no_mangle]
 pub fn pc_degrade_announcement_target(ann_tar: u32, ann_age_blocks: u32) -> u32 {
     if ann_age_blocks < ANN_WAIT_PERIOD {
