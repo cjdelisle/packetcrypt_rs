@@ -76,6 +76,7 @@ pub struct AnnMineCfg {
     pub uploaders: usize,
     pub pay_to: String,
     pub upload_timeout: usize,
+    pub mine_old_anns: i32,
 }
 
 const UPLOAD_CHANNEL_LEN: usize = 200;
@@ -138,7 +139,12 @@ async fn update_work_cycle(am: &AnnMine, chan: &mut tokio::sync::broadcast::Rece
         top = max(bi.header.height, top);
         m.recent_work[(bi.header.height as usize) % RECENT_WORK_BUF] = Some(bi);
     }
-    m.currently_mining = max(m.currently_mining, top - update.conf.mine_old_anns as i32);
+    let mine_old = if am.cfg.mine_old_anns > -1 {
+        am.cfg.mine_old_anns
+    } else {
+        update.conf.mine_old_anns as i32
+    };
+    m.currently_mining = max(m.currently_mining, top - mine_old);
 
     // We're synced to the tip, begin mining (or start mining new anns)
     let job = if let Some(x) = m.recent_work[(m.currently_mining as usize) % RECENT_WORK_BUF] {
@@ -159,7 +165,7 @@ async fn update_work_cycle(am: &AnnMine, chan: &mut tokio::sync::broadcast::Rece
         "Start mining with parent_block_height: [{} @ {}] old: [{}]",
         hex::encode(job.header.hash),
         job.header.height,
-        update.conf.mine_old_anns
+        mine_old
     );
     // Reverse the parent block hash because hashes in bitcoin are always expressed backward
     let mut rev_hash = job.header.hash;

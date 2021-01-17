@@ -115,6 +115,7 @@ async fn ann_main(
     payment_addr: &str,
     uploads: usize,
     upload_timeout: usize,
+    mine_old_anns: i32,
 ) -> Result<()> {
     warn_if_addr_default(payment_addr);
     let am = annmine::new(annmine::AnnMineCfg {
@@ -124,6 +125,7 @@ async fn ann_main(
         uploaders: uploads,
         pay_to: String::from(payment_addr),
         upload_timeout,
+        mine_old_anns,
     })
     .await?;
     annmine::start(&am).await?;
@@ -227,6 +229,13 @@ async fn main() -> Result<()> {
                         .default_value(DEFAULT_ADDR),
                 )
                 .arg(
+                    Arg::with_name("mineold")
+                        .short("m")
+                        .long("mineold")
+                        .help("how many blocks old to mine annoucements, -1 to let the pool decide")
+                        .default_value("-1"),
+                )
+                .arg(
                     Arg::with_name("pool")
                         .help("The pool server to use")
                         .required(true)
@@ -300,7 +309,16 @@ async fn main() -> Result<()> {
         let threads = get_usize!(ann, "threads");
         let uploads = get_usize!(ann, "uploads");
         let upload_timeout = get_usize!(ann, "uploadtimeout");
-        ann_main(pool_master, threads, payment_addr, uploads, upload_timeout).await?;
+        let mine_old_anns = get_num!(ann, "mineold", i32);
+        ann_main(
+            pool_master,
+            threads,
+            payment_addr,
+            uploads,
+            upload_timeout,
+            mine_old_anns,
+        )
+        .await?;
     } else if let Some(ah) = matches.subcommand_matches("ah") {
         // ann handler
         let config = get_str!(ah, "config");
