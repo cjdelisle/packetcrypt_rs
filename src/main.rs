@@ -110,19 +110,19 @@ async fn blk_main(ba: blkmine::BlkArgs) -> Result<()> {
 }
 
 async fn ann_main(
-    pool_master: &str,
+    pools: Vec<String>,
     threads: usize,
     payment_addr: &str,
-    uploads: usize,
+    uploaders: usize,
     upload_timeout: usize,
     mine_old_anns: i32,
 ) -> Result<()> {
     warn_if_addr_default(payment_addr);
     let am = annmine::new(annmine::AnnMineCfg {
-        master_url: pool_master.to_string(),
+        pools,
         miner_id: util::rand_u32(),
         workers: threads,
-        uploaders: uploads,
+        uploaders,
         pay_to: String::from(payment_addr),
         upload_timeout,
         mine_old_anns,
@@ -133,6 +133,15 @@ async fn ann_main(
     util::sleep_forever().await
 }
 
+macro_rules! get_strs {
+    ($m:ident, $s:expr) => {
+        if let Some(x) = $m.values_of($s) {
+            x.map(|x| x.to_string()).collect::<Vec<String>>()
+        } else {
+            return Ok(());
+        }
+    };
+}
 macro_rules! get_str {
     ($m:ident, $s:expr) => {
         if let Some(x) = $m.value_of($s) {
@@ -206,11 +215,11 @@ async fn main() -> Result<()> {
                         .takes_value(true),
                 )
                 .arg(
-                    Arg::with_name("uploads")
-                        .short("u")
-                        .long("uploads")
-                        .help("Max concurrent uploads")
-                        .default_value("20")
+                    Arg::with_name("uploaders")
+                        .short("U")
+                        .long("uploaders")
+                        .help("Max concurrent uploads (per pool handler)")
+                        .default_value("5")
                         .takes_value(true),
                 )
                 .arg(
@@ -236,10 +245,10 @@ async fn main() -> Result<()> {
                         .default_value("-1"),
                 )
                 .arg(
-                    Arg::with_name("pool")
-                        .help("The pool server to use")
+                    Arg::with_name("pools")
+                        .help("The pools to mine in")
                         .required(true)
-                        .index(1),
+                        .min_values(1),
                 ),
         )
         .subcommand(
@@ -304,17 +313,17 @@ async fn main() -> Result<()> {
     util::setup_env(matches.occurrences_of("v")).await?;
     if let Some(ann) = matches.subcommand_matches("ann") {
         // ann miner
-        let pool_master = get_str!(ann, "pool");
+        let pools = get_strs!(ann, "pools");
         let payment_addr = get_str!(ann, "paymentaddr");
         let threads = get_usize!(ann, "threads");
-        let uploads = get_usize!(ann, "uploads");
+        let uploaders = get_usize!(ann, "uploaders");
         let upload_timeout = get_usize!(ann, "uploadtimeout");
         let mine_old_anns = get_num!(ann, "mineold", i32);
         ann_main(
-            pool_master,
+            pools,
             threads,
             payment_addr,
-            uploads,
+            uploaders,
             upload_timeout,
             mine_old_anns,
         )
