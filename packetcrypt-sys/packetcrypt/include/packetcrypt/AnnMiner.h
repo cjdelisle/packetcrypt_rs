@@ -65,9 +65,4 @@ void AnnMiner_stop(AnnMiner_t* miner);
  */
 void AnnMiner_free(AnnMiner_t* miner);
 
-/**
- * Get the number of encryption cycles per second at which the miner is currently mining.
- */
-double AnnMiner_getEncryptionsPerSecond(const AnnMiner_t* ctx);
-
 #endif

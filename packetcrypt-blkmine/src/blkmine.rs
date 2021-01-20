@@ -634,7 +634,7 @@ async fn stats_loop(bm: &BlkMine) {
                         util::big_number(hashrate * hrm as f64)
                     ),
                 );
-                let diff = packetcrypt_sys::difficulty::tar_to_difficulty(cm.ann_min_work);
+                let diff = packetcrypt_sys::difficulty::tar_to_diff(cm.ann_min_work);
                 let anns = util::pad_to(20, format!("anns: {} @ {}", anns, diff));
                 info!("{}{}{}{}", shr, hr, anns, dlst);
                 // Restart mining after 45s w/o a block

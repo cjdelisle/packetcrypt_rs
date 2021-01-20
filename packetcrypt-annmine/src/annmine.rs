@@ -37,6 +37,7 @@ const STATS_SECONDS_TO_KEEP: usize = 10;
 struct AnnsPerSecond {
     time_sec: usize,
     count: usize,
+    target: u32,
 }
 
 struct PoolMut {
@@ -360,6 +361,7 @@ async fn handle_ann_loop(am: &AnnMine) {
         let send_stats = if st.time_sec != now_sec {
             st.time_sec = now_sec;
             st.count = 1;
+            st.target = ann_struct.ann.work_bits();
             true
         } else {
             st.count += 1;
@@ -486,6 +488,8 @@ async fn stats_loop(am: &AnnMine) {
         let now = util::now_ms();
         if now - time_of_last_msg > 10_000 {
             let aps = raps[..].iter().map(|a| a.count).sum::<usize>() / (STATS_SECONDS_TO_KEEP - 1);
+            let diff = packetcrypt_sys::difficulty::tar_to_diff(raps[0].target);
+            let estimated_eps = diff * aps as f64;
             let kbps = (aps * am.pools.len()) as f64 * 8.0;
 
             let mut lost_anns = Vec::new();
@@ -510,12 +514,11 @@ async fn stats_loop(am: &AnnMine) {
                     }) * 100.0) as u32,
                 ));
             }
-            let eps = annminer::encryptions_per_second(&am.miner);
 
             if kbps > 0.0 {
                 info!(
                     "{} {} overflow: {} uploading: {} accept/reject: {} - goodrate: {}",
-                    util::pad_to(10, format!("{}e/s", util::big_number(eps))),
+                    util::pad_to(10, format!("{}e/s", util::big_number(estimated_eps))),
                     util::pad_to(11, format_kbps(kbps)),
                     util::pad_to(5 * am.pools.len(), format!("[{}]", lost_anns.join(", "))),
                     util::pad_to(
