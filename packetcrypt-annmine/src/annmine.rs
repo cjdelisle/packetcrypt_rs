@@ -289,12 +289,12 @@ fn submit_to_pool(p: &Pool, ann_struct: &AnnResult, now: u64) {
     let parent_block_height = ann_struct.ann.parent_block_height();
     let handler = {
         let pm = p.m.lock().unwrap();
-        let hcount = pm.handlers.len();
+        let hcount = pm.handlers.len() as u64;
         if hcount == 0 {
             // no handlers for this pool yet
             return;
         }
-        Arc::clone(&pm.handlers[(ann_struct.dedup_hash as usize) % hcount])
+        Arc::clone(&pm.handlers[(ann_struct.dedup_hash as u64 % hcount) as usize])
     };
     let mut tip = handler.tip.lock().unwrap();
     match tip.parent_block_height.cmp(&parent_block_height) {
