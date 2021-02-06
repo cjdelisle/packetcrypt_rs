@@ -70,10 +70,7 @@ async fn poll_ann_handler_worker<T: OnAnns>(mut apw: AhPollWorker<T>) {
         } {
             to_dl
         } else {
-            if let Err(e) = apw.wakeup.recv().await {
-                info!("{} error receiving wakeup {}", worker_id, e);
-                util::sleep_ms(5_000).await;
-            }
+            let _ = apw.wakeup.recv().await;
             continue;
         };
         let url = format!("{}/anns/{}", apw.url_base, to_dl);
