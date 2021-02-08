@@ -306,6 +306,14 @@ async fn main() -> Result<()> {
                         .help("How long to wait for a reply before aborting an upload")
                         .default_value("30")
                         .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("handlerpass")
+                        .short("P")
+                        .long("handlerpass")
+                        .help("Password to use for pulling anns from the handlers")
+                        .default_value("")
+                        .takes_value(true),
                 ),
         )
         .get_matches();
@@ -342,6 +350,7 @@ async fn main() -> Result<()> {
             downloader_count: get_usize!(blk, "downloaders"),
             pool_master: get_str!(blk, "pool").into(),
             upload_timeout: get_usize!(blk, "uploadtimeout"),
+            handler_pass: get_str!(blk, "handlerpass").into(),
         })
         .await?;
     }

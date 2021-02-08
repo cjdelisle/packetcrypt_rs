@@ -22,6 +22,7 @@ pub struct BlkArgs {
     pub max_mem: usize,
     pub min_free_space: f64,
     pub upload_timeout: usize,
+    pub handler_pass: String,
 }
 
 struct FreeInfo {
@@ -542,8 +543,14 @@ async fn downloader_loop(bm: &BlkMine) {
             for d in downloaders.drain(..) {
                 downloader::stop(&d).await;
             }
+            let pass = if !bm.ba.handler_pass.is_empty() {
+                Some(bm.ba.handler_pass.clone())
+            } else {
+                None
+            };
             for url in &upd.conf.download_ann_urls {
-                let dl = downloader::new(bm.ba.downloader_count, url.to_owned(), bm).await;
+                let dl =
+                    downloader::new(bm.ba.downloader_count, url.to_owned(), bm, pass.clone()).await;
                 downloader::start(&dl).await.unwrap();
                 downloaders.push(dl);
             }
