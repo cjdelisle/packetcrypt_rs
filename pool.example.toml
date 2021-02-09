@@ -11,6 +11,13 @@ root_workdir = "./datastore/pool"
 # You select the one you want using the command line, for example:
 # packetcrypt ah --config /path/to/config.toml ah0
 [ann_handler.ah0]
+    # This is an optional password, if specified then no block miners will be
+    # able to use this handler unless they are using the same password on their
+    # command line using the -P or --handlerpass flag
+    # This will help prevent free-loader pools which pull announcements from
+    # your handlers but don't remunerate the announcement miners.
+    #block_miner_passwd = "you_can_put_a_secret_here"
+
     # Randomly skip validation of some announcements to reduce CPU effort
     # Set to 0 to check all announcements.
     skip_check_chance = 0.5
