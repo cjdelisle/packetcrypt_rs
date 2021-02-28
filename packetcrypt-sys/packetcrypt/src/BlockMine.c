@@ -154,6 +154,7 @@ static void mine(Worker_t* w)
             if (!Work_check(w->pcState.bytes, w->g->effectiveTarget)) { continue; }
 
             printf("share / %u / %u\n", hdr.nonce, lowNonce);
+            printf("effective target %x\n", w->g->effectiveTarget);
             for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
             printf("\n");
             for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }

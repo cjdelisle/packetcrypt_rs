@@ -592,10 +592,11 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         return;
     }
     debug!(
-        "Start mining {} with {} anns, min_work={:#x}",
+        "Start mining {} with {} anns, min_work={:#x} effective_work={:#x}",
         next_work.height,
         tree_l.size(),
         reload.ann_min_work,
+        reload.effective_block_tar,
     );
     let index_table = tree_l.compute().unwrap();
     let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
