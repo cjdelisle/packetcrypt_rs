@@ -413,7 +413,7 @@ impl SprayWorker {
                 Ok((l, from)) => {
                     if l != 1024 {
                         let mut x = [0_u8; 1024];
-                        x.copy_from_slice(&self.rbuf[i][0..l]);
+                        x[0..1].copy_from_slice(&self.rbuf[i][0..l]);
                         self.maybe_subscribe(&x[0..l], from);
                         continue;
                     }
