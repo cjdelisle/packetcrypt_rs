@@ -589,7 +589,7 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
 async fn handle_get(
     ah: AnnHandler,
     filename: String,
-    passwd: String,
+    passwd: Option<String>,
 ) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
     let tbl = ah.ann_tbl.read().unwrap();
     if filename == "index.json" {
@@ -600,9 +600,16 @@ async fn handle_get(
             },
         )));
     }
-    if ah.cfg.block_miner_passwd != passwd {
+    if let Some(pass) = passwd {
+        if ah.cfg.block_miner_passwd != pass {
+            return Ok(Box::new(warp::reply::with_status(
+                warp::reply::json(&"x-pc-passwd incorrect".to_owned()),
+                warp::http::StatusCode::UNAUTHORIZED,
+            )));
+        }
+    } else {
         return Ok(Box::new(warp::reply::with_status(
-            warp::reply::json(&"x-pc-passwd incorrect".to_owned()),
+            warp::reply::json(&"x-pc-passwd missing".to_owned()),
             warp::http::StatusCode::UNAUTHORIZED,
         )));
     }
@@ -692,7 +699,7 @@ pub async fn start(ah: &AnnHandler) {
         ))
         .and(warp::path("anns"))
         .and(warp::path::param())
-        .and(warp::header::<String>("x-pc-passwd"))
+        .and(warp::header::optional::<String>("x-pc-passwd"))
         .and_then(handle_get);
 
     // Pipe new work updates through to a crossbeam channel
