@@ -168,15 +168,15 @@ impl Sprayer {
         for _ in 0..self.0.workers {
             let g = Sprayer(Arc::clone(&self.0));
             std::thread::spawn(move || {
-                SprayWorker {
+                Box::new(SprayWorker {
                     g,
-                    rbuf: [[0_u8; 1024]; INCOMING_BUF_ANN_PER_THREAD],
+                    rbuf: vec![[0_u8; 1024]; INCOMING_BUF_ANN_PER_THREAD],
                     sbuf: [ToSend {
                         dest: SocketAddr::new([127, 0, 0, 1].into(), 0),
                         ann: [0_u8; 1024],
                     }; SEND_CHUNK_SZ],
                     time_of_last_log: 0_u64,
-                }
+                })
                 .run();
             });
         }
@@ -333,7 +333,7 @@ impl Sprayer {
 
 struct SprayWorker {
     g: Sprayer,
-    rbuf: [Ann; INCOMING_BUF_ANN_PER_THREAD],
+    rbuf: Vec<Ann>,
     sbuf: [ToSend; SEND_CHUNK_SZ],
     time_of_last_log: u64,
 }
