@@ -754,7 +754,7 @@ async fn stats_loop(bm: &BlkMine) {
                 .map(|s| format!("({}, {})", s.peer, util::format_kbps(s.kbps_in)))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!(" <- [ {} ]", v)
+            format!(" {} <- [ {} ]", spr, v)
         } else {
             let got = util::pad_to(19, format!("<- got: {:?} ", downloaded));
             let get = util::pad_to(19, format!("<- get: {:?} ", downloading));

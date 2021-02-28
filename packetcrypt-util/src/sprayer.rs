@@ -81,6 +81,8 @@ pub struct PeerStats {
     pub peer: SocketAddr,
     pub kbps_in: f64,
     pub kbps_out: f64,
+    pub packets_in: u64,
+    pub packets_out: u64,
 }
 
 struct SprayerS {
@@ -103,11 +105,9 @@ fn get_ann_key(ann: &Ann) -> u32 {
     u32::from_le_bytes(ann[64..68].try_into().unwrap())
 }
 
-fn kbps(packets2: usize, packets1: usize, time2: u64, time1: u64) -> f64 {
-    let packets_sent = (packets2 - packets1) as u64;
+fn compute_kbps(packets_sent: u64, ms_elapsed: u64) -> f64 {
     // consider the headers here
     let bits_sent = packets_sent * (MSG_TOTAL_LEN as u64 + 8 + 20 + 14) * 8;
-    let ms_elapsed = time2 - time1;
     // bits per millisecond = kilobits per second
     bits_sent as f64 / ms_elapsed as f64
 }
@@ -330,18 +330,27 @@ impl Sprayer {
         for sub in &m.subscribers {
             match ps.get_mut(&sub.peer) {
                 Some(p) => {
-                    let packets_sent = sub.packets_sent.load(atomic::Ordering::Relaxed);
+                    let packets_sent_ever = sub.packets_sent.load(atomic::Ordering::Relaxed);
+                    let packets = (packets_sent_ever - p.last_packets_sent) as u64;
+                    let ms = now_ms - p.last_logged_ms;
                     let st = PeerStats {
                         peer: sub.peer,
-                        kbps_out: kbps(packets_sent, p.last_packets_sent, now_ms, p.last_logged_ms),
+                        packets_out: packets,
+                        kbps_out: compute_kbps(packets, ms),
+                        packets_in: 0,
                         kbps_in: 0.0,
                     };
                     if self.0.log_peer_stats {
-                        info!("{} <- {}", sub.peer, util::format_kbps(st.kbps_out));
+                        info!(
+                            "{} <- {} ({})",
+                            sub.peer,
+                            util::big_number(packets as f64),
+                            util::format_kbps(st.kbps_out)
+                        );
                     }
                     peer_stats.push(st);
                     p.last_logged_ms = now_ms;
-                    p.last_packets_sent = packets_sent;
+                    p.last_packets_sent = packets_sent_ever;
                 }
                 None => {
                     ps.insert(
@@ -358,14 +367,23 @@ impl Sprayer {
         for sub in &self.0.subscribed_to {
             match ps.get_mut(&sub.peer) {
                 Some(p) => {
-                    let packets_recv = sub.packets_received.load(atomic::Ordering::Relaxed);
+                    let packets_recv_ever = sub.packets_received.load(atomic::Ordering::Relaxed);
+                    let packets = (packets_recv_ever - p.last_packets_recv) as u64;
+                    let ms = now_ms - p.last_logged_ms;
                     let st = PeerStats {
                         peer: sub.peer,
-                        kbps_in: kbps(packets_recv, p.last_packets_recv, now_ms, p.last_logged_ms),
+                        kbps_in: compute_kbps(packets, ms),
                         kbps_out: 0.0,
+                        packets_in: packets,
+                        packets_out: 0,
                     };
                     if self.0.log_peer_stats {
-                        info!("{} -> {}", sub.peer, util::format_kbps(st.kbps_in));
+                        info!(
+                            "{} -> {} ({})",
+                            sub.peer,
+                            util::big_number(packets as f64),
+                            util::format_kbps(st.kbps_in)
+                        );
                     }
                     peer_stats.push(st);
                     p.last_logged_ms = now_ms;
@@ -494,7 +512,9 @@ impl SprayWorker {
                 }
             }
             self.try_send();
-            self.g.get_peer_stats();
+            if self.g.0.log_peer_stats {
+                self.g.get_peer_stats();
+            }
             if i == 0 {
                 std::thread::sleep(std::time::Duration::from_millis(1));
                 continue;
