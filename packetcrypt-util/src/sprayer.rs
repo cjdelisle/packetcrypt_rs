@@ -66,8 +66,8 @@ impl<T: Send + Sync> OnAnns for Option<T> {
 }
 
 struct PeerStats {
-    last_logged_sec: usize,
-    last_packets_received: usize,
+    last_logged_ms: u64,
+    last_packets_recv: usize,
     last_packets_sent: usize,
 }
 
@@ -87,6 +87,16 @@ pub struct Sprayer(Arc<SprayerS>);
 
 fn get_ann_key(ann: &Ann) -> u32 {
     u32::from_le_bytes(ann[64..68].try_into().unwrap())
+}
+
+fn kbps(packets2: usize, packets1: usize, time2: u64, time1: u64) -> String {
+    let packets_sent = (packets2 - packets1) as u64;
+    // consider the headers here
+    let bits_sent = packets_sent * (1024 + 8 + 20 + 14) * 8;
+    let ms_elapsed = time2 - time1;
+    // bits per millisecond = kilobits per second
+    let kbps = bits_sent as f64 / ms_elapsed as f64;
+    util::format_kbps(kbps)
 }
 
 pub struct Config {
@@ -209,12 +219,12 @@ impl Sprayer {
         }
     }
 
-    fn send_subs(&self, tid: usize) -> Option<(std::io::Error, SocketAddr)> {
+    fn send_subs(&self) -> Option<(std::io::Error, SocketAddr)> {
         let now_sec = (util::now_ms() / 1000) as usize;
         let update_time = now_sec - SECONDS_UNTIL_RESUB;
         for (sub, num) in self.0.subscribed_to.iter().zip(0..) {
             let time_sec = sub.last_update_sec.load(atomic::Ordering::Relaxed);
-            if time_sec > update_time + tid {
+            if time_sec > update_time {
                 continue;
             }
             let req = serde_json::to_string(&SprayerReq {
@@ -278,7 +288,8 @@ impl Sprayer {
     }
 
     fn log_stats(&self) {
-        let now_sec = (util::now_ms() / 1000) as usize;
+        let now_ms = util::now_ms();
+        let now_sec = (now_ms / 1000) as usize;
         let last_logged_stats = self.0.last_logged_stats.load(atomic::Ordering::Relaxed);
         if last_logged_stats + STATS_EVERY > now_sec {
             return;
@@ -293,18 +304,21 @@ impl Sprayer {
             match ps.get_mut(&sub.peer) {
                 Some(p) => {
                     let packets_sent = sub.packets_sent.load(atomic::Ordering::Relaxed);
-                    let kbps = (packets_sent - p.last_packets_sent) / (now_sec - p.last_logged_sec);
-                    info!("{} <- {}", sub.peer, util::format_kbps(kbps as f64));
-                    p.last_logged_sec = now_sec;
+                    info!(
+                        "{} <- {}",
+                        sub.peer,
+                        kbps(packets_sent, p.last_packets_sent, now_ms, p.last_logged_ms)
+                    );
+                    p.last_logged_ms = now_ms;
                     p.last_packets_sent = packets_sent;
                 }
                 None => {
                     ps.insert(
                         sub.peer,
                         PeerStats {
-                            last_logged_sec: now_sec,
+                            last_logged_ms: now_ms,
                             last_packets_sent: sub.packets_sent.load(atomic::Ordering::Relaxed),
-                            last_packets_received: 0,
+                            last_packets_recv: 0,
                         },
                     );
                 }
@@ -314,20 +328,20 @@ impl Sprayer {
             match ps.get_mut(&sub.peer) {
                 Some(p) => {
                     let packets_recv = sub.packets_received.load(atomic::Ordering::Relaxed);
-                    let kbps =
-                        (packets_recv - p.last_packets_received) / (now_sec - p.last_logged_sec);
-                    info!("{} -> {}", sub.peer, util::format_kbps(kbps as f64));
-                    p.last_logged_sec = now_sec;
-                    p.last_packets_received = sub.packets_received.load(atomic::Ordering::Relaxed);
+                    info!(
+                        "{} -> {}",
+                        sub.peer,
+                        kbps(packets_recv, p.last_packets_recv, now_ms, p.last_logged_ms)
+                    );
+                    p.last_logged_ms = now_ms;
+                    p.last_packets_recv = sub.packets_received.load(atomic::Ordering::Relaxed);
                 }
                 None => {
                     ps.insert(
                         sub.peer,
                         PeerStats {
-                            last_logged_sec: now_sec,
-                            last_packets_received: sub
-                                .packets_received
-                                .load(atomic::Ordering::Relaxed),
+                            last_logged_ms: now_ms,
+                            last_packets_recv: sub.packets_received.load(atomic::Ordering::Relaxed),
                             last_packets_sent: 0,
                         },
                     );
@@ -357,8 +371,10 @@ impl SprayWorker {
         }
     }
     fn try_send(&mut self) {
-        if let Some((e, to)) = self.g.send_subs(self.tid) {
-            self.log(&|| info!("Error sending subscription to {}: {}", to, e));
+        if self.tid == 0 {
+            if let Some((e, to)) = self.g.send_subs() {
+                self.log(&|| info!("Error sending subscription to {}: {}", to, e));
+            }
         }
         let count = self.g.get_to_send(&mut self.sbuf);
         for i in 0..count {
