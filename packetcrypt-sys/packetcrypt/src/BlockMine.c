@@ -132,14 +132,10 @@ static void mine(Worker_t* w)
 
     uint32_t lowNonce = w->lowNonce;
 
-    for (;;) {
-        // if (hdr.timeSeconds != (uint32_t) t.tv0.tv_sec && !w->bm->beDeterministic) {
-        //     lowNonce = 0;
-        //     hdr.timeSeconds = (uint32_t) t.tv0.tv_sec;
-        // }
-        Buf32_t hdrHash;
-        Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
+    Buf32_t hdrHash;
+    Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
 
+    for (;;) {
         for (int i = 0; i < HASHES_PER_CYCLE; i++) {
             CryptoCycle_init(&w->pcState, &hdrHash, ++lowNonce);
             //MineResult_t res;
@@ -158,6 +154,7 @@ static void mine(Worker_t* w)
 
             printf("share / %u / %u\n", hdr.nonce, lowNonce);
             for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
+            printf("\n");
             for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
             printf("\n");
             for (int j = 0; j < 4; j++) {

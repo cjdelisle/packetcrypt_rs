@@ -568,6 +568,7 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 }
 
 fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
+    debug!("on_work() begin");
     let (tree, tree_num) = get_tree(bm, false);
     let mut tree_l = tree.lock().unwrap();
     let mut active_l = bm.active_infos.lock().unwrap();
@@ -600,6 +601,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         &index_table[..],
         reload.effective_block_tar,
     );
+    debug!("Mining with header {}", hex::encode(&block_header));
     bm.current_mining.lock().unwrap().replace(CurrentMining {
         count: index_table.len() as u32,
         ann_min_work: reload.ann_min_work,
