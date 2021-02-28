@@ -31,7 +31,7 @@ const SECONDS_UNTIL_RESUB: usize = 5;
 
 const STATS_EVERY: usize = 10;
 
-pub type Ann = [u8; 1024];
+pub type Ann = [u8; 1032];
 
 #[derive(Copy, Clone)]
 struct ToSend {
@@ -100,7 +100,7 @@ fn get_ann_key(ann: &Ann) -> u32 {
 fn kbps(packets2: usize, packets1: usize, time2: u64, time1: u64) -> f64 {
     let packets_sent = (packets2 - packets1) as u64;
     // consider the headers here
-    let bits_sent = packets_sent * (1024 + 8 + 20 + 14) * 8;
+    let bits_sent = packets_sent * (1032 + 8 + 20 + 14) * 8;
     let ms_elapsed = time2 - time1;
     // bits per millisecond = kilobits per second
     let kbps = bits_sent as f64 / ms_elapsed as f64;
@@ -176,13 +176,14 @@ impl Sprayer {
                     if sq.len() >= MAX_SEND_QUEUE {
                         sq.pop_front();
                         overflow += 1;
-                    } else {
-                        s.packets_sent.fetch_add(1, atomic::Ordering::Relaxed);
                     }
-                    sq.push_back(ToSend {
+                    let mut ts = ToSend {
                         dest: s.peer,
                         ann: *ann,
-                    })
+                    };
+                    let number = s.packets_sent.fetch_add(1, atomic::Ordering::Relaxed) as u64;
+                    ts.ann[1024..].copy_from_slice(&number.to_le_bytes());
+                    sq.push_back(ts);
                 }
             }
         }
@@ -195,10 +196,10 @@ impl Sprayer {
             std::thread::spawn(move || {
                 Box::new(SprayWorker {
                     g,
-                    rbuf: vec![[0_u8; 1024]; INCOMING_BUF_ANN_PER_THREAD],
+                    rbuf: vec![[0_u8; 1032]; INCOMING_BUF_ANN_PER_THREAD],
                     sbuf: [ToSend {
                         dest: SocketAddr::new([127, 0, 0, 1].into(), 0),
-                        ann: [0_u8; 1024],
+                        ann: [0_u8; 1032],
                     }; SEND_CHUNK_SZ],
                     time_of_last_log: 0_u64,
                     tid,
@@ -410,7 +411,7 @@ impl SprayWorker {
                 .send_to(&self.sbuf[i].ann[..], &self.sbuf[i].dest)
             {
                 Ok(l) => {
-                    if l == 1024 {
+                    if l == 1032 {
                         continue;
                     }
                     self.log(&|| info!("Sending to sprayer socket length {}", l));
@@ -445,6 +446,7 @@ impl SprayWorker {
         self.log(&|| debug!("Got subscription from {}", from));
         self.g.incoming_subscription(from, msg);
     }
+    #[allow(clippy::comparison_chain)]
     fn run(mut self) {
         info!("Launched sprayer thread");
         let mut i = 0;
@@ -452,8 +454,11 @@ impl SprayWorker {
         loop {
             match self.g.0.socket.recv_from(&mut self.rbuf[i][..]) {
                 Ok((l, from)) => {
-                    if l != 1024 {
-                        let mut x = [0_u8; 1024];
+                    if l > 1032 {
+                        self.log(&|| info!("Spurious packet from {}", from));
+                        continue;
+                    } else if l < 1032 {
+                        let mut x = [0_u8; 1032];
                         x[0..l].copy_from_slice(&self.rbuf[i][0..l]);
                         self.maybe_subscribe(&x[0..l], from);
                         continue;

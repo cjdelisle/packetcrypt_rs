@@ -225,7 +225,7 @@ fn enqueue_write(w: &mut Worker, output: &mut Output) {
             .out
             .iter()
             .map(|ann| {
-                let mut out = [0_u8; 1024];
+                let mut out = [0_u8; 1032];
                 out.copy_from_slice(&ann.bytes[..]);
                 out
             })
