@@ -155,6 +155,15 @@ static void mine(Worker_t* w)
             CryptoCycle_smul(&w->pcState);
             CryptoCycle_final(&w->pcState);
             if (!Work_check(w->pcState.bytes, w->g->effectiveTarget)) { continue; }
+
+            printf("share\n");
+            for (int j = 0; j < 4; j++) {
+                uint64_t loc = res.ann_mlocs[j];
+                printf("%llu - ", (long long unsigned) loc);
+                Hash_printHex((uint8_t*) &w->g->anns[loc], 16);
+                printf("\n");
+            }
+
             res.low_nonce = lowNonce;
             res.high_nonce = hdr.nonce;
             //Buf_OBJCPY(&res.hdr, &hdr);

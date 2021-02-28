@@ -887,6 +887,11 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
         })
         .collect::<Vec<_>>();
 
+    info!("Got share");
+    for (ann, i) in anns.iter().zip(0..) {
+        info!("{} - {}", share.ann_mlocs[i], hex::encode(&ann[0..32]));
+    }
+
     // At this point header_and_proof is really just the block header
     match packetcrypt_sys::check_block_work(
         &header_and_proof,
