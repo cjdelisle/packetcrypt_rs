@@ -76,7 +76,7 @@ pub fn check_block_work(
     share_target: u32,
     anns: &[[u8; 1024]],
     coinbase: &[u8],
-) -> Result<[u8; 32], &'static str> {
+) -> Result<[u8; 32], String> {
     let mut hap = [0_u8; 80 + 8 + (1024 * 4)];
     hap[0..80].copy_from_slice(header);
     hap[84..88].copy_from_slice(&low_nonce.to_le_bytes());
@@ -94,14 +94,15 @@ pub fn check_block_work(
             aligned_coinbase.as_ptr() as *const PacketCrypt_Coinbase_t,
             hashout.as_mut_ptr(),
         )
-    };
-    match res as i32 {
-        0 => Ok(hashout),
-        1 => Err("INVAL"),
-        2 => Err("INVAL_ITEM4"),
-        3 => Err("INSUF_POW"),
-        4 => Err("SOFT_NONCE_HIGH"),
-        _ => Err("UNKNOWN"),
+    } as u32;
+    if res == Validate_checkBlock_Res_Validate_checkBlock_OK
+        || res == Validate_checkBlock_Res_Validate_checkBlock_SHARE_OK
+    {
+        Ok(hashout)
+    } else if res == Validate_checkBlock_Res_Validate_checkBlock_INSUF_POW {
+        Err(format!("INSUF_POW {}", hex::encode(hashout)))
+    } else {
+        Err(format!("UNKNOWN {}", res))
     }
 }
 

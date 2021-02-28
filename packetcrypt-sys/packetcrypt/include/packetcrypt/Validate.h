@@ -29,7 +29,7 @@ int Validate_checkAnn(
     const uint8_t* parentBlockHash,
     PacketCrypt_ValidateCtx_t* vctx);
 
-enum {
+enum Validate_checkBlock_Res {
     Validate_checkBlock_OK =                    0,
     Validate_checkBlock_SHARE_OK =              1<<8,
     Validate_checkBlock_ANN_INVALID_ =          2<<8,

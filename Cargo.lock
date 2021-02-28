@@ -955,6 +955,7 @@ version = "0.4.0"
 dependencies = [
  "bytes",
  "cc",
+ "hex",
  "num-bigint",
  "num-traits",
  "packetcrypt-util",

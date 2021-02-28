@@ -722,6 +722,7 @@ dependencies = [
  "bindgen",
  "bytes 0.5.6",
  "cc",
+ "hex",
  "num-bigint",
  "num-traits",
  "packetcrypt-util",

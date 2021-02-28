@@ -443,6 +443,19 @@ extern "C" {
         vctx: *mut PacketCrypt_ValidateCtx_t,
     ) -> ::std::os::raw::c_int;
 }
+pub const Validate_checkBlock_Res_Validate_checkBlock_OK: Validate_checkBlock_Res = 0;
+pub const Validate_checkBlock_Res_Validate_checkBlock_SHARE_OK: Validate_checkBlock_Res = 256;
+pub const Validate_checkBlock_Res_Validate_checkBlock_ANN_INVALID_: Validate_checkBlock_Res = 512;
+pub const Validate_checkBlock_Res_Validate_checkBlock_ANN_INSUF_POW_: Validate_checkBlock_Res = 768;
+pub const Validate_checkBlock_Res_Validate_checkBlock_ANN_SIG_INVALID_: Validate_checkBlock_Res =
+    1024;
+pub const Validate_checkBlock_Res_Validate_checkBlock_ANN_CONTENT_INVALID_:
+    Validate_checkBlock_Res = 1280;
+pub const Validate_checkBlock_Res_Validate_checkBlock_PCP_INVAL: Validate_checkBlock_Res = 1536;
+pub const Validate_checkBlock_Res_Validate_checkBlock_PCP_MISMATCH: Validate_checkBlock_Res = 1792;
+pub const Validate_checkBlock_Res_Validate_checkBlock_INSUF_POW: Validate_checkBlock_Res = 2048;
+pub const Validate_checkBlock_Res_Validate_checkBlock_BAD_COINBASE: Validate_checkBlock_Res = 2304;
+pub type Validate_checkBlock_Res = ::std::os::raw::c_uint;
 extern "C" {
     pub fn Validate_checkBlock_outToString(
         code: ::std::os::raw::c_int,
@@ -832,4 +845,32 @@ extern "C" {
 }
 extern "C" {
     pub fn BlockMine_stop(bm: *mut BlockMine_t);
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ExportMe {
+    pub a: Validate_checkBlock_Res,
+}
+#[test]
+fn bindgen_test_layout_ExportMe() {
+    assert_eq!(
+        ::std::mem::size_of::<ExportMe>(),
+        4usize,
+        concat!("Size of: ", stringify!(ExportMe))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<ExportMe>(),
+        4usize,
+        concat!("Alignment of ", stringify!(ExportMe))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<ExportMe>())).a as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(ExportMe),
+            "::",
+            stringify!(a)
+        )
+    );
 }
