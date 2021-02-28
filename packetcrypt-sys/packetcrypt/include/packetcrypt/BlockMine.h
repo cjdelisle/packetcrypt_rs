@@ -24,8 +24,10 @@ typedef struct BlockMine_Res_s {
 
     // Logical locatiosn of anns
     uint32_t ann_llocs[4];
+
+    uint32_t job_num;
 } BlockMine_Res_t;
-_Static_assert(sizeof(BlockMine_Res_t) == 40, "");
+_Static_assert(sizeof(BlockMine_Res_t) == 44, "");
 
 typedef struct BlockMine_s {
     uint32_t maxAnns;
@@ -52,7 +54,8 @@ void BlockMine_mine(BlockMine_t* bm,
     const uint8_t* header,
     uint32_t annCount,
     const uint32_t* annIndexes,
-    uint32_t effectiveTarget);
+    uint32_t effectiveTarget,
+    uint32_t jobNum);
 
 void BlockMine_stop(BlockMine_t* bm);
 

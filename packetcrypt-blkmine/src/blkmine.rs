@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
-use crate::blkminer::{BlkMiner, BlkResult};
+use crate::blkminer::{BlkMiner, BlkResult, OnShare};
 use crate::downloader;
 use crate::prooftree::ProofTree;
 use anyhow::{bail, Result};
@@ -23,6 +23,7 @@ pub struct BlkArgs {
     pub max_mem: usize,
     pub min_free_space: f64,
     pub upload_timeout: usize,
+    pub uploaders: usize,
     pub handler_pass: String,
     pub spray_cfg: Option<sprayer::Config>,
 }
@@ -105,6 +106,9 @@ pub struct BlkMineS {
     ba: BlkArgs,
 
     spray: Option<sprayer::Sprayer>,
+
+    share_channel_send: Mutex<tokio::sync::mpsc::UnboundedSender<Share>>,
+    share_channel_recv: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<Share>>,
 }
 
 #[derive(Clone)]
@@ -628,7 +632,8 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
     } else {
         None
     };
-    Ok(BlkMine(Arc::new(BlkMineS {
+    let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+    let bm = BlkMine(Arc::new(BlkMineS {
         block_miner,
         inactive_infos: Mutex::new(vec![AnnInfo {
             parent_block_height: 0,
@@ -651,7 +656,11 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
         pcli,
         ba,
         spray,
-    })))
+        share_channel_recv: tokio::sync::Mutex::new(recv),
+        share_channel_send: Mutex::new(send),
+    }));
+    bm.block_miner.set_handler(bm.clone());
+    Ok(bm)
 }
 
 async fn downloader_loop(bm: &BlkMine) {
@@ -837,7 +846,27 @@ fn share_id(block_header: &[u8], low_nonce: u32) -> u32 {
     }
 }
 
-async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
+struct Share {
+    json: String,
+    handler_url: String,
+}
+
+impl OnShare for BlkMine {
+    fn on_share(&self, res: BlkResult) {
+        let s = match make_share(self, res) {
+            Err(e) => {
+                warn!("Unable to make share because {}", e);
+                return;
+            }
+            Ok(s) => s,
+        };
+        if let Err(e) = self.share_channel_send.lock().unwrap().send(s) {
+            warn!("Unable to send share to channel {}", e);
+        }
+    }
+}
+
+fn make_share(bm: &BlkMine, share: BlkResult) -> Result<Share> {
     // Get the header and commit
     let (mut header_and_proof, coinbase_commit) = {
         let mut cm_l = bm.current_mining.lock().unwrap();
@@ -937,18 +966,23 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
     protocol::put_varint(1, &mut header_and_proof);
     protocol::put_varint(PC_VERSION, &mut header_and_proof);
 
-    let to_submit = serde_json::to_string(&protocol::BlkShare {
-        header_and_proof: header_and_proof.freeze(),
-        coinbase_commit,
-    })?;
+    Ok(Share {
+        json: serde_json::to_string(&protocol::BlkShare {
+            header_and_proof: header_and_proof.freeze(),
+            coinbase_commit,
+        })?,
+        handler_url,
+    })
+}
 
+async fn post_share(bm: &BlkMine, share: Share) -> Result<()> {
     let res = reqwest::ClientBuilder::new()
         .timeout(Duration::from_secs(bm.ba.upload_timeout as u64))
         .build()?
-        .post(&handler_url)
+        .post(&share.handler_url)
         .header("x-pc-payto", &bm.ba.payment_addr)
         .header("x-pc-sver", 1)
-        .body(to_submit)
+        .body(share.json)
         .send()
         .await?;
 
@@ -959,7 +993,7 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
     } else {
         bail!(
             "[{}] replied [{}]: [{}] which cannot be parsed",
-            &handler_url,
+            &share.handler_url,
             status,
             String::from_utf8_lossy(&resbytes[..])
         );
@@ -970,10 +1004,16 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
         } else {
             &e
         };
-        warn!("handler [{}] replied with error [{}]", &handler_url, ee);
+        warn!(
+            "handler [{}] replied with error [{}]",
+            &share.handler_url, ee
+        );
     }
     for w in &reply.warn {
-        warn!("handler [{}] replied with warning [{}]", &handler_url, w);
+        warn!(
+            "handler [{}] replied with warning [{}]",
+            &share.handler_url, w
+        );
     }
     //Validate_checkBlock_INSUF_POW
     let result = match reply.result {
@@ -986,7 +1026,7 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
             }
             bail!(
                 "handler [{}] replied with no result [{}]",
-                &handler_url,
+                &share.handler_url,
                 String::from_utf8_lossy(&resbytes[..])
             );
         }
@@ -996,7 +1036,7 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
     } else {
         debug!(
             "handler [{}] replied share: {}",
-            &handler_url,
+            &share.handler_url,
             result.header_hash.unwrap_or(result.event_id),
         );
     }
@@ -1004,35 +1044,22 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
 }
 
 async fn get_share_loop(bm: &BlkMine) {
-    let mut receiver = bm.block_miner.receiver.lock().unwrap().take().unwrap();
     loop {
-        let share = if let Some(s) = receiver.recv().await {
+        let share = if let Some(s) = bm.share_channel_recv.lock().await.recv().await {
             s
         } else {
             warn!("Got a none from the receiver");
-            util::sleep_ms(50).await;
             continue;
         };
-
-        // loop {
-        //     // Drain the channel to prevent stales
-        //     if receiver.try_recv().is_err() {
-        //         break;
-        //     }
-        // }
-
-        debug!("share {} {}", share.high_nonce, share.low_nonce);
         if let Err(e) = post_share(bm, share).await {
             warn!("{}", e);
         }
-        // header_and_proof -> header (fix nonce) + pad + proof
-        // commit -> done already
     }
 }
 
 impl BlkMine {
     pub async fn start(&self) -> Result<()> {
-        {
+        for _ in 0..self.ba.uploaders {
             let a = self.clone();
             tokio::spawn(async move { get_share_loop(&a).await });
         }

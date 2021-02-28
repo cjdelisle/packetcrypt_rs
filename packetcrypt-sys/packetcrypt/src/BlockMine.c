@@ -43,6 +43,7 @@ typedef struct Global_s {
     uint32_t annCount;
     uint32_t maxAnns;
     uint32_t effectiveTarget;
+    uint32_t jobNum;
 
     // Synchronization
     pthread_mutex_t lock;
@@ -338,13 +339,15 @@ void BlockMine_mine(BlockMine_t* bm,
     const uint8_t* header,
     uint32_t annCount,
     const uint32_t* annIndexes,
-    uint32_t effectiveTarget)
+    uint32_t effectiveTarget,
+    uint32_t jobNum)
 {
     BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
     reqState(ctx, ThreadState_STOPPED);
     waitState(ctx, ThreadState_STOPPED);
     ctx->g.annCount = annCount;
     ctx->g.effectiveTarget = effectiveTarget;
+    ctx->g.jobNum = jobNum;
     memcpy(&ctx->g.hai->header, header, sizeof(PacketCrypt_BlockHeader_t));
     // Assertion
     memset(ctx->g.hai->index, 0xff, ctx->pub.maxAnns * 4);

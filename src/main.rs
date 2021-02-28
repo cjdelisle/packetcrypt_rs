@@ -342,6 +342,14 @@ async fn main() -> Result<()> {
                         .help("UDP socket to bind to for sprayer interface")
                         .default_value("")
                         .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("uploaders")
+                        .short("u")
+                        .long("uploaders")
+                        .help("Number of share-upload threads, be careful not to overload the block handlers")
+                        .default_value("4")
+                        .takes_value(true),
                 ),
         )
         .subcommand(
@@ -405,12 +413,12 @@ async fn main() -> Result<()> {
         ah_main(config, handler).await?;
     } else if let Some(blk) = matches.subcommand_matches("blk") {
         let spray_cfg = if blk.is_present("subscribe") {
-            let passwd = get_str!(blk, "handlerpass").into();
-            if passwd == "" {
+            let passwd: String = get_str!(blk, "handlerpass").into();
+            if passwd.is_empty() {
                 bail!("When sprayer is enabled, --handlerpass is required");
             }
-            let bind = get_str!(blk, "bind").into();
-            if bind == "" {
+            let bind: String = get_str!(blk, "bind").into();
+            if bind.is_empty() {
                 bail!("When sprayer is enabled, --bind is required");
             }
             let subscribe = get_str!(blk, "subscribe").into();
@@ -439,6 +447,7 @@ async fn main() -> Result<()> {
             downloader_count: get_usize!(blk, "downloaders"),
             pool_master: get_str!(blk, "pool").into(),
             upload_timeout: get_usize!(blk, "uploadtimeout"),
+            uploaders: get_usize!(blk, "uploaders"),
             handler_pass: get_str!(blk, "handlerpass").into(),
             spray_cfg,
         })
