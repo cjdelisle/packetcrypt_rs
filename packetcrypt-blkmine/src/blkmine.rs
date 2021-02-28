@@ -361,11 +361,11 @@ impl sprayer::OnAnns for BlkMine {
                     hw
                 }
             };
-            debug!(
-                "Batch of {} anns {}/{}",
+            trace!(
+                "Batch of {} anns {} @ {}",
                 indexes.len(),
                 hw.block_height,
-                hw.work,
+                packetcrypt_sys::difficulty::tar_to_diff(hw.work)
             );
             on_anns(
                 self,
