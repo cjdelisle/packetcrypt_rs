@@ -342,9 +342,9 @@ impl Sprayer {
                     };
                     if self.0.log_peer_stats {
                         info!(
-                            "{} <- {} ({})",
+                            "{} <- anns: {} {}",
                             sub.peer,
-                            util::big_number(packets as f64),
+                            packets,
                             util::format_kbps(st.kbps_out)
                         );
                     }

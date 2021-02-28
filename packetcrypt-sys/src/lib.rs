@@ -4,12 +4,10 @@
 
 pub mod difficulty;
 
+use packetcrypt_util::util;
+
 use std::convert::TryInto;
 
-#[cfg(feature = "generate-bindings")]
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-
-#[cfg(not(feature = "generate-bindings"))]
 include!("../bindings.rs");
 
 pub fn init() {
@@ -69,6 +67,41 @@ impl PacketCryptAnn {
     }
     pub fn signing_key(&self) -> &[u8] {
         &self.bytes[56..88]
+    }
+}
+
+pub fn check_block_work(
+    header: &[u8],
+    low_nonce: u32,
+    share_target: u32,
+    anns: &[[u8; 1024]],
+    coinbase: &[u8],
+) -> Result<[u8; 32], &'static str> {
+    let mut hap = [0_u8; 80 + 8 + (1024 * 4)];
+    hap[0..80].copy_from_slice(header);
+    hap[84..88].copy_from_slice(&low_nonce.to_le_bytes());
+    for (ann, i) in anns.iter().zip(0..4) {
+        let loc = 88 + (i * 1024);
+        hap[loc..loc + 1024].copy_from_slice(ann);
+    }
+    let aligned_hap = util::aligned_bytes(&hap, 8);
+    let aligned_coinbase = util::aligned_bytes(coinbase, 8);
+    let mut hashout = [0_u8; 32];
+    let res = unsafe {
+        Validate_powOnly(
+            aligned_hap.as_ptr() as *const PacketCrypt_HeaderAndProof_t,
+            share_target,
+            aligned_coinbase.as_ptr() as *const PacketCrypt_Coinbase_t,
+            hashout.as_mut_ptr(),
+        )
+    };
+    match res as i32 {
+        0 => Ok(hashout),
+        1 => Err("INVAL"),
+        2 => Err("INVAL_ITEM4"),
+        3 => Err("INSUF_POW"),
+        4 => Err("SOFT_NONCE_HIGH"),
+        _ => Err("UNKNOWN"),
     }
 }
 

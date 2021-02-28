@@ -463,9 +463,9 @@ extern "C" {
 extern "C" {
     pub fn Validate_powOnly(
         hap: *const PacketCrypt_HeaderAndProof_t,
-        hapLen: u32,
         shareTarget: u32,
         coinbaseCommitment: *const PacketCrypt_Coinbase_t,
+        workHashOut: *mut u8,
     ) -> ::std::os::raw::c_int;
 }
 #[repr(C)]

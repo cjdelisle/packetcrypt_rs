@@ -751,7 +751,14 @@ async fn stats_loop(bm: &BlkMine) {
             let st = spray.get_peer_stats();
             let v = st
                 .iter()
-                .map(|s| format!("({}, {})", s.peer, util::format_kbps(s.kbps_in)))
+                .map(|s| {
+                    format!(
+                        "({} anns: {} {})",
+                        s.peer,
+                        s.packets_in,
+                        util::format_kbps(s.kbps_in)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(" {} <- [ {} ]", spr, v)
@@ -837,21 +844,24 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
             None => bail!("no current_mining"),
         };
         cm.shares += 1;
-        (cm.block_header.clone(), cm.coinbase_commit.clone())
+        (cm.block_header.clone(), cm.coinbase_commit.clone().freeze())
     };
 
     // Set the correct nonce in the header
     header_and_proof.truncate(76);
     header_and_proof.put_u32_le(share.high_nonce);
 
-    let handler_url = {
+    let (share_target, handler_url) = {
         let id = share_id(&header_and_proof[..], share.low_nonce) as usize;
         let cw_l = bm.current_work.lock().unwrap();
         let cw = match &*cw_l {
             Some(x) => x,
             None => bail!("no current_work"),
         };
-        cw.conf.submit_block_urls[id % cw.conf.submit_block_urls.len()].clone()
+        (
+            cw.work.share_target,
+            cw.conf.submit_block_urls[id % cw.conf.submit_block_urls.len()].clone(),
+        )
     };
 
     // Get the proof tree
@@ -868,6 +878,31 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
         }
     };
 
+    // Get the 4 anns
+    let anns = (0..4)
+        .map(|i| {
+            let mut ann = [0u8; 1024];
+            bm.block_miner.get_ann(share.ann_mlocs[i], &mut ann[..]);
+            ann
+        })
+        .collect::<Vec<_>>();
+
+    // At this point header_and_proof is really just the block header
+    match packetcrypt_sys::check_block_work(
+        &header_and_proof,
+        share.low_nonce,
+        share_target,
+        &anns,
+        &coinbase_commit,
+    ) {
+        Err(e) => {
+            bail!("Unable to validate share [{}]", e);
+        }
+        Ok(h) => {
+            info!("Got share [{}]", hex::encode(h));
+        }
+    }
+
     let proof_len = 4 + // low_nonce
             1024 * 4 + // anns
             pb.len(); // proof
@@ -882,10 +917,8 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
     protocol::put_varint(proof_len as u64, &mut header_and_proof);
     header_and_proof.put_u32_le(share.low_nonce);
 
-    // Get the anns
-    for i in 0..4 {
-        let mut ann = [0u8; 1024];
-        bm.block_miner.get_ann(share.ann_mlocs[i], &mut ann[..]);
+    // Put the anns in the header_and_proof
+    for ann in anns {
         header_and_proof.put(&ann[..]);
     }
 
@@ -897,7 +930,7 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
 
     let to_submit = serde_json::to_string(&protocol::BlkShare {
         header_and_proof: header_and_proof.freeze(),
-        coinbase_commit: coinbase_commit.freeze(),
+        coinbase_commit,
     })?;
 
     let res = reqwest::ClientBuilder::new()

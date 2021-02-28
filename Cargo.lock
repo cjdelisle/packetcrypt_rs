@@ -957,6 +957,7 @@ dependencies = [
  "cc",
  "num-bigint",
  "num-traits",
+ "packetcrypt-util",
  "sodiumoxide",
  "walkdir",
 ]

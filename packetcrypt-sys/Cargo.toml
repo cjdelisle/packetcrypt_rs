@@ -15,6 +15,7 @@ categories = ["external-ffi-bindings"]
 name = "packetcrypt_sys"
 
 [dependencies]
+packetcrypt-util = { version = "0.4", path = "../packetcrypt-util" }
 sodiumoxide = { git = "https://github.com/cjdelisle/sodiumoxide", rev = "76dc0e6e587b8c8a4bb193ebba9f8ae8f090b81b", default-features = false, features = ["std"] }
 bytes = "0.5.4"
 num-bigint = { version = "0.3" }
