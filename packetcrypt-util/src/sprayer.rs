@@ -31,7 +31,10 @@ const SECONDS_UNTIL_RESUB: usize = 5;
 
 const STATS_EVERY: usize = 10;
 
-pub type Ann = [u8; 1032];
+pub const MSG_PREFIX: usize = 8;
+pub const MSG_TOTAL_LEN: usize = 1024 + MSG_PREFIX;
+
+pub type Ann = [u8; MSG_TOTAL_LEN];
 
 #[derive(Copy, Clone)]
 struct ToSend {
@@ -100,11 +103,10 @@ fn get_ann_key(ann: &Ann) -> u32 {
 fn kbps(packets2: usize, packets1: usize, time2: u64, time1: u64) -> f64 {
     let packets_sent = (packets2 - packets1) as u64;
     // consider the headers here
-    let bits_sent = packets_sent * (1032 + 8 + 20 + 14) * 8;
+    let bits_sent = packets_sent * (MSG_TOTAL_LEN as u64 + 8 + 20 + 14) * 8;
     let ms_elapsed = time2 - time1;
     // bits per millisecond = kilobits per second
-    let kbps = bits_sent as f64 / ms_elapsed as f64;
-    kbps
+    bits_sent as f64 / ms_elapsed as f64
 }
 
 pub struct Config {
@@ -196,10 +198,10 @@ impl Sprayer {
             std::thread::spawn(move || {
                 Box::new(SprayWorker {
                     g,
-                    rbuf: vec![[0_u8; 1032]; INCOMING_BUF_ANN_PER_THREAD],
+                    rbuf: vec![[0_u8; MSG_TOTAL_LEN]; INCOMING_BUF_ANN_PER_THREAD],
                     sbuf: [ToSend {
                         dest: SocketAddr::new([127, 0, 0, 1].into(), 0),
-                        ann: [0_u8; 1032],
+                        ann: [0_u8; MSG_TOTAL_LEN],
                     }; SEND_CHUNK_SZ],
                     time_of_last_log: 0_u64,
                     tid,
@@ -411,7 +413,7 @@ impl SprayWorker {
                 .send_to(&self.sbuf[i].ann[..], &self.sbuf[i].dest)
             {
                 Ok(l) => {
-                    if l == 1032 {
+                    if l == MSG_TOTAL_LEN {
                         continue;
                     }
                     self.log(&|| info!("Sending to sprayer socket length {}", l));
@@ -454,11 +456,11 @@ impl SprayWorker {
         loop {
             match self.g.0.socket.recv_from(&mut self.rbuf[i][..]) {
                 Ok((l, from)) => {
-                    if l > 1032 {
+                    if l > MSG_TOTAL_LEN {
                         self.log(&|| info!("Spurious packet from {}", from));
                         continue;
-                    } else if l < 1032 {
-                        let mut x = [0_u8; 1032];
+                    } else if l < MSG_TOTAL_LEN {
+                        let mut x = [0_u8; MSG_TOTAL_LEN];
                         x[0..l].copy_from_slice(&self.rbuf[i][0..l]);
                         self.maybe_subscribe(&x[0..l], from);
                         continue;

@@ -270,7 +270,7 @@ struct AnnChunk<'a> {
 }
 impl<'a> GetAnn for AnnChunk<'a> {
     fn get_ann(&self, num: usize) -> &[u8] {
-        &self.anns[self.indexes[num] as usize]
+        &self.anns[self.indexes[num] as usize][sprayer::MSG_PREFIX..]
     }
     fn ann_count(&self) -> usize {
         self.indexes.len()
