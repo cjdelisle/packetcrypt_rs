@@ -15,8 +15,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 
-// 8MB incoming buffer per thread
-const INCOMING_BUF_ANN_PER_THREAD: usize = 8 * 1024;
+// 50MB incoming buffer per thread
+const INCOMING_BUF_ANN_PER_THREAD: usize = 50 * 1024;
 
 // 128MB shared outgoing buffer
 const MAX_SEND_QUEUE: usize = 128 * 1024;
@@ -515,8 +515,8 @@ impl SprayWorker {
             if self.g.0.log_peer_stats {
                 self.g.get_peer_stats();
             }
-            if i == 0 {
-                std::thread::sleep(std::time::Duration::from_millis(1));
+            if i < 10000 {
+                std::thread::sleep(std::time::Duration::from_micros(100));
                 continue;
             }
             {
