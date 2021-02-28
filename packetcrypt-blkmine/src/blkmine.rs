@@ -571,52 +571,66 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 
 fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
     debug!("on_work() begin");
-    let (tree, tree_num) = get_tree(bm, false);
-    let mut tree_l = tree.lock().unwrap();
-    let mut active_l = bm.active_infos.lock().unwrap();
-    let reload = reload_anns(bm, next_work, &mut active_l);
-    tree_l.reset();
-    for ai in active_l.iter() {
-        //debug!("active_l has {} hashes", ai.hashes.len());
-        for (h, i) in ai.hashes.iter().zip(0..) {
-            let mloc = ai.mloc + i;
-            assert!(mloc < bm.block_miner.max_anns);
-            tree_l.push(h, ai.mloc + i).unwrap();
+    let (index_table, real_target, current_mining) = {
+        let (tree, tree_num) = get_tree(bm, false);
+        let mut tree_l = tree.lock().unwrap();
+        let mut active_l = bm.active_infos.lock().unwrap();
+        let reload = reload_anns(bm, next_work, &mut active_l);
+        tree_l.reset();
+        for ai in active_l.iter() {
+            //debug!("active_l has {} hashes", ai.hashes.len());
+            for (h, i) in ai.hashes.iter().zip(0..) {
+                let mloc = ai.mloc + i;
+                assert!(mloc < bm.block_miner.max_anns);
+                tree_l.push(h, ai.mloc + i).unwrap();
+            }
         }
-    }
-    if tree_l.size() == 0 {
-        bm.block_miner.stop();
-        debug!("Not mining, no anns ready");
-        return;
-    }
-    let index_table = tree_l.compute().unwrap();
-    let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
-    let block_header = compute_block_header(next_work, &coinbase_commit[..]);
-    let real_target = pc_get_effective_target(
-        next_work.share_target,
-        reload.ann_min_work,
-        index_table.len() as u64,
-    );
-    debug!(
-        "Start mining {} with {} anns, min_work={:#x} effective_work={:#x}",
-        next_work.height,
-        tree_l.size(),
-        reload.ann_min_work,
+        if tree_l.size() == 0 {
+            bm.block_miner.stop();
+            debug!("Not mining, no anns ready");
+            return;
+        }
+        let index_table = tree_l.compute().unwrap();
+        let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
+        let block_header = compute_block_header(next_work, &coinbase_commit[..]);
+        let real_target = pc_get_effective_target(
+            next_work.share_target,
+            reload.ann_min_work,
+            index_table.len() as u64,
+        );
+        debug!(
+            "Start mining {} with {} anns, min_work={:#x} effective_work={:#x}",
+            next_work.height,
+            tree_l.size(),
+            reload.ann_min_work,
+            real_target,
+        );
+        let count = index_table.len() as u32;
+        (
+            index_table,
+            real_target,
+            CurrentMining {
+                count,
+                ann_min_work: reload.ann_min_work,
+                using_tree: tree_num,
+                mining_height: next_work.height,
+                time_started_ms: util::now_ms(),
+                coinbase_commit,
+                block_header,
+                shares: 0,
+            },
+        )
+    };
+    bm.block_miner.mine(
+        &current_mining.block_header[..],
+        &index_table[..],
         real_target,
     );
-    bm.block_miner
-        .mine(&block_header[..], &index_table[..], real_target);
-    debug!("Mining with header {}", hex::encode(&block_header));
-    bm.current_mining.lock().unwrap().replace(CurrentMining {
-        count: index_table.len() as u32,
-        ann_min_work: reload.ann_min_work,
-        using_tree: tree_num,
-        mining_height: next_work.height,
-        time_started_ms: util::now_ms(),
-        coinbase_commit,
-        block_header,
-        shares: 0,
-    });
+    debug!(
+        "Mining with header {}",
+        hex::encode(&current_mining.block_header)
+    );
+    bm.current_mining.lock().unwrap().replace(current_mining);
     debug!(
         "Started mining {} with {} anns",
         next_work.height,
@@ -816,13 +830,21 @@ async fn stats_loop(bm: &BlkMine) {
         }
         // We relock every time if unused space is zero, in order to
         // keep fresh anns flowing in.
+        #[allow(clippy::never_loop)] // yes, it's for the break statements.
         if start_mining || unused == 0 {
-            let cw_l = bm.current_work.lock().unwrap();
-            if let Some(w) = &*cw_l {
-                on_work(bm, &w.work);
+            loop {
+                let work = {
+                    let cw_l = bm.current_work.lock().unwrap();
+                    if let Some(w) = &*cw_l {
+                        w.work.clone()
+                    } else {
+                        debug!("Could not launch miner, no work");
+                        break;
+                    }
+                };
+                on_work(bm, &work);
                 debug!("Launched miner");
-            } else {
-                debug!("Could not launch miner, no work");
+                break;
             }
         }
         util::sleep_ms(10_000).await;
