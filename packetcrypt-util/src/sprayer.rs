@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::protocol::SprayerReq;
 use crate::util;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::{debug, info};
 
 use std::collections::HashMap;
@@ -99,7 +99,11 @@ pub struct Config {
 
 impl Sprayer {
     pub fn new(cfg: &Config) -> Result<Sprayer> {
-        let socket = UdpSocket::bind(&cfg.bind)?;
+        let addr: SocketAddr = cfg
+            .bind
+            .parse()
+            .with_context(|| format!("SocketAddr parse({})", cfg.bind))?;
+        let socket = UdpSocket::bind(addr).with_context(|| format!("UdpSocket::bind({})", addr))?;
         socket.set_nonblocking(true)?;
 
         let m = RwLock::new(SprayerMut {
