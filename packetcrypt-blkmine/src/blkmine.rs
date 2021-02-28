@@ -989,6 +989,7 @@ impl BlkMine {
             tokio::spawn(async move { update_work_loop(&a).await });
         }
         if let Some(spray) = &self.spray {
+            spray.set_handler(self.clone());
             spray.start();
         } else {
             let a = self.clone();
