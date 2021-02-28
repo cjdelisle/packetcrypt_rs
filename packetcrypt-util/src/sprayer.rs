@@ -32,7 +32,7 @@ const SECONDS_UNTIL_RESUB: usize = 5;
 
 const STATS_EVERY: usize = 10;
 
-const RECV_BUF_SZ: usize = 1 << 22;
+const RECV_BUF_SZ: usize = 1 << 23;
 
 pub const MSG_PREFIX: usize = 8;
 pub const MSG_TOTAL_LEN: usize = 1024 + MSG_PREFIX;
