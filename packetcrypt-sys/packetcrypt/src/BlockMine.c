@@ -156,11 +156,12 @@ static void mine(Worker_t* w)
             CryptoCycle_final(&w->pcState);
             if (!Work_check(w->pcState.bytes, w->g->effectiveTarget)) { continue; }
 
-            printf("share\n");
+            printf("share / %u / %u\n", hdr.nonce, lowNonce);
+            for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
             for (int j = 0; j < 4; j++) {
                 uint64_t loc = res.ann_mlocs[j];
                 printf("%llu - ", (long long unsigned) loc);
-                Hash_printHex((uint8_t*) &w->g->anns[loc], 16);
+                for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
                 printf("\n");
             }
 

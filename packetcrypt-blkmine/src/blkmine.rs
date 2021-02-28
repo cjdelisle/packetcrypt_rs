@@ -887,7 +887,8 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
         })
         .collect::<Vec<_>>();
 
-    info!("Got share");
+    info!("Got share / {} / {}", share.high_nonce, share.low_nonce);
+    info!("{}", hex::encode(hash::compress32(&header_and_proof)));
     for (ann, i) in anns.iter().zip(0..) {
         info!("{} - {}", share.ann_mlocs[i], hex::encode(&ann[0..32]));
     }
@@ -1005,17 +1006,17 @@ async fn get_share_loop(bm: &BlkMine) {
         let share = if let Some(s) = receiver.recv().await {
             s
         } else {
-            debug!("Got a none from the receiver");
-            util::sleep_ms(5_000).await;
+            warn!("Got a none from the receiver");
+            util::sleep_ms(50).await;
             continue;
         };
 
-        loop {
-            // Drain the channel to prevent stales
-            if receiver.try_recv().is_err() {
-                break;
-            }
-        }
+        // loop {
+        //     // Drain the channel to prevent stales
+        //     if receiver.try_recv().is_err() {
+        //         break;
+        //     }
+        // }
 
         debug!("share {} {}", share.high_nonce, share.low_nonce);
         if let Err(e) = post_share(bm, share).await {
