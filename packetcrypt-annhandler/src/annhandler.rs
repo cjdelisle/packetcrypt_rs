@@ -226,7 +226,7 @@ fn enqueue_write(w: &mut Worker, output: &mut Output) {
             .iter()
             .map(|ann| {
                 let mut out = [0_u8; 1032];
-                out.copy_from_slice(&ann.bytes[..]);
+                out[0..1024].copy_from_slice(&ann.bytes[..]);
                 out
             })
             .collect::<Vec<_>>()[..],
