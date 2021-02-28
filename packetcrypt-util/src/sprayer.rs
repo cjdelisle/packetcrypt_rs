@@ -419,8 +419,8 @@ impl SprayWorker {
                     }
                     match self.g.0.subscribed_to.iter().find(|sub| sub.peer == from) {
                         Some(sub) => {
-                            i += 1;
                             sub.packets_received.fetch_add(1, atomic::Ordering::Relaxed);
+                            i += 1;
                             if i < self.rbuf.len() {
                                 continue;
                             }
@@ -454,6 +454,7 @@ impl SprayWorker {
             if overflow > 0 && self.log(&|| info!("Send overflow of {} anns", overflow)) {
                 overflow = 0;
             }
+            i = 0;
         }
     }
 }
