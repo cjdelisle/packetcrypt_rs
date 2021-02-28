@@ -325,7 +325,7 @@ impl sprayer::OnAnns for BlkMine {
             index: u32,
         }
         let mut v: Vec<Ai> = Vec::with_capacity(anns.len());
-        for (a, i) in anns.iter().zip(0..) {
+        for (a, i) in anns.iter().map(|a| &a[sprayer::MSG_PREFIX..]).zip(0..) {
             v.push(Ai {
                 hw: HeightWork {
                     block_height: packetcrypt_sys::parent_block_height(a),
