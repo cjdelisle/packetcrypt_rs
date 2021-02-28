@@ -361,7 +361,6 @@ impl sprayer::OnAnns for BlkMine {
                     hw
                 }
             };
-            info!("Got {} anns in {} chunks", anns.len(), indexes.len());
             on_anns(
                 self,
                 AnnChunk {
