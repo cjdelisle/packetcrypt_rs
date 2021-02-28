@@ -447,7 +447,6 @@ impl downloader::OnAnns for BlkMine {
 
 struct ReloadAnns {
     ann_min_work: u32,
-    effective_block_tar: u32,
 }
 fn reload_anns(
     bm: &BlkMine,
@@ -530,7 +529,6 @@ fn reload_anns(
 
     ReloadAnns {
         ann_min_work: best_aew,
-        effective_block_tar: best_tar,
     }
 }
 
@@ -591,21 +589,23 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         debug!("Not mining, no anns ready");
         return;
     }
+    let index_table = tree_l.compute().unwrap();
+    let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
+    let block_header = compute_block_header(next_work, &coinbase_commit[..]);
+    let real_target = pc_get_effective_target(
+        next_work.share_target,
+        reload.ann_min_work,
+        index_table.len() as u64,
+    );
     debug!(
         "Start mining {} with {} anns, min_work={:#x} effective_work={:#x}",
         next_work.height,
         tree_l.size(),
         reload.ann_min_work,
-        reload.effective_block_tar,
+        real_target,
     );
-    let index_table = tree_l.compute().unwrap();
-    let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
-    let block_header = compute_block_header(next_work, &coinbase_commit[..]);
-    bm.block_miner.mine(
-        &block_header[..],
-        &index_table[..],
-        reload.effective_block_tar,
-    );
+    bm.block_miner
+        .mine(&block_header[..], &index_table[..], real_target);
     debug!("Mining with header {}", hex::encode(&block_header));
     bm.current_mining.lock().unwrap().replace(CurrentMining {
         count: index_table.len() as u32,
