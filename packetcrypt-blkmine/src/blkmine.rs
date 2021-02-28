@@ -8,6 +8,7 @@ use log::{debug, info, trace, warn};
 use packetcrypt_sys::difficulty::{pc_degrade_announcement_target, pc_get_effective_target};
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol;
+use packetcrypt_util::sprayer;
 use packetcrypt_util::{hash, util};
 use std::cmp::max;
 use std::sync::Arc;
@@ -23,6 +24,7 @@ pub struct BlkArgs {
     pub min_free_space: f64,
     pub upload_timeout: usize,
     pub handler_pass: String,
+    pub spray_cfg: Option<sprayer::Config>,
 }
 
 struct FreeInfo {
@@ -101,6 +103,8 @@ pub struct BlkMineS {
 
     pcli: PoolClient,
     ba: BlkArgs,
+
+    spray: Option<sprayer::Sprayer>,
 }
 
 #[derive(Clone)]
@@ -180,19 +184,31 @@ struct AnnStats {
     ann_min_work: u32,
     hash: [u8; 32],
 }
-fn get_ann_stats(b: bytes::Bytes) -> AnnStats {
-    let hash = hash::compress32(&b[..]);
-    let a = packetcrypt_sys::PacketCryptAnn { bytes: b };
+fn get_ann_stats(b: &[u8]) -> AnnStats {
+    let hash = hash::compress32(b);
     AnnStats {
-        parent_block_height: a.parent_block_height(),
-        ann_min_work: a.work_bits(),
+        parent_block_height: packetcrypt_sys::parent_block_height(b),
+        ann_min_work: packetcrypt_sys::work_bits(b),
         hash,
     }
 }
 
-fn mk_ann_info(anns: &bytes::Bytes, mut free: Vec<FreeInfo>) -> Vec<AnnInfo> {
-    let mut out = Vec::with_capacity(anns.len() / 1024);
-    let mut ann_index = 0;
+trait GetAnn {
+    fn get_ann(&self, num: usize) -> &[u8];
+    fn ann_count(&self) -> usize;
+}
+impl GetAnn for bytes::Bytes {
+    fn get_ann(&self, num: usize) -> &[u8] {
+        &self[num * 1024..(num + 1) * 1024]
+    }
+    fn ann_count(&self) -> usize {
+        self.len() / 1024
+    }
+}
+
+fn mk_ann_info(anns: &impl GetAnn, mut free: Vec<FreeInfo>) -> Vec<AnnInfo> {
+    let mut out = Vec::with_capacity(anns.ann_count());
+    let mut ann_i = 0;
     let mut maybe_fi = free.pop();
     let mut maybe_ai: Option<AnnInfo> = None;
     loop {
@@ -212,8 +228,8 @@ fn mk_ann_info(anns: &bytes::Bytes, mut free: Vec<FreeInfo>) -> Vec<AnnInfo> {
             }
             return out;
         };
-        let stats = get_ann_stats(anns.slice(ann_index..(ann_index + 1024)));
-        ann_index += 1024;
+        let stats = get_ann_stats(anns.get_ann(ann_i));
+        ann_i += 1;
         maybe_ai = {
             let mut next_ai = None;
             if let Some(mut ai) = maybe_ai {
@@ -243,6 +259,118 @@ fn mk_ann_info(anns: &bytes::Bytes, mut free: Vec<FreeInfo>) -> Vec<AnnInfo> {
     }
 }
 
+#[derive(PartialEq)]
+struct HeightWork {
+    block_height: i32,
+    work: u32,
+}
+struct AnnChunk<'a> {
+    anns: &'a [sprayer::Ann],
+    indexes: &'a [u32],
+}
+impl<'a> GetAnn for AnnChunk<'a> {
+    fn get_ann(&self, num: usize) -> &[u8] {
+        &self.anns[self.indexes[num] as usize]
+    }
+    fn ann_count(&self) -> usize {
+        self.indexes.len()
+    }
+}
+
+fn on_anns(bm: &BlkMine, ac: AnnChunk) {
+    // Try to get unused space to place them
+    let free = get_free(bm, ac.indexes.len() as u32);
+
+    // generate ann infos from them
+    let num_frees = free.len();
+    let mut info = mk_ann_info(&ac, free);
+
+    // place anns in the data buffer
+    let mut ann_i = 0;
+    for r in &info {
+        for i in 0..r.ann_count {
+            bm.block_miner.put_ann(r.mloc + i, ac.get_ann(ann_i));
+            ann_i += 1;
+        }
+    }
+
+    // place the ann infos, this is what will make it possible to use the data
+    let num_infos = info.len();
+    bm.new_infos.lock().unwrap().append(&mut info);
+
+    // Stats
+    let count = ac.ann_count();
+    if ann_i != count {
+        debug!(
+            "Out of slab space, could only store {} of {} anns",
+            ann_i, count
+        );
+    }
+    trace!(
+        "Loaded {} ANNS - {} frees, {} infos",
+        ann_i,
+        num_frees,
+        num_infos
+    );
+}
+
+impl sprayer::OnAnns for BlkMine {
+    fn on_anns(&self, anns: &[sprayer::Ann]) {
+        struct Ai {
+            hw: HeightWork,
+            index: u32,
+        }
+        let mut v: Vec<Ai> = Vec::with_capacity(anns.len());
+        for (a, i) in anns.iter().zip(0..) {
+            v.push(Ai {
+                hw: HeightWork {
+                    block_height: packetcrypt_sys::parent_block_height(a),
+                    work: packetcrypt_sys::work_bits(a),
+                },
+                index: i,
+            });
+        }
+        v.sort_by(|a, b| {
+            if a.hw.block_height != b.hw.block_height {
+                b.hw.block_height.cmp(&a.hw.block_height)
+            } else if a.hw.work != b.hw.work {
+                a.hw.work.cmp(&b.hw.work)
+            } else {
+                std::cmp::Ordering::Equal
+            }
+        });
+
+        let mut indexes: Vec<u32> = Vec::with_capacity(anns.len());
+        let mut height_work: Option<HeightWork> = None;
+        for ai in v {
+            match &height_work {
+                None => {
+                    indexes.push(ai.index);
+                    height_work = Some(ai.hw);
+                    continue;
+                }
+                Some(hw) => {
+                    if hw == &ai.hw {
+                        indexes.push(ai.index);
+                        continue;
+                    }
+                    hw
+                }
+            };
+            on_anns(
+                self,
+                AnnChunk {
+                    anns,
+                    indexes: &indexes[..],
+                },
+            );
+            indexes.clear();
+            indexes.push(ai.index);
+            height_work = Some(ai.hw);
+        }
+    }
+}
+
 impl downloader::OnAnns for BlkMine {
     fn on_anns(&self, anns: bytes::Bytes, url: &str) {
         // Get the number of anns
@@ -257,7 +385,7 @@ impl downloader::OnAnns for BlkMine {
             return;
         } as u32;
 
-        let stats = get_ann_stats(anns.slice(0..1024));
+        let stats = get_ann_stats(&anns[0..1024]);
         {
             let cw_l = self.current_work.lock().unwrap();
             match &*cw_l {
@@ -493,6 +621,11 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
     let pcli = poolclient::new(&ba.pool_master, 1, 1);
     let block_miner = BlkMiner::new(ba.max_mem as u64, ba.threads as u32)?;
     let max_anns = block_miner.max_anns;
+    let spray = if let Some(sc) = &ba.spray_cfg {
+        Some(sprayer::Sprayer::new(sc)?)
+    } else {
+        None
+    };
     Ok(BlkMine(Arc::new(BlkMineS {
         block_miner,
         inactive_infos: Mutex::new(vec![AnnInfo {
@@ -515,6 +648,7 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
         max_mining: ((1.0 - ba.min_free_space) * max_anns as f64) as u32,
         pcli,
         ba,
+        spray,
     })))
 }
 
@@ -854,7 +988,9 @@ impl BlkMine {
             let a = self.clone();
             tokio::spawn(async move { update_work_loop(&a).await });
         }
-        {
+        if let Some(spray) = &self.spray {
+            spray.start();
+        } else {
             let a = self.clone();
             tokio::spawn(async move { downloader_loop(&a).await });
         }

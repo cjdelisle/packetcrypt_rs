@@ -162,7 +162,7 @@ async fn submit_paylogs(pmc: &PaymakerClient) -> Result<u64> {
         } else {
             bail!("filename {:?} does not have a 1st capture group", filename);
         };
-        if let Err(_) = fileno.parse::<usize>() {
+        if fileno.parse::<usize>().is_err() {
             warn!("Invalid file {:?}", filename);
             continue;
         }
@@ -172,7 +172,7 @@ async fn submit_paylogs(pmc: &PaymakerClient) -> Result<u64> {
             continue;
         }
         let file = tokio::fs::read(f.path()).await?;
-        if file.len() == 0 {
+        if file.is_empty() {
             debug!("{} empty ({})", filename, current_file_name);
             tokio::fs::remove_file(f.path()).await?;
             continue;
@@ -201,14 +201,14 @@ async fn submit_paylogs(pmc: &PaymakerClient) -> Result<u64> {
             util::sleep_ms(5000).await;
             continue;
         };
-        if reply.error.len() > 0 {
+        if reply.error.is_empty() {
             warn!(
                 "{} Paymaker replied with errors: {}",
                 filename,
                 reply.error.join(", ")
             );
         }
-        if reply.warn.len() > 0 {
+        if reply.warn.is_empty() {
             warn!(
                 "{} Paymaker is warning us: {}",
                 filename,

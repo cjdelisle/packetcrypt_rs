@@ -67,14 +67,13 @@ async fn ah_main(config: &str, handler: &str) -> Result<()> {
     } else {
         bail!("{} is not defined in the config file [{}]", handler, config);
     };
-    let ah_workdir = poolcfg::get_ah_workdir(&cfg.root_workdir, &hconf);
 
     let pc = poolclient::new(&cfg.master_url, 6, 5);
 
     let pmc = paymakerclient::new(
         &pc,
         paymakerclient::PaymakerClientCfg {
-            paylogdir: format!("{}/paylogdir", &ah_workdir),
+            paylogdir: format!("{}/ah/paylogdir", &cfg.root_workdir),
             password: cfg.paymaker_http_password,
             paylog_submit_every_ms: 60_000,
         },
@@ -130,6 +129,11 @@ async fn ann_main(
     .await?;
     annmine::start(&am).await?;
 
+    util::sleep_forever().await
+}
+
+async fn sprayer_main(cfg: packetcrypt_util::sprayer::Config) -> Result<()> {
+    packetcrypt_util::sprayer::Sprayer::new(&cfg)?.start();
     util::sleep_forever().await
 }
 
@@ -314,6 +318,64 @@ async fn main() -> Result<()> {
                         .help("Password to use for pulling anns from the handlers")
                         .default_value("")
                         .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("subscribe")
+                        .short("s")
+                        .long("subscribe")
+                        .help("Sprayer interface to subscribe to")
+                        .default_value("")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("sprayerthreads")
+                        .short("S")
+                        .long("sprayerthreads")
+                        .help("Number of threads to run in the sprayer interface")
+                        .default_value("4")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("bind")
+                        .short("b")
+                        .long("bind")
+                        .help("UDP socket to bind to for sprayer interface")
+                        .default_value("")
+                        .takes_value(true),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("sprayer")
+                .about("Launch ann sprayer daemon")
+                .arg(
+                    Arg::with_name("threads")
+                        .short("t")
+                        .long("threads")
+                        .help("Number of sprayer threads to run")
+                        .default_value("4")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("bind")
+                        .short("b")
+                        .long("bind")
+                        .help("Address to bind to")
+                        .takes_value(true)
+                        .required(true),
+                )
+                .arg(
+                    Arg::with_name("passwd")
+                        .short("P")
+                        .long("passwd")
+                        .help("Password to use for authing with other sprayers")
+                        .default_value("")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("subscribe")
+                        .help("Sprayers so subscribe to")
+                        .required(true)
+                        .min_values(1),
                 ),
         )
         .get_matches();
@@ -342,6 +404,32 @@ async fn main() -> Result<()> {
         let handler = get_str!(ah, "handler");
         ah_main(config, handler).await?;
     } else if let Some(blk) = matches.subcommand_matches("blk") {
+        let spray_cfg = if blk.is_present("subscribe") {
+            let passwd = get_str!(blk, "handlerpass").into();
+            if passwd == "" {
+                bail!("When sprayer is enabled, --handlerpass is required");
+            }
+            let bind = get_str!(blk, "bind").into();
+            if bind == "" {
+                bail!("When sprayer is enabled, --bind is required");
+            }
+            let subscribe = get_str!(blk, "subscribe").into();
+            let workers = get_usize!(blk, "sprayerthreads");
+            Some(packetcrypt_util::sprayer::Config {
+                passwd,
+                bind,
+                workers,
+                subscribe_to: vec![subscribe],
+                always_send_all: false,
+            })
+        } else {
+            if blk.is_present("bind") {
+                bail!("--bind (bind UDP sprayer socket) is nonsensical without --subscribe");
+            } else if blk.is_present("sprayerthreads") {
+                bail!("--sprayerthreads is nonsensical without --subscribe");
+            }
+            None
+        };
         blk_main(blkmine::BlkArgs {
             max_mem: get_usize!(blk, "memorysizemb") * 1024 * 1024,
             min_free_space: get_num!(blk, "minfree", f64),
@@ -351,6 +439,16 @@ async fn main() -> Result<()> {
             pool_master: get_str!(blk, "pool").into(),
             upload_timeout: get_usize!(blk, "uploadtimeout"),
             handler_pass: get_str!(blk, "handlerpass").into(),
+            spray_cfg,
+        })
+        .await?;
+    } else if let Some(spray) = matches.subcommand_matches("sprayer") {
+        sprayer_main(packetcrypt_util::sprayer::Config {
+            passwd: get_str!(spray, "passwd").into(),
+            bind: get_str!(spray, "bind").into(),
+            workers: get_usize!(spray, "threads"),
+            subscribe_to: get_strs!(spray, "subscribe"),
+            always_send_all: false,
         })
         .await?;
     }

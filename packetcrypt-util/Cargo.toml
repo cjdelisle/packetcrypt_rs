@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "0.2", features = ["macros","sync","fs","signal"], default-features = false }
+tokio = { version = "0.2", features = ["macros","sync","fs","signal","udp","net"], default-features = false }
 bytes = "0.5"
 anyhow = "1.0"
 crossbeam-channel = "0.4"

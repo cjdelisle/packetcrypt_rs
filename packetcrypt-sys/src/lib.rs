@@ -34,6 +34,16 @@ impl Default for ValidateCtx {
     }
 }
 
+pub fn hard_nonce(bytes: &[u8]) -> u32 {
+    u32::from_le_bytes(bytes[4..8].try_into().unwrap())
+}
+pub fn work_bits(bytes: &[u8]) -> u32 {
+    u32::from_le_bytes(bytes[8..12].try_into().unwrap())
+}
+pub fn parent_block_height(bytes: &[u8]) -> i32 {
+    i32::from_le_bytes(bytes[12..16].try_into().unwrap())
+}
+
 #[derive(Clone, Debug)]
 pub struct PacketCryptAnn {
     pub bytes: bytes::Bytes,

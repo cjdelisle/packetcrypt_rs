@@ -15,6 +15,16 @@ use tokio::io::AsyncWriteExt;
 use tokio::stream::StreamExt;
 use tokio::sync::broadcast::Receiver;
 
+pub fn format_kbps(mut kbps: f64) -> String {
+    for letter in "KMGPYZ".chars() {
+        if kbps < 1000.0 {
+            return format!("{}{}b/s", ((kbps * 100.0) as u32) as f64 / 100.0, letter);
+        }
+        kbps /= 1024.0;
+    }
+    String::from("???")
+}
+
 pub async fn sleep_ms(ms: u64) {
     tokio::time::delay_for(Duration::from_millis(ms)).await;
 }

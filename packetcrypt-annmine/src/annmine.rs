@@ -462,16 +462,6 @@ async fn upload_batch(
     Ok(result.accepted as usize)
 }
 
-fn format_kbps(mut kbps: f64) -> String {
-    for letter in "KMGPYZ".chars() {
-        if kbps < 1000.0 {
-            return format!("{}{}b/s", ((kbps * 100.0) as u32) as f64 / 100.0, letter);
-        }
-        kbps /= 1024.0;
-    }
-    String::from("???")
-}
-
 async fn stats_loop(am: &AnnMine) {
     let mut recv_anns_per_second = {
         let mut m = am.m.lock().await;
@@ -519,7 +509,7 @@ async fn stats_loop(am: &AnnMine) {
                 info!(
                     "{} {} overflow: {} uploading: {} accept/reject: {} - goodrate: {}",
                     util::pad_to(10, format!("{}e/s", util::big_number(estimated_eps))),
-                    util::pad_to(11, format_kbps(kbps)),
+                    util::pad_to(11, util::format_kbps(kbps)),
                     util::pad_to(5 * am.pools.len(), format!("[{}]", lost_anns.join(", "))),
                     util::pad_to(
                         8 * am.pools.len(),
