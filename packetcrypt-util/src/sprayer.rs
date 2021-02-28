@@ -169,7 +169,7 @@ impl Sprayer {
     }
 
     pub fn start(&self) {
-        for _ in 0..self.0.workers {
+        for tid in 0..self.0.workers {
             let g = Sprayer(Arc::clone(&self.0));
             std::thread::spawn(move || {
                 Box::new(SprayWorker {
@@ -180,6 +180,7 @@ impl Sprayer {
                         ann: [0_u8; 1024],
                     }; SEND_CHUNK_SZ],
                     time_of_last_log: 0_u64,
+                    tid,
                 })
                 .run();
             });
@@ -208,12 +209,12 @@ impl Sprayer {
         }
     }
 
-    fn send_subs(&self) -> Option<(std::io::Error, SocketAddr)> {
+    fn send_subs(&self, tid: usize) -> Option<(std::io::Error, SocketAddr)> {
         let now_sec = (util::now_ms() / 1000) as usize;
         let update_time = now_sec - SECONDS_UNTIL_RESUB;
         for (sub, num) in self.0.subscribed_to.iter().zip(0..) {
             let time_sec = sub.last_update_sec.load(atomic::Ordering::Relaxed);
-            if time_sec > update_time {
+            if time_sec > update_time + tid {
                 continue;
             }
             let req = serde_json::to_string(&SprayerReq {
@@ -222,6 +223,7 @@ impl Sprayer {
                 count: self.0.subscribed_to.len() as u32,
             })
             .unwrap();
+            debug!("subscribing to {}", sub.peer);
             if let Err(e) = self.0.socket.send_to(&req.as_bytes(), &sub.peer) {
                 return Some((e, sub.peer));
             }
@@ -340,12 +342,13 @@ struct SprayWorker {
     rbuf: Vec<Ann>,
     sbuf: [ToSend; SEND_CHUNK_SZ],
     time_of_last_log: u64,
+    tid: usize,
 }
 
 impl SprayWorker {
     fn log(&mut self, f: &dyn Fn()) -> bool {
         let now = util::now_ms();
-        if now < self.time_of_last_log + 1000 {
+        if now > self.time_of_last_log + 1000 {
             f();
             self.time_of_last_log = now;
             true
@@ -354,7 +357,7 @@ impl SprayWorker {
         }
     }
     fn try_send(&mut self) {
-        if let Some((e, to)) = self.g.send_subs() {
+        if let Some((e, to)) = self.g.send_subs(self.tid) {
             self.log(&|| info!("Error sending subscription to {}: {}", to, e));
         }
         let count = self.g.get_to_send(&mut self.sbuf);
@@ -398,9 +401,11 @@ impl SprayWorker {
             self.log(&|| debug!("Packet from {} with wrong password", from));
             return;
         }
+        self.log(&|| debug!("Got subscription from {}", from));
         self.g.incoming_subscription(from, msg);
     }
     fn run(mut self) {
+        info!("Launched sprayer thread");
         let mut i = 0;
         let mut overflow = 0;
         loop {
@@ -430,7 +435,6 @@ impl SprayWorker {
                     if e.kind() != std::io::ErrorKind::WouldBlock {
                         self.log(&|| info!("Error reading sprayer socket {}", e));
                     }
-                    break;
                 }
             }
             self.try_send();
