@@ -121,6 +121,8 @@ struct Worker_s {
 
 #define HASHES_PER_CYCLE 2000
 
+#define NOISY_LOG_SHARES 0
+
 // Worker
 static void mine(Worker_t* w)
 {
@@ -153,17 +155,19 @@ static void mine(Worker_t* w)
             CryptoCycle_final(&w->pcState);
             if (!Work_check(w->pcState.bytes, w->g->effectiveTarget)) { continue; }
 
-            printf("share / %u / %u\n", hdr.nonce, lowNonce);
-            printf("effective target %x\n", w->g->effectiveTarget);
-            for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
-            printf("\n");
-            for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
-            printf("\n");
-            for (int j = 0; j < 4; j++) {
-                uint64_t loc = res.ann_mlocs[j];
-                printf("%llu - ", (long long unsigned) loc);
-                for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
+            if (NOISY_LOG_SHARES) {
+                printf("share / %u / %u\n", hdr.nonce, lowNonce);
+                printf("effective target %x\n", w->g->effectiveTarget);
+                for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
                 printf("\n");
+                for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
+                printf("\n");
+                for (int j = 0; j < 4; j++) {
+                    uint64_t loc = res.ann_mlocs[j];
+                    printf("%llu - ", (long long unsigned) loc);
+                    for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
+                    printf("\n");
+                }
             }
 
             res.low_nonce = lowNonce;

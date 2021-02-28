@@ -361,6 +361,7 @@ impl sprayer::OnAnns for BlkMine {
                     hw
                 }
             };
+            info!("Got {} anns in {} chunks", anns.len(), indexes.len());
             on_anns(
                 self,
                 AnnChunk {
@@ -919,11 +920,11 @@ fn make_share(bm: &BlkMine, share: BlkResult) -> Result<Share> {
         })
         .collect::<Vec<_>>();
 
-    info!("Got share / {} / {}", share.high_nonce, share.low_nonce);
-    info!("{}", hex::encode(&header_and_proof));
-    info!("{}", hex::encode(hash::compress32(&header_and_proof)));
+    trace!("Got share / {} / {}", share.high_nonce, share.low_nonce);
+    trace!("{}", hex::encode(&header_and_proof));
+    trace!("{}", hex::encode(hash::compress32(&header_and_proof)));
     for (ann, i) in anns.iter().zip(0..) {
-        info!("{} - {}", share.ann_mlocs[i], hex::encode(&ann[0..32]));
+        trace!("{} - {}", share.ann_mlocs[i], hex::encode(&ann[0..32]));
     }
 
     // At this point header_and_proof is really just the block header

@@ -103,12 +103,12 @@ static bool isWorkOk(const CryptoCycle_State_t* ccState,
 {
     uint32_t effectiveTarget = Difficulty_getEffectiveTarget(
         target, cb->annLeastWorkTarget, cb->numAnns);
-    printf("Checking share with %llu %x %x -> %x",
-        (long long unsigned)cb->numAnns,
-        cb->annLeastWorkTarget,
-        target,
-        effectiveTarget
-    );
+    // printf("Checking share with %llu %x %x -> %x",
+    //     (long long unsigned)cb->numAnns,
+    //     cb->annLeastWorkTarget,
+    //     target,
+    //     effectiveTarget
+    // );
     return Work_check(ccState->bytes, effectiveTarget);
 }
 

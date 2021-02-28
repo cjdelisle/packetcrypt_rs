@@ -15,8 +15,11 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 
-// 50MB incoming buffer per thread
-const INCOMING_BUF_ANN_PER_THREAD: usize = 50 * 1024;
+// 100MB incoming buffer per thread
+const INCOMING_BUF_ANN_PER_THREAD: usize = 100 * 1024;
+
+// Don't callback until we have at least this many anns
+const ANNS_TO_ACCUMULATE: usize = 50 * 1024;
 
 // 128MB shared outgoing buffer
 const MAX_SEND_QUEUE: usize = 128 * 1024;
@@ -477,6 +480,7 @@ impl SprayWorker {
     fn run(mut self) {
         info!("Launched sprayer thread");
         let mut i = 0;
+        let mut last_i = 0;
         let mut overflow = 0;
         loop {
             match self.g.0.socket.recv_from(&mut self.rbuf[i][..]) {
@@ -515,22 +519,26 @@ impl SprayWorker {
             if self.g.0.log_peer_stats {
                 self.g.get_peer_stats();
             }
-            if i < 10000 {
+            if i == 0 {
                 std::thread::sleep(std::time::Duration::from_micros(100));
                 continue;
             }
-            {
+            if i > last_i {
+                overflow += self.g.push_anns(&self.rbuf[last_i..i]);
+                if overflow > 0 && self.log(&|| info!("Send overflow of {} anns", overflow)) {
+                    overflow = 0;
+                }
+                last_i = i;
+            }
+            if i > ANNS_TO_ACCUMULATE {
                 let handler = self.g.0.handler.read().unwrap();
                 match &*handler {
                     Some(h) => h.on_anns(&self.rbuf[0..i]),
                     None => (),
                 }
+                i = 0;
+                last_i = 0;
             }
-            overflow += self.g.push_anns(&self.rbuf[0..i]);
-            if overflow > 0 && self.log(&|| info!("Send overflow of {} anns", overflow)) {
-                overflow = 0;
-            }
-            i = 0;
         }
     }
 }
