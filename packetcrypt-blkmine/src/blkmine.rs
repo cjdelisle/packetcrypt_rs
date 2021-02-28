@@ -11,6 +11,7 @@ use packetcrypt_util::protocol;
 use packetcrypt_util::sprayer;
 use packetcrypt_util::{hash, util};
 use std::cmp::max;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -109,6 +110,8 @@ pub struct BlkMineS {
 
     share_channel_send: Mutex<tokio::sync::mpsc::UnboundedSender<Share>>,
     share_channel_recv: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<Share>>,
+
+    share_num: AtomicUsize,
 }
 
 #[derive(Clone)]
@@ -576,7 +579,6 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 }
 
 fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
-    debug!("on_work() begin");
     let (index_table, real_target, current_mining) = {
         let (tree, tree_num) = get_tree(bm, false);
         let mut tree_l = tree.lock().unwrap();
@@ -604,13 +606,6 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
             reload.ann_min_work,
             index_table.len() as u64,
         );
-        debug!(
-            "Start mining {} with {} anns, min_work={:#x} effective_work={:#x}",
-            next_work.height,
-            tree_l.size(),
-            reload.ann_min_work,
-            real_target,
-        );
         let count = index_table.len() as u32;
         (
             index_table,
@@ -632,16 +627,17 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         &index_table[..],
         real_target,
     );
-    debug!(
+    trace!(
         "Mining with header {}",
         hex::encode(&current_mining.block_header)
     );
-    bm.current_mining.lock().unwrap().replace(current_mining);
     debug!(
-        "Started mining {} with {} anns",
+        "Start mining {} with {} @ {}",
         next_work.height,
-        index_table.len()
+        index_table.len(),
+        packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
     );
+    bm.current_mining.lock().unwrap().replace(current_mining);
 }
 
 pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
@@ -679,6 +675,7 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
         spray,
         share_channel_recv: tokio::sync::Mutex::new(recv),
         share_channel_send: Mutex::new(send),
+        share_num: AtomicUsize::new(0),
     }));
     bm.block_miner.set_handler(bm.clone());
     Ok(bm)
@@ -804,7 +801,7 @@ async fn stats_loop(bm: &BlkMine) {
                 info!("Not mining{}", dlst);
                 true
             }
-            Some(mut cm) => {
+            Some(cm) => {
                 let hashrate = bm.block_miner.hashes_per_second() as f64;
                 let hrm = packetcrypt_sys::difficulty::pc_get_hashrate_multiplier(
                     cm.ann_min_work,
@@ -812,10 +809,8 @@ async fn stats_loop(bm: &BlkMine) {
                 );
                 let (tree, _) = get_tree(bm, true);
                 let anns = tree.lock().unwrap().size();
-                let shares = cm.shares;
-                cm.shares = 0;
 
-                let shr = util::pad_to(8, format!("shr: {} ", shares));
+                let shr = util::pad_to(8, format!("shr: {} ", cm.shares));
                 let hr = util::pad_to(
                     30,
                     format!(
@@ -878,6 +873,7 @@ fn share_id(block_header: &[u8], low_nonce: u32) -> u32 {
 struct Share {
     json: String,
     handler_url: String,
+    num: usize,
 }
 
 impl OnShare for BlkMine {
@@ -955,7 +951,7 @@ fn make_share(bm: &BlkMine, share: BlkResult) -> Result<Share> {
     }
 
     // At this point header_and_proof is really just the block header
-    match packetcrypt_sys::check_block_work(
+    let share_n = match packetcrypt_sys::check_block_work(
         &header_and_proof,
         share.low_nonce,
         share_target,
@@ -966,9 +962,13 @@ fn make_share(bm: &BlkMine, share: BlkResult) -> Result<Share> {
             bail!("Unable to validate share [{}]", e);
         }
         Ok(h) => {
-            info!("Got share [{}]", hex::encode(h));
+            let share_n = bm
+                .share_num
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            info!("[{}] Got share [{}]", share_n, hex::encode(h));
+            share_n
         }
-    }
+    };
 
     let proof_len = 4 + // low_nonce
             1024 * 4 + // anns
@@ -1001,10 +1001,12 @@ fn make_share(bm: &BlkMine, share: BlkResult) -> Result<Share> {
             coinbase_commit,
         })?,
         handler_url,
+        num: share_n,
     })
 }
 
 async fn post_share(bm: &BlkMine, share: Share) -> Result<()> {
+    debug!("[{}] Posting share", share.num);
     let res = reqwest::ClientBuilder::new()
         .timeout(Duration::from_secs(bm.ba.upload_timeout as u64))
         .build()?
@@ -1021,27 +1023,28 @@ async fn post_share(bm: &BlkMine, share: Share) -> Result<()> {
         x
     } else {
         bail!(
-            "[{}] replied [{}]: [{}] which cannot be parsed",
+            "[{}] [{}] replied [{}]: [{}] which cannot be parsed",
+            share.num,
             &share.handler_url,
             status,
             String::from_utf8_lossy(&resbytes[..])
         );
     };
     for e in &reply.error {
-        let ee = if e.contains("Validate_checkBlock_INSUF_POW") {
-            "Validate_checkBlock_INSUF_POW"
+        let ee = if e.contains("Share is for wrong work, expecting previous hash") {
+            "Stale share"
         } else {
             &e
         };
         warn!(
-            "handler [{}] replied with error [{}]",
-            &share.handler_url, ee
+            "[{}] handler [{}] replied with error [{}]",
+            share.num, &share.handler_url, ee
         );
     }
     for w in &reply.warn {
         warn!(
-            "handler [{}] replied with warning [{}]",
-            &share.handler_url, w
+            "[{}] handler [{}] replied with warning [{}]",
+            share.num, &share.handler_url, w
         );
     }
     //Validate_checkBlock_INSUF_POW
@@ -1054,17 +1057,19 @@ async fn post_share(bm: &BlkMine, share: Share) -> Result<()> {
                 return Ok(());
             }
             bail!(
-                "handler [{}] replied with no result [{}]",
+                "[{}] handler [{}] replied with no result [{}]",
+                share.num,
                 &share.handler_url,
                 String::from_utf8_lossy(&resbytes[..])
             );
         }
     };
     if let Some(hash) = result.header_hash {
-        info!("BLOCK [{}]", hash);
+        info!("[{}] BLOCK [{}]", share.num, hash);
     } else {
         debug!(
-            "handler [{}] replied share: {}",
+            "[{}] handler [{}] replied share: {}",
+            share.num,
             &share.handler_url,
             result.header_hash.unwrap_or(result.event_id),
         );
