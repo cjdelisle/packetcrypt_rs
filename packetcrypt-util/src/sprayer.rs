@@ -184,7 +184,7 @@ impl Sprayer {
                         ann: *ann,
                     };
                     let number = s.packets_sent.fetch_add(1, atomic::Ordering::Relaxed) as u64;
-                    ts.ann[1024..].copy_from_slice(&number.to_le_bytes());
+                    ts.ann[0..MSG_PREFIX].copy_from_slice(&number.to_le_bytes());
                     sq.push_back(ts);
                 }
             }
