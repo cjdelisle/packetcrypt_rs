@@ -158,7 +158,7 @@ static void mine(Worker_t* w)
 
             printf("share / %u / %u\n", hdr.nonce, lowNonce);
             for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
-            for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]; }
+            for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
             printf("\n");
             for (int j = 0; j < 4; j++) {
                 uint64_t loc = res.ann_mlocs[j];
