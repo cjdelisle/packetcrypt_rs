@@ -353,7 +353,7 @@ impl Sprayer {
                         kbps_out: 0.0,
                     };
                     if self.0.log_peer_stats {
-                        info!("{} -> {}", sub.peer, util::format_kbps(st.kbps_out));
+                        info!("{} -> {}", sub.peer, util::format_kbps(st.kbps_in));
                     }
                     peer_stats.push(st);
                     p.last_logged_ms = now_ms;

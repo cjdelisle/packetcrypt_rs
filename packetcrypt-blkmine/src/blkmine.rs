@@ -751,7 +751,7 @@ async fn stats_loop(bm: &BlkMine) {
             let st = spray.get_peer_stats();
             let v = st
                 .iter()
-                .map(|s| format!("{}  {}", s.peer, util::format_kbps(s.kbps_in)))
+                .map(|s| format!("({}, {})", s.peer, util::format_kbps(s.kbps_in)))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(" <- [ {} ]", v)
