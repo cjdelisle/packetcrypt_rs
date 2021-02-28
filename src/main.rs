@@ -421,6 +421,7 @@ async fn main() -> Result<()> {
                 workers,
                 subscribe_to: vec![subscribe],
                 always_send_all: false,
+                log_peer_stats: false,
             })
         } else {
             if blk.is_present("bind") {
@@ -449,6 +450,7 @@ async fn main() -> Result<()> {
             workers: get_usize!(spray, "threads"),
             subscribe_to: get_strs!(spray, "subscribe"),
             always_send_all: false,
+            log_peer_stats: true,
         })
         .await?;
     }

@@ -65,10 +65,16 @@ impl<T: Send + Sync> OnAnns for Option<T> {
     fn on_anns(&self, _anns: &[Ann]) {}
 }
 
-struct PeerStats {
+struct PeerCounters {
     last_logged_ms: u64,
     last_packets_recv: usize,
     last_packets_sent: usize,
+}
+#[derive(Clone)]
+pub struct PeerStats {
+    pub peer: SocketAddr,
+    pub kbps_in: f64,
+    pub kbps_out: f64,
 }
 
 struct SprayerS {
@@ -80,8 +86,10 @@ struct SprayerS {
     subscribed_to: Vec<Subscription>,
     always_send_all: bool,
     workers: usize,
-    last_logged_stats: AtomicUsize,
-    peer_stats: Mutex<HashMap<SocketAddr, PeerStats>>,
+    last_computed_stats: AtomicUsize,
+    peer_counters: Mutex<HashMap<SocketAddr, PeerCounters>>,
+    peer_stats: Mutex<Vec<PeerStats>>,
+    log_peer_stats: bool,
 }
 pub struct Sprayer(Arc<SprayerS>);
 
@@ -89,14 +97,14 @@ fn get_ann_key(ann: &Ann) -> u32 {
     u32::from_le_bytes(ann[64..68].try_into().unwrap())
 }
 
-fn kbps(packets2: usize, packets1: usize, time2: u64, time1: u64) -> String {
+fn kbps(packets2: usize, packets1: usize, time2: u64, time1: u64) -> f64 {
     let packets_sent = (packets2 - packets1) as u64;
     // consider the headers here
     let bits_sent = packets_sent * (1024 + 8 + 20 + 14) * 8;
     let ms_elapsed = time2 - time1;
     // bits per millisecond = kilobits per second
     let kbps = bits_sent as f64 / ms_elapsed as f64;
-    util::format_kbps(kbps)
+    kbps
 }
 
 pub struct Config {
@@ -105,6 +113,7 @@ pub struct Config {
     pub workers: usize,
     pub subscribe_to: Vec<String>,
     pub always_send_all: bool,
+    pub log_peer_stats: bool,
 }
 
 impl Sprayer {
@@ -140,8 +149,10 @@ impl Sprayer {
             workers: cfg.workers,
             handler: RwLock::new(None),
             always_send_all: cfg.always_send_all,
-            last_logged_stats: AtomicUsize::new(0),
-            peer_stats: Mutex::new(HashMap::new()),
+            last_computed_stats: AtomicUsize::new(0),
+            peer_counters: Mutex::new(HashMap::new()),
+            peer_stats: Mutex::new(Vec::new()),
+            log_peer_stats: cfg.log_peer_stats,
         })))
     }
 
@@ -287,35 +298,43 @@ impl Sprayer {
         }
     }
 
-    fn log_stats(&self) {
+    pub fn get_peer_stats(&self) -> Vec<PeerStats> {
         let now_ms = util::now_ms();
         let now_sec = (now_ms / 1000) as usize;
-        let last_logged_stats = self.0.last_logged_stats.load(atomic::Ordering::Relaxed);
-        if last_logged_stats + STATS_EVERY > now_sec {
-            return;
+        let last_computed_stats = self.0.last_computed_stats.load(atomic::Ordering::Relaxed);
+        if last_computed_stats + STATS_EVERY > now_sec {
+            return self.0.peer_stats.lock().unwrap().clone();
         }
         self.0
-            .last_logged_stats
+            .last_computed_stats
             .store(now_sec, atomic::Ordering::Relaxed);
 
-        let mut ps = self.0.peer_stats.lock().unwrap();
+        let mut ps = self.0.peer_counters.lock().unwrap();
         let m = self.0.m.read().unwrap();
+        let mut peer_stats = Vec::new();
+        if self.0.log_peer_stats {
+            info!("Sprayer links:");
+        }
         for sub in &m.subscribers {
             match ps.get_mut(&sub.peer) {
                 Some(p) => {
                     let packets_sent = sub.packets_sent.load(atomic::Ordering::Relaxed);
-                    info!(
-                        "{} <- {}",
-                        sub.peer,
-                        kbps(packets_sent, p.last_packets_sent, now_ms, p.last_logged_ms)
-                    );
+                    let st = PeerStats {
+                        peer: sub.peer,
+                        kbps_out: kbps(packets_sent, p.last_packets_sent, now_ms, p.last_logged_ms),
+                        kbps_in: 0.0,
+                    };
+                    if self.0.log_peer_stats {
+                        info!("{} <- {}", sub.peer, util::format_kbps(st.kbps_out));
+                    }
+                    peer_stats.push(st);
                     p.last_logged_ms = now_ms;
                     p.last_packets_sent = packets_sent;
                 }
                 None => {
                     ps.insert(
                         sub.peer,
-                        PeerStats {
+                        PeerCounters {
                             last_logged_ms: now_ms,
                             last_packets_sent: sub.packets_sent.load(atomic::Ordering::Relaxed),
                             last_packets_recv: 0,
@@ -328,18 +347,22 @@ impl Sprayer {
             match ps.get_mut(&sub.peer) {
                 Some(p) => {
                     let packets_recv = sub.packets_received.load(atomic::Ordering::Relaxed);
-                    info!(
-                        "{} -> {}",
-                        sub.peer,
-                        kbps(packets_recv, p.last_packets_recv, now_ms, p.last_logged_ms)
-                    );
+                    let st = PeerStats {
+                        peer: sub.peer,
+                        kbps_in: kbps(packets_recv, p.last_packets_recv, now_ms, p.last_logged_ms),
+                        kbps_out: 0.0,
+                    };
+                    if self.0.log_peer_stats {
+                        info!("{} -> {}", sub.peer, util::format_kbps(st.kbps_out));
+                    }
+                    peer_stats.push(st);
                     p.last_logged_ms = now_ms;
                     p.last_packets_recv = sub.packets_received.load(atomic::Ordering::Relaxed);
                 }
                 None => {
                     ps.insert(
                         sub.peer,
-                        PeerStats {
+                        PeerCounters {
                             last_logged_ms: now_ms,
                             last_packets_recv: sub.packets_received.load(atomic::Ordering::Relaxed),
                             last_packets_sent: 0,
@@ -348,6 +371,8 @@ impl Sprayer {
                 }
             }
         }
+        *self.0.peer_stats.lock().unwrap() = peer_stats.clone();
+        peer_stats
     }
 }
 
@@ -454,7 +479,7 @@ impl SprayWorker {
                 }
             }
             self.try_send();
-            self.g.log_stats();
+            self.g.get_peer_stats();
             if i == 0 {
                 std::thread::sleep(std::time::Duration::from_millis(1));
                 continue;

@@ -559,6 +559,7 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         workers: cfg.spray_workers as usize,
         subscribe_to: cfg.subscribe_to.clone(),
         always_send_all: true,
+        log_peer_stats: true,
     })?;
 
     let (submit_send, submit_recv) = crossbeam_channel::bounded(cfg.input_queue_len);

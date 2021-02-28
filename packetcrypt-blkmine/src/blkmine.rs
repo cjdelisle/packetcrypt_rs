@@ -747,12 +747,21 @@ async fn stats_loop(bm: &BlkMine) {
             queued.push(st.queued);
         }
         let spr = util::pad_to(27, format!("spare: {} rdy: {} ", unused, ready));
-        let got = util::pad_to(19, format!("<- got: {:?} ", downloaded));
-        let get = util::pad_to(19, format!("<- get: {:?} ", downloading));
-        let dlst = format!("{} {} {} <- q: {:?}", spr, got, get, queued);
+        let dlst = if let Some(spray) = &bm.spray {
+            let st = spray.get_peer_stats();
+            let v = st
+                .iter()
+                .map(|s| format!("{}:{}", s.peer, util::format_kbps(s.kbps_in)))
+                .collect::<Vec<_>>();
+            format!(" {:?}", v)
+        } else {
+            let got = util::pad_to(19, format!("<- got: {:?} ", downloaded));
+            let get = util::pad_to(19, format!("<- get: {:?} ", downloading));
+            format!(" {} {} {} <- q: {:?}", spr, got, get, queued)
+        };
         let start_mining = match get_current_mining(bm) {
             None => {
-                info!("Not mining - {}", dlst);
+                info!("Not mining{}", dlst);
                 true
             }
             Some(mut cm) => {
