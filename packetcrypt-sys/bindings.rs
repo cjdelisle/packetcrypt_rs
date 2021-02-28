@@ -460,6 +460,14 @@ extern "C" {
         vctx: *mut PacketCrypt_ValidateCtx_t,
     ) -> ::std::os::raw::c_int;
 }
+extern "C" {
+    pub fn Validate_powOnly(
+        hap: *const PacketCrypt_HeaderAndProof_t,
+        hapLen: u32,
+        shareTarget: u32,
+        coinbaseCommitment: *const PacketCrypt_Coinbase_t,
+    ) -> ::std::os::raw::c_int;
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct AnnMiner_s {

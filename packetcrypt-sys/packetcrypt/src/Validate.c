@@ -145,6 +145,15 @@ static int checkPcHash(uint64_t indexesOut[PacketCrypt_NUM_ANNS],
     return Validate_checkBlock_INSUF_POW;
 }
 
+int Validate_powOnly(const PacketCrypt_HeaderAndProof_t* hap,
+                     uint32_t shareTarget,
+                     const PacketCrypt_Coinbase_t* coinbaseCommitment)
+{
+    uint64_t indexesOut[PacketCrypt_NUM_ANNS];
+    uint8_t workHashOut[32];
+    return checkPcHash(indexesOut, hap, coinbaseCommitment, shareTarget, workHashOut);
+}
+
 int Validate_checkBlock(const PacketCrypt_HeaderAndProof_t* hap,
                         uint32_t hapLen,
                         uint32_t blockHeight,

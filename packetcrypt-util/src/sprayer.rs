@@ -3,6 +3,7 @@ use crate::protocol::SprayerReq;
 use crate::util;
 use anyhow::{Context, Result};
 use log::{debug, info};
+use socket2::Socket;
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -30,6 +31,8 @@ const SECONDS_UNTIL_SUB_TIMEOUT: usize = 30;
 const SECONDS_UNTIL_RESUB: usize = 5;
 
 const STATS_EVERY: usize = 10;
+
+const RECV_BUF_SZ: usize = 1 << 22;
 
 pub const MSG_PREFIX: usize = 8;
 pub const MSG_TOTAL_LEN: usize = 1024 + MSG_PREFIX;
@@ -84,7 +87,7 @@ struct SprayerS {
     m: RwLock<SprayerMut>,
     send_queue: Mutex<VecDeque<ToSend>>,
     passwd: String,
-    socket: UdpSocket,
+    socket: socket2::Socket,
     handler: RwLock<Option<Box<dyn OnAnns>>>,
     subscribed_to: Vec<Subscription>,
     always_send_all: bool,
@@ -126,6 +129,8 @@ impl Sprayer {
             .with_context(|| format!("SocketAddr parse({})", cfg.bind))?;
         let socket = UdpSocket::bind(addr).with_context(|| format!("UdpSocket::bind({})", addr))?;
         socket.set_nonblocking(true)?;
+        let s = Socket::from(socket);
+        s.set_recv_buffer_size(RECV_BUF_SZ)?;
 
         let m = RwLock::new(SprayerMut {
             subscribers: Vec::new(),
@@ -147,7 +152,7 @@ impl Sprayer {
                 .collect(),
             send_queue,
             passwd: cfg.passwd.clone(),
-            socket,
+            socket: s,
             workers: cfg.workers,
             handler: RwLock::new(None),
             always_send_all: cfg.always_send_all,
@@ -248,7 +253,11 @@ impl Sprayer {
             })
             .unwrap();
             debug!("subscribing to {}", sub.peer);
-            if let Err(e) = self.0.socket.send_to(&req.as_bytes(), &sub.peer) {
+            if let Err(e) = self
+                .0
+                .socket
+                .send_to(&req.as_bytes(), &socket2::SockAddr::from(sub.peer))
+            {
                 return Some((e, sub.peer));
             }
             sub.last_update_sec
@@ -406,12 +415,10 @@ impl SprayWorker {
         }
         let count = self.g.get_to_send(&mut self.sbuf);
         for i in 0..count {
-            match self
-                .g
-                .0
-                .socket
-                .send_to(&self.sbuf[i].ann[..], &self.sbuf[i].dest)
-            {
+            match self.g.0.socket.send_to(
+                &self.sbuf[i].ann[..],
+                &socket2::SockAddr::from(self.sbuf[i].dest),
+            ) {
                 Ok(l) => {
                     if l == MSG_TOTAL_LEN {
                         continue;
@@ -455,7 +462,8 @@ impl SprayWorker {
         let mut overflow = 0;
         loop {
             match self.g.0.socket.recv_from(&mut self.rbuf[i][..]) {
-                Ok((l, from)) => {
+                Ok((l, fr)) => {
+                    let from = fr.as_std().unwrap();
                     if l > MSG_TOTAL_LEN {
                         self.log(&|| info!("Spurious packet from {}", from));
                         continue;
