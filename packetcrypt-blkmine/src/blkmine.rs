@@ -347,7 +347,7 @@ impl sprayer::OnAnns for BlkMine {
         let mut indexes: Vec<u32> = Vec::with_capacity(anns.len());
         let mut height_work: Option<HeightWork> = None;
         for ai in v {
-            match &height_work {
+            let hw = match &height_work {
                 None => {
                     indexes.push(ai.index);
                     height_work = Some(ai.hw);
@@ -361,7 +361,12 @@ impl sprayer::OnAnns for BlkMine {
                     hw
                 }
             };
-            debug!("Batch of {} anns", indexes.len());
+            debug!(
+                "Batch of {} anns {}/{}",
+                indexes.len(),
+                hw.block_height,
+                hw.work,
+            );
             on_anns(
                 self,
                 AnnChunk {
