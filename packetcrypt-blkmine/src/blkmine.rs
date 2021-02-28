@@ -888,7 +888,7 @@ async fn post_share(bm: &BlkMine, share: BlkResult) -> Result<()> {
         .collect::<Vec<_>>();
 
     info!("Got share / {} / {}", share.high_nonce, share.low_nonce);
-    info!("{}", hex::encode(hash::compress32(&header_and_proof)));
+    info!("{}", hex::encode(&header_and_proof));
     for (ann, i) in anns.iter().zip(0..) {
         info!("{} - {}", share.ann_mlocs[i], hex::encode(&ann[0..32]));
     }
