@@ -263,7 +263,7 @@ fn mk_ann_info(anns: &impl GetAnn, mut free: Vec<FreeInfo>) -> Vec<AnnInfo> {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Eq)]
 struct HeightWork {
     block_height: i32,
     work: u32,
@@ -361,6 +361,7 @@ impl sprayer::OnAnns for BlkMine {
                     hw
                 }
             };
+            debug!("Batch of {} anns", indexes.len());
             on_anns(
                 self,
                 AnnChunk {
@@ -492,7 +493,7 @@ fn reload_anns(
     let mut sum_count = 0;
     for (i, elem) in (0..).zip(v.iter()) {
         if elem.ann_effective_work == 0xffffffff {
-            continue;
+            break;
         }
         sum_count += elem.ann_count;
         let tar = pc_get_effective_target(
