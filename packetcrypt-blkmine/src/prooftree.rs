@@ -179,17 +179,6 @@ impl ProofTree {
 
         self.root_hash = Some(rh);
         self.size = out.len() as u32;
-        for (i, mloc) in (0..).zip(&out) {
-            if *mloc > self.highest_mloc {
-                panic!(
-                    "entry {} of {} has mloc {}, highest possible is {}",
-                    i,
-                    out.len(),
-                    *mloc,
-                    self.highest_mloc
-                );
-            }
-        }
         Ok(out)
 
         /*
