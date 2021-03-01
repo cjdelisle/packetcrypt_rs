@@ -11,6 +11,11 @@ struct AnnData {
     mloc: u32,
     index: u32,
 }
+impl AnnData {
+    fn hash_pfx(&self) -> u64 {
+        u64::from_le_bytes(self.hash[0..8].try_into().unwrap())
+    }
+}
 
 pub struct ProofTree {
     raw: *mut ProofTree_t,
@@ -92,19 +97,20 @@ impl ProofTree {
 
         // Sort the data items
         self.data
-            .par_sort_by(|a, b| a.hash[0..8].cmp(&b.hash[0..8]));
+            .par_sort_by(|a, b| a.hash_pfx().cmp(&b.hash_pfx()));
 
         // Create the index table
         let mut out = Vec::with_capacity(self.size as usize);
         let mut last_pfx = 0;
         for d in self.data.iter_mut() {
-            let pfx = u64::from_le_bytes(d.hash[0..8].try_into().unwrap());
+            let pfx = d.hash_pfx();
             // Deduplicate and insert in the index table
             if pfx > last_pfx {
                 out.push(d.mloc);
                 d.index = out.len() as u32 + 1;
                 last_pfx = pfx;
             } else {
+                debug!("Drop ann with index {}", pfx);
                 d.index = 0;
             }
         }
