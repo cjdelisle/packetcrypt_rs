@@ -579,11 +579,13 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 }
 
 fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
+    bm.block_miner.stop();
     let (index_table, real_target, current_mining) = {
         let (tree, tree_num) = get_tree(bm, false);
         let mut tree_l = tree.lock().unwrap();
         let mut active_l = bm.active_infos.lock().unwrap();
         let reload = reload_anns(bm, next_work, &mut active_l);
+        debug!("Inserting in tree");
         tree_l.reset();
         for ai in active_l.iter() {
             //debug!("active_l has {} hashes", ai.hashes.len());
@@ -598,7 +600,9 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
             debug!("Not mining, no anns ready");
             return;
         }
+        debug!("Computing tree");
         let index_table = tree_l.compute().unwrap();
+        debug!("Computing block header");
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
         let real_target = pc_get_effective_target(
