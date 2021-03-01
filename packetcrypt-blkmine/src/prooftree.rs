@@ -148,7 +148,7 @@ impl ProofTree {
                 panic!("list not sorted {:#x} < {:#x}", pfx, last_pfx);
             }
         }
-        debug!("Loaded {} out of {} anns", out.len(), self.size);
+        debug!("Loaded {} out of {} anns", out.len(), data.len());
 
         // Copy the data to the location
         data
