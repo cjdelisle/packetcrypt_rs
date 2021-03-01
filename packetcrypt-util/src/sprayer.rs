@@ -22,10 +22,10 @@ const INCOMING_BUF_ANN_PER_THREAD: usize = 100 * 1024;
 const ANNS_TO_ACCUMULATE: usize = 50 * 1024;
 
 // 128MB shared outgoing buffer
-const MAX_SEND_QUEUE: usize = 128 * 1024;
+const MAX_SEND_QUEUE: usize = 256 * 1024;
 
 // 128k per send attempt
-const SEND_CHUNK_SZ: usize = 128;
+const SEND_CHUNK_SZ: usize = 512;
 
 // How long a node doesn't send a subscription update before we stop flooding them
 const SECONDS_UNTIL_SUB_TIMEOUT: usize = 30;
