@@ -120,16 +120,20 @@ impl ProofTree {
         debug!("Loaded {} out of {} anns", out.len(), self.size);
 
         // Copy the data to the location
-        self.data.par_iter().for_each(|d| unsafe {
-            if d.index == 0 {
-                // Removed in dedupe stage
-                return;
-            }
-            let mut e = *ProofTree_getEntry(self.raw, d.index);
-            e.hash.copy_from_slice(&d.hash);
-            let pfx = u64::from_le_bytes(d.hash[0..8].try_into().unwrap());
-            e.start = pfx;
-        });
+        self.data
+            //par_iter()
+            .iter()
+            .for_each(|d| unsafe {
+                if d.index == 0 {
+                    // Removed in dedupe stage
+                    return;
+                }
+                let mut e = *ProofTree_getEntry(self.raw, d.index);
+                e.hash.copy_from_slice(&d.hash);
+                let pfx = u64::from_le_bytes(d.hash[0..8].try_into().unwrap());
+                e.start = pfx;
+                assert!(pfx > 0);
+            });
 
         // Cap off the top with an ffff entry
         let total_anns_zero_included = out.len() + 1;
@@ -139,10 +143,11 @@ impl ProofTree {
         }
 
         // Set the end of each entry to the start of the following entry
-        self.data.par_iter().for_each(|d| unsafe {
+        self.data.iter().for_each(|d| unsafe {
             let mut e = *ProofTree_getEntry(self.raw, d.index);
             let e_n = *ProofTree_getEntry(self.raw, d.index + 1);
             e.end = e_n.start;
+            assert!(e.end > e.start);
         });
 
         let mut count_this_layer = total_anns_zero_included;
@@ -155,7 +160,7 @@ impl ProofTree {
                 odx += 1;
             }
             (0..count_this_layer)
-                .into_par_iter()
+                //.into_par_iter()
                 .step_by(2)
                 .for_each(|i| unsafe {
                     ProofTree_hashPair(self.raw, (odx + i / 2) as u64, (idx + i) as u64);
