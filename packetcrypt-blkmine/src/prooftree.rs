@@ -108,6 +108,7 @@ impl ProofTree {
             #[allow(clippy::comparison_chain)]
             if pfx > last_pfx {
                 out.push(d.mloc);
+                // careful to skip entry 0 which is the 0-entry
                 d.index = out.len() as u32;
                 last_pfx = pfx;
             } else if pfx == last_pfx {
@@ -133,7 +134,9 @@ impl ProofTree {
                 let pfx = d.hash_pfx();
                 e.start = pfx;
                 assert!(pfx > 0);
-                debug!("{} {:#x}", d.index, e.start);
+                if d.index < 10 {
+                    debug!("{} {:#x}", d.index, e.start);
+                }
             });
 
         // Cap off the top with an ffff entry
