@@ -209,10 +209,13 @@ impl Sprayer {
                 Box::new(SprayWorker {
                     g,
                     rbuf: vec![[0_u8; MSG_TOTAL_LEN]; INCOMING_BUF_ANN_PER_THREAD],
-                    sbuf: [ToSend {
-                        dest: SocketAddr::new([127, 0, 0, 1].into(), 0),
-                        ann: [0_u8; MSG_TOTAL_LEN],
-                    }; SEND_CHUNK_SZ],
+                    sbuf: vec![
+                        ToSend {
+                            dest: SocketAddr::new([127, 0, 0, 1].into(), 0),
+                            ann: [0_u8; MSG_TOTAL_LEN],
+                        };
+                        SEND_CHUNK_SZ
+                    ],
                     time_of_last_log: 0_u64,
                     tid,
                 })
@@ -414,7 +417,7 @@ impl Sprayer {
 struct SprayWorker {
     g: Sprayer,
     rbuf: Vec<Ann>,
-    sbuf: [ToSend; SEND_CHUNK_SZ],
+    sbuf: Vec<ToSend>,
     time_of_last_log: u64,
     tid: usize,
 }
