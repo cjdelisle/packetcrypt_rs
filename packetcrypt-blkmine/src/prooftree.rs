@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use bytes::BufMut;
+use log::debug;
 use packetcrypt_sys::*;
 use rayon::prelude::*;
 use std::cmp::max;
@@ -107,6 +108,7 @@ impl ProofTree {
                 d.index = 0;
             }
         }
+        debug!("Loaded {} out of {} anns", out.len(), self.size);
 
         // Copy the data to the location
         self.data.par_iter().for_each(|d| unsafe {
