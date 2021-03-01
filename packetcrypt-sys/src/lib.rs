@@ -87,6 +87,7 @@ pub fn check_block_work(
     for ann in anns.iter() {
         hap.put(&ann[..]);
     }
+    assert!(hap.len() == 80 + 8 + (1024 * 4));
     hap.put(proof);
     let aligned_hap = util::aligned_bytes(&hap, 8);
     let aligned_coinbase = util::aligned_bytes(coinbase, 8);

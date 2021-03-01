@@ -987,6 +987,7 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
     }
 
     // At this point header_and_proof is really just the block header
+    debug!("proof length {}", pb.len());
     let share_n = match packetcrypt_sys::check_block_work(
         &header_and_proof,
         share.low_nonce,
