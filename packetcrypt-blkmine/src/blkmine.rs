@@ -10,6 +10,7 @@ use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol;
 use packetcrypt_util::sprayer;
 use packetcrypt_util::{hash, util};
+use rayon::prelude::*;
 use std::cmp::max;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
