@@ -184,7 +184,7 @@ impl ProofTree {
                     ProofTree_hashPair(self.raw, (odx + i / 2) as u64, (idx + i) as u64);
                 });
             idx += count_this_layer;
-            count_this_layer >>= 1;
+            count_this_layer /= 2;
             odx += count_this_layer;
         }
         assert!(idx + 1 == odx);

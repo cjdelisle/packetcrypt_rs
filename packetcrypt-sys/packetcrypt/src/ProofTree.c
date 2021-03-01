@@ -92,8 +92,9 @@ void ProofTree_hashPair(ProofTree_t* pt, uint64_t odx, uint64_t idx)
 uint64_t ProofTree_complete(ProofTree_t* pt, uint8_t* rootHash)
 {
     uint64_t odx = PacketCryptProof_entryCount(pt->tree.totalAnnsZeroIncluded);
-    Hash_COMPRESS32_OBJ(&pt->tree.root, &pt->tree.entries[odx]);
-    memcpy(rootHash, pt->tree.root.bytes, 32);
+    PacketCryptProof_Tree2_t* tree = (PacketCryptProof_Tree2_t*) &pt->tree;
+    Hash_COMPRESS32_OBJ(&tree->root, &tree->entries[odx]);
+    memcpy(rootHash, tree->root.bytes, 32);
     return odx;
 }
 
