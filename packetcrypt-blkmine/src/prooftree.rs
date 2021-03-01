@@ -167,17 +167,7 @@ impl ProofTree {
         let total_anns_zero_included = out.len() + 1;
         unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
 
-        // Cap off the top with an ffff entry
-        let mut rh = [0u8; 32];
-        let rh_p = rh.as_mut_ptr();
-        unsafe { ProofTree_compute2(self.raw, rh_p) };
-
-        self.root_hash = Some(rh);
-        self.size = out.len() as u32;
-        Ok(out)
-
-        /*
-
+        // Build the merkle tree
         let mut count_this_layer = total_anns_zero_included;
         let mut odx = count_this_layer;
         let mut idx = 0;
@@ -203,20 +193,7 @@ impl ProofTree {
 
         self.root_hash = Some(rh);
         self.size = out.len() as u32;
-        for (i, mloc) in (0..).zip(&out) {
-            if *mloc > self.highest_mloc {
-                panic!(
-                    "entry {} of {} has mloc {}, highest possible is {}",
-                    i,
-                    out.len(),
-                    *mloc,
-                    self.highest_mloc
-                );
-            }
-        }
-
         Ok(out)
-        */
     }
     pub fn get_commit(&self, ann_min_work: u32) -> Result<bytes::BytesMut, &'static str> {
         let hash = if let Some(h) = self.root_hash.as_ref() {

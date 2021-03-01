@@ -35,6 +35,8 @@ typedef struct {
 } PacketCryptProof_Tree2_t;
 _Static_assert(sizeof(PacketCryptProof_Tree2_t) == sizeof(PacketCryptProof_Tree_t) - sizeof(Entry_t), "");
 
+uint64_t PacketCryptProof_entryCount(uint64_t totalAnns);
+
 PacketCryptProof_Tree_t* PacketCryptProof_allocTree(uint64_t totalAnns);
 uint64_t PacketCryptProof_prepareTree(PacketCryptProof_Tree_t* tree);
 
