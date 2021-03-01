@@ -36,6 +36,7 @@ void ProofTree_putEntry(ProofTree_t* pt, uint32_t index, const ProofTree_Entry_t
 
 void ProofTree_setTotalAnnsZeroIncluded(ProofTree_t* pt, uint32_t total);
 
+void ProofTree_compute2(ProofTree_t* pt, uint8_t* hashOut);
 uint32_t ProofTree_compute(ProofTree_t*, uint8_t* hashOut, uint32_t* mlocOut);
 
 void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc);

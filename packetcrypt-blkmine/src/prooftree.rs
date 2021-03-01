@@ -56,9 +56,6 @@ impl ProofTree {
         }
     }
     pub fn reset(&mut self) {
-        unsafe {
-            ProofTree_clear(self.raw);
-        }
         self.size = 0;
         self.root_hash = None;
         self.highest_mloc = 0;
@@ -80,9 +77,6 @@ impl ProofTree {
             mloc,
             index: 0,
         });
-        unsafe {
-            ProofTree_append(self.raw, hash.as_ptr(), mloc);
-        }
         self.size += 1;
         self.highest_mloc = max(self.highest_mloc, mloc);
         Ok(())
@@ -96,6 +90,12 @@ impl ProofTree {
         }
         if self.size == 0 {
             return Err("no anns, cannot compute tree");
+        }
+        unsafe {
+            ProofTree_clear(self.raw);
+        }
+        for d in &self.data {
+            unsafe { ProofTree_append(self.raw, d.hash.as_ptr(), d.mloc) };
         }
         let mut out = vec![0u32; self.size as usize];
         let mut rh = [0u8; 32];
