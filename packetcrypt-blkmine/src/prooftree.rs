@@ -21,9 +21,7 @@ pub struct ProofTree {
     raw: *mut ProofTree_t,
     capacity: u32,
     size: u32,
-    highest_mloc: u32,
     root_hash: Option<[u8; 32]>,
-    data: Vec<AnnData>,
 }
 unsafe impl Send for ProofTree {}
 unsafe impl Sync for ProofTree {}
@@ -49,74 +47,16 @@ impl ProofTree {
         ProofTree {
             raw: unsafe { ProofTree_create(max_anns) },
             size: 0,
-            highest_mloc: 0,
             capacity: max_anns,
             root_hash: None,
-            data: Vec::new(),
         }
     }
     pub fn reset(&mut self) {
         self.size = 0;
         self.root_hash = None;
-        self.highest_mloc = 0;
-    }
-    pub fn push(&mut self, hash: &[u8; 32], mloc: u32) -> Result<(), &'static str> {
-        if self.root_hash.is_some() {
-            return Err("tree is in computed state, call reset() first");
-        }
-        if self.size >= self.capacity {
-            return Err("out of space");
-        }
-        let pfx = u64::from_le_bytes(hash[0..8].try_into().unwrap());
-        if pfx == 0 || pfx == 0xffffffffffffffff {
-            // Don't allow these
-            return Ok(());
-        }
-        self.data.push(AnnData {
-            hash: *hash,
-            mloc,
-            index: 0,
-        });
-        self.size += 1;
-        self.highest_mloc = max(self.highest_mloc, mloc);
-        Ok(())
     }
     pub fn size(&self) -> u32 {
         self.size
-    }
-    pub fn old_compute(&mut self) -> Result<Vec<u32>, &'static str> {
-        if self.root_hash.is_some() {
-            return Err("tree is in computed state, call reset() first");
-        }
-        if self.size == 0 {
-            return Err("no anns, cannot compute tree");
-        }
-        unsafe {
-            ProofTree_clear(self.raw);
-        }
-        for d in &self.data {
-            unsafe { ProofTree_append(self.raw, d.hash.as_ptr(), d.mloc) };
-        }
-        let mut out = vec![0u32; self.size as usize];
-        let mut rh = [0u8; 32];
-        let out_p = out.as_mut_ptr();
-        let rh_p = rh.as_mut_ptr();
-        let count = unsafe { ProofTree_compute(self.raw, rh_p, out_p) };
-        out.truncate(count as usize);
-        self.root_hash = Some(rh);
-        self.size = count;
-        for (i, mloc) in (0..).zip(&out) {
-            if *mloc > self.highest_mloc {
-                panic!(
-                    "entry {} of {} has mloc {}, highest possible is {}",
-                    i,
-                    out.len(),
-                    *mloc,
-                    self.highest_mloc
-                );
-            }
-        }
-        Ok(out)
     }
     pub fn compute(&mut self, data: &mut [AnnData]) -> Result<Vec<u32>, &'static str> {
         if self.root_hash.is_some() {
