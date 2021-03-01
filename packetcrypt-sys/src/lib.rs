@@ -103,14 +103,36 @@ pub fn check_block_work(
             std::ptr::null_mut::<PacketCrypt_ValidateCtx_t>(),
         )
     } as u32;
-    if res == Validate_checkBlock_Res_Validate_checkBlock_OK
-        || res == Validate_checkBlock_Res_Validate_checkBlock_SHARE_OK
-    {
-        Ok(hashout)
-    } else if res == Validate_checkBlock_Res_Validate_checkBlock_INSUF_POW {
-        Err(format!("INSUF_POW {}", hex::encode(hashout)))
-    } else {
-        Err(format!("UNKNOWN {}", res))
+    match res {
+        Validate_checkBlock_Res_Validate_checkBlock_OK
+        | Validate_checkBlock_Res_Validate_checkBlock_SHARE_OK => Ok(hashout),
+        Validate_checkBlock_Res_Validate_checkBlock_INSUF_POW => {
+            Err(format!("INSUF_POW {}", hex::encode(hashout)))
+        }
+        Validate_checkBlock_Res_Validate_checkBlock_PCP_INVAL => Err("PCP_INVAL".to_owned()),
+        Validate_checkBlock_Res_Validate_checkBlock_PCP_MISMATCH => Err("PCP_MISMATCH".to_owned()),
+        Validate_checkBlock_Res_Validate_checkBlock_BAD_COINBASE => Err("BAD_COINBASE".to_owned()),
+        _ => {
+            if let Some(x) = {
+                match res & 0xff00 {
+                    Validate_checkBlock_Res_Validate_checkBlock_ANN_INVALID_ => Some("ANN_INVALID"),
+                    Validate_checkBlock_Res_Validate_checkBlock_ANN_INSUF_POW_ => {
+                        Some("ANN_INSUF_POW")
+                    }
+                    Validate_checkBlock_Res_Validate_checkBlock_ANN_SIG_INVALID_ => {
+                        Some("ANN_SIG_INVALID")
+                    }
+                    Validate_checkBlock_Res_Validate_checkBlock_ANN_CONTENT_INVALID_ => {
+                        Some("ANN_CONTENT_INVALID")
+                    }
+                    _ => None,
+                }
+            } {
+                Err(format!("{} {}", x, res & 0xff))
+            } else {
+                Err(format!("UNKNOWN {}", res))
+            }
+        }
     }
 }
 

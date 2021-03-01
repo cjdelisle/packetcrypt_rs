@@ -674,6 +674,9 @@ extern "C" {
 extern "C" {
     pub fn ProofTree_compute(arg1: *mut ProofTree_t, hashOut: *mut u8, mlocOut: *mut u32) -> u32;
 }
+extern "C" {
+    pub fn ProofTree_append(pt: *mut ProofTree_t, hash: *const u8, mloc: u32);
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ProofTree_Proof_s {

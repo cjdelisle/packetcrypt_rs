@@ -63,6 +63,13 @@ void ProofTree_setTotalAnnsZeroIncluded(ProofTree_t* pt, uint32_t total) {
     pt->tree.totalAnnsZeroIncluded = total;
 }
 
+void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc) {
+    uint64_t idx = pt->tree.totalAnnsZeroIncluded - 1;
+    memcpy(pt->tree.entries[idx].hash.bytes, hash, 32);
+    pt->tree.entries[idx].start = mloc;
+    pt->tree.totalAnnsZeroIncluded++;
+}
+
 uint32_t ProofTree_compute(ProofTree_t* pt, uint8_t* hashOut, uint32_t* mlocOut) {
     printf("Prepare tree\n");
     uint64_t count = PacketCryptProof_prepareTree(&pt->tree);
