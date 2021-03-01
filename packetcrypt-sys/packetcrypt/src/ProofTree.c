@@ -36,6 +36,7 @@ void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc) {
 }
 
 uint32_t ProofTree_compute(ProofTree_t* pt, uint8_t* hashOut, uint32_t* mlocOut) {
+    printf("Prepare tree\n");
     uint64_t count = PacketCryptProof_prepareTree(&pt->tree);
     for (uint32_t i = 0; i < count; i++) {
         mlocOut[i] = pt->tree.entries[i].start;
