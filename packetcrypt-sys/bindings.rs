@@ -674,6 +674,9 @@ extern "C" {
     pub fn ProofTree_getEntry(pt: *const ProofTree_t, index: u32) -> *mut ProofTree_Entry_t;
 }
 extern "C" {
+    pub fn ProofTree_putEntry(pt: *mut ProofTree_t, index: u32, entry: *const ProofTree_Entry_t);
+}
+extern "C" {
     pub fn ProofTree_setTotalAnnsZeroIncluded(pt: *mut ProofTree_t, total: u32);
 }
 extern "C" {

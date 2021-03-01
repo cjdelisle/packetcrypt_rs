@@ -32,6 +32,8 @@ uint64_t ProofTree_complete(ProofTree_t* pt, uint8_t* rootHashOut);
 
 ProofTree_Entry_t* ProofTree_getEntry(const ProofTree_t* pt, uint32_t index);
 
+void ProofTree_putEntry(ProofTree_t* pt, uint32_t index, const ProofTree_Entry_t* entry);
+
 void ProofTree_setTotalAnnsZeroIncluded(ProofTree_t* pt, uint32_t total);
 
 uint32_t ProofTree_compute(ProofTree_t*, uint8_t* hashOut, uint32_t* mlocOut);

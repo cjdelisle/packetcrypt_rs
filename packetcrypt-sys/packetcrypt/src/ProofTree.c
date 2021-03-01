@@ -54,6 +54,11 @@ ProofTree_Entry_t* ProofTree_getEntry(const ProofTree_t* pt, uint32_t index)
     return (ProofTree_Entry_t*) &pt->tree.entries[index];
 }
 
+void ProofTree_putEntry(ProofTree_t* pt, uint32_t index, const ProofTree_Entry_t* entry)
+{
+    Buf_OBJCPY(&pt->tree.entries[index], entry);
+}
+
 void ProofTree_setTotalAnnsZeroIncluded(ProofTree_t* pt, uint32_t total) {
     pt->tree.totalAnnsZeroIncluded = total;
 }

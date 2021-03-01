@@ -35,10 +35,13 @@ impl Drop for ProofTree {
     }
 }
 
-fn set_fff(e: &mut ProofTree_Entry_t) {
-    e.hash = [0xff_u8; 32];
-    e.start = 0xffffffffffffffff;
-    e.end = 0xffffffffffffffff;
+static FFF_ENTRY: ProofTree_Entry_t = ProofTree_Entry_t {
+    hash: [0xff_u8; 32],
+    start: 0xffffffffffffffff,
+    end: 0xffffffffffffffff,
+};
+fn fff_entry() -> *const ProofTree_Entry_t {
+    &FFF_ENTRY as *const ProofTree_Entry_t
 }
 
 impl ProofTree {
@@ -124,25 +127,23 @@ impl ProofTree {
         self.data
             //par_iter()
             .iter()
-            .for_each(|d| unsafe {
+            .for_each(|d| {
                 if d.index == 0 {
                     // Removed in dedupe stage
                     return;
                 }
-                let mut e = *ProofTree_getEntry(self.raw, d.index);
-                e.hash.copy_from_slice(&d.hash);
-                let pfx = d.hash_pfx();
-                e.start = pfx;
-                assert!(pfx > 0);
-                if d.index < 10 {
-                    debug!("{} {:#x}", d.index, e.start);
-                }
+                let e = ProofTree_Entry_t {
+                    hash: d.hash,
+                    start: d.hash_pfx(),
+                    end: 0,
+                };
+                unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
             });
 
         // Cap off the top with an ffff entry
         let total_anns_zero_included = out.len() + 1;
         unsafe {
-            set_fff(&mut *ProofTree_getEntry(self.raw, self.data.len() as u32));
+            ProofTree_putEntry(self.raw, total_anns_zero_included as u32, fff_entry());
             ProofTree_setTotalAnnsZeroIncluded(self.raw, total_anns_zero_included as u32);
         }
 
@@ -152,11 +153,11 @@ impl ProofTree {
                 // Removed in dedupe stage
                 return;
             }
-            let mut e = *ProofTree_getEntry(self.raw, d.index);
-            let e_n = *ProofTree_getEntry(self.raw, d.index + 1);
-            e.end = e_n.start;
-            debug!("{} {:#x} {:#x}", d.index, e.start, e.end);
-            assert!(e.end > e.start);
+            let e = ProofTree_getEntry(self.raw, d.index);
+            let e_n = ProofTree_getEntry(self.raw, d.index + 1);
+            (*e).end = (*e_n).start;
+            debug!("{} {:#x} {:#x}", d.index, (*e).start, (*e).end);
+            assert!((*e).end > (*e).start);
         });
 
         let mut count_this_layer = total_anns_zero_included;
@@ -164,7 +165,7 @@ impl ProofTree {
         let mut idx = 0;
         while count_this_layer > 1 {
             if (count_this_layer & 1) != 0 {
-                unsafe { set_fff(&mut *ProofTree_getEntry(self.raw, odx as u32)) };
+                unsafe { ProofTree_putEntry(self.raw, odx as u32, fff_entry()) };
                 count_this_layer += 1;
                 odx += 1;
             }
