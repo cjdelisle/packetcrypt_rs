@@ -590,7 +590,6 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
             let reload = reload_anns(bm, next_work, &mut active_l);
             debug!("Inserting in tree");
             tree_l.reset();
-            let tree = &*tree_l;
             let data = active_l
                 .par_iter()
                 .map(|ai| {
@@ -609,7 +608,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
                 })
                 .flatten()
                 .collect::<Vec<_>>();
-            if tree_l.size() == 0 {
+            if data.len() == 0 {
                 bm.block_miner.stop();
                 debug!("Not mining, no anns ready");
                 return;
