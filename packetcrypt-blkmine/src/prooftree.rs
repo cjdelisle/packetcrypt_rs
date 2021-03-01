@@ -6,10 +6,10 @@ use rayon::prelude::*;
 use std::cmp::max;
 use std::convert::TryInto;
 
-struct AnnData {
-    hash: [u8; 32],
-    mloc: u32,
-    index: u32,
+pub struct AnnData {
+    pub hash: [u8; 32],
+    pub mloc: u32,
+    pub index: u32,
 }
 impl AnnData {
     fn hash_pfx(&self) -> u64 {
@@ -118,7 +118,7 @@ impl ProofTree {
         }
         Ok(out)
     }
-    pub fn compute(&mut self) -> Result<Vec<u32>, &'static str> {
+    pub fn compute(&mut self, data: &mut [AnnData]) -> Result<Vec<u32>, &'static str> {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
@@ -127,13 +127,12 @@ impl ProofTree {
         }
 
         // Sort the data items
-        self.data
-            .par_sort_by(|a, b| a.hash_pfx().cmp(&b.hash_pfx()));
+        data.par_sort_by(|a, b| a.hash_pfx().cmp(&b.hash_pfx()));
 
         // Create the index table
         let mut out = Vec::with_capacity(self.size as usize);
         let mut last_pfx = 0;
-        for d in self.data.iter_mut() {
+        for d in data.iter_mut() {
             let pfx = d.hash_pfx();
             // Deduplicate and insert in the index table
             #[allow(clippy::comparison_chain)]
@@ -152,7 +151,7 @@ impl ProofTree {
         debug!("Loaded {} out of {} anns", out.len(), self.size);
 
         // Copy the data to the location
-        self.data
+        data
             //par_iter()
             .iter()
             .for_each(|d| {

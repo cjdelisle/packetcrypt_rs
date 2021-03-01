@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::blkminer::{BlkMiner, BlkResult, OnShare};
 use crate::downloader;
-use crate::prooftree::ProofTree;
+use crate::prooftree::{self, ProofTree};
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use log::{debug, info, trace, warn};
@@ -585,28 +585,39 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
     let (index_table, real_target, current_mining) = {
         let (tree, tree_num) = get_tree(bm, false);
         let mut tree_l = tree.lock().unwrap();
-        let reload = {
+        let (reload, mut data) = {
             let mut active_l = bm.active_infos.lock().unwrap();
             let reload = reload_anns(bm, next_work, &mut active_l);
             debug!("Inserting in tree");
             tree_l.reset();
-            for ai in active_l.iter() {
-                //debug!("active_l has {} hashes", ai.hashes.len());
-                for (h, i) in ai.hashes.iter().zip(0..) {
-                    let mloc = ai.mloc + i;
-                    assert!(mloc < bm.block_miner.max_anns);
-                    tree_l.push(h, ai.mloc + i).unwrap();
-                }
-            }
+            let tree = &*tree_l;
+            let data = active_l
+                .par_iter()
+                .map(|ai| {
+                    //debug!("active_l has {} hashes", ai.hashes.len());
+                    let mut out: Vec<prooftree::AnnData> = Vec::with_capacity(ai.hashes.len());
+                    for (h, i) in ai.hashes.iter().zip(0..) {
+                        let mloc = ai.mloc + i;
+                        assert!(mloc < bm.block_miner.max_anns);
+                        out.push(prooftree::AnnData {
+                            hash: *h,
+                            mloc,
+                            index: 0,
+                        });
+                    }
+                    out
+                })
+                .flatten()
+                .collect::<Vec<_>>();
             if tree_l.size() == 0 {
                 bm.block_miner.stop();
                 debug!("Not mining, no anns ready");
                 return;
             }
-            reload
+            (reload, data)
         };
         debug!("Computing tree");
-        let index_table = tree_l.compute().unwrap();
+        let index_table = tree_l.compute(&mut data).unwrap();
         debug!("Computing block header");
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
