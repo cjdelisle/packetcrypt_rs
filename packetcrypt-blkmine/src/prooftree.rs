@@ -108,7 +108,7 @@ impl ProofTree {
             #[allow(clippy::comparison_chain)]
             if pfx > last_pfx {
                 out.push(d.mloc);
-                d.index = out.len() as u32 + 1;
+                d.index = out.len() as u32;
                 last_pfx = pfx;
             } else if pfx == last_pfx {
                 debug!("Drop ann with index {:#x}", pfx);
