@@ -130,7 +130,7 @@ impl ProofTree {
                 }
                 let mut e = *ProofTree_getEntry(self.raw, d.index);
                 e.hash.copy_from_slice(&d.hash);
-                let pfx = u64::from_le_bytes(d.hash[0..8].try_into().unwrap());
+                let pfx = d.hash_pfx();
                 e.start = pfx;
                 assert!(pfx > 0);
             });
@@ -144,6 +144,10 @@ impl ProofTree {
 
         // Set the end of each entry to the start of the following entry
         self.data.iter().for_each(|d| unsafe {
+            if d.index == 0 {
+                // Removed in dedupe stage
+                return;
+            }
             let mut e = *ProofTree_getEntry(self.raw, d.index);
             let e_n = *ProofTree_getEntry(self.raw, d.index + 1);
             e.end = e_n.start;
