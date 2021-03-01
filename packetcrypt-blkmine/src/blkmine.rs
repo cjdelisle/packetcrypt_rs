@@ -633,7 +633,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
     };
 
     // Self-test
-    let mut br = bm
+    let br = bm
         .block_miner
         .fake_mine(&current_mining.block_header[..], &index_table[..]);
 
@@ -656,7 +656,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
     );
     bm.current_mining.lock().unwrap().replace(current_mining);
 
-    // Now validate the self-test
+    // Validate self-test
     // crash on failure
     make_share(bm, br, true).unwrap();
 }

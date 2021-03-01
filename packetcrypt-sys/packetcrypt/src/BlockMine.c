@@ -421,7 +421,7 @@ void BlockMine_fakeMine(BlockMine_t* bm,
         CryptoCycle_smul(&pcState);
         CryptoCycle_final(&pcState);
         if (!Work_check(pcState.bytes, 0x207fffff)) { continue; }
-        return;
+        break;
     }
     res->high_nonce = hdr.nonce;
     res->low_nonce = lowNonce;
