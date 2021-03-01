@@ -473,14 +473,6 @@ extern "C" {
         vctx: *mut PacketCrypt_ValidateCtx_t,
     ) -> ::std::os::raw::c_int;
 }
-extern "C" {
-    pub fn Validate_powOnly(
-        hap: *const PacketCrypt_HeaderAndProof_t,
-        shareTarget: u32,
-        coinbaseCommitment: *const PacketCrypt_Coinbase_t,
-        workHashOut: *mut u8,
-    ) -> ::std::os::raw::c_int;
-}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct AnnMiner_s {
@@ -676,12 +668,13 @@ pub struct BlockMine_Res_s {
     pub low_nonce: u32,
     pub ann_mlocs: [u32; 4usize],
     pub ann_llocs: [u32; 4usize],
+    pub job_num: u32,
 }
 #[test]
 fn bindgen_test_layout_BlockMine_Res_s() {
     assert_eq!(
         ::std::mem::size_of::<BlockMine_Res_s>(),
-        40usize,
+        44usize,
         concat!("Size of: ", stringify!(BlockMine_Res_s))
     );
     assert_eq!(
@@ -727,6 +720,16 @@ fn bindgen_test_layout_BlockMine_Res_s() {
             stringify!(BlockMine_Res_s),
             "::",
             stringify!(ann_llocs)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Res_s>())).job_num as *const _ as usize },
+        40usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Res_s),
+            "::",
+            stringify!(job_num)
         )
     );
 }
@@ -841,6 +844,7 @@ extern "C" {
         annCount: u32,
         annIndexes: *const u32,
         effectiveTarget: u32,
+        jobNum: u32,
     );
 }
 extern "C" {

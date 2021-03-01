@@ -636,6 +636,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         &current_mining.block_header[..],
         &index_table[..],
         real_target,
+        0,
     );
     trace!(
         "Mining with header {}",
@@ -919,7 +920,7 @@ impl OnShare for BlkMine {
 
 fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
     // Get the header and commit
-    let (mut header_and_proof, coinbase_commit, _mining_height) = {
+    let (mut header_and_proof, coinbase_commit, mining_height) = {
         let mut cm_l = bm.current_mining.lock().unwrap();
         let cm = match &mut *cm_l {
             Some(x) => x,
@@ -992,6 +993,8 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
         share_target,
         &anns,
         &coinbase_commit,
+        mining_height,
+        &pb,
     ) {
         Err(e) => {
             if e.contains("INSUF_POW") && dry_run {
