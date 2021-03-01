@@ -979,11 +979,11 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
         })
         .collect::<Vec<_>>();
 
-    trace!("Got share / {} / {}", share.high_nonce, share.low_nonce);
-    trace!("{}", hex::encode(&header_and_proof));
-    trace!("{}", hex::encode(hash::compress32(&header_and_proof)));
+    debug!("Got share / {} / {}", share.high_nonce, share.low_nonce);
+    debug!("{}", hex::encode(&header_and_proof));
+    debug!("{}", hex::encode(hash::compress32(&header_and_proof)));
     for (ann, i) in anns.iter().zip(0..) {
-        trace!("{} - {}", share.ann_mlocs[i], hex::encode(&ann[0..32]));
+        debug!("{} - {}", share.ann_mlocs[i], hex::encode(&ann[0..32]));
     }
 
     // At this point header_and_proof is really just the block header
