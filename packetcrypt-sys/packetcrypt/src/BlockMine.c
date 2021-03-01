@@ -396,23 +396,33 @@ void BlockMine_stop(BlockMine_t* bm) {
 }
 
 void BlockMine_fakeMine(BlockMine_t* bm,
-    BlockMine_Res_t* resOut,
+    BlockMine_Res_t* res,
     const uint8_t* header,
     uint32_t annCount,
     const uint32_t* annIndexes)
 {
     BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
-    reqState(ctx, ThreadState_STOPPED);
-    waitState(ctx, ThreadState_STOPPED);
-    ctx->g.annCount = annCount;
-    ctx->g.effectiveTarget = 0;
-    ctx->g.jobNum = 0;
-    memcpy(&ctx->g.hai->header, header, sizeof(PacketCrypt_BlockHeader_t));
-    // Assertion
-    memset(ctx->g.hai->index, 0xff, ctx->pub.maxAnns * 4);
-    memcpy(ctx->g.hai->index, annIndexes, annCount * 4);
-    for (uint32_t i = 0; i < annCount; i++) {
-        assert(annIndexes[i] < ctx->g.maxAnns);
+    CryptoCycle_State_t pcState;
+    PacketCrypt_BlockHeader_t hdr;
+    memcpy(&hdr, header, sizeof(PacketCrypt_BlockHeader_t));
+    hdr.nonce = 123;
+    uint32_t lowNonce = 456;
+    Buf32_t hdrHash;
+    Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
+    for (;;) {
+        CryptoCycle_init(&pcState, &hdrHash, ++lowNonce);
+        for (int j = 0; j < 4; j++) {
+            uint64_t itnum = res->ann_llocs[j] = CryptoCycle_getItemNo(&pcState) % annCount;
+            assert(itnum < annCount);
+            uint64_t x = res->ann_mlocs[j] = annIndexes[itnum];
+            CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &ctx->g.anns[x];
+            assert(CryptoCycle_update(&pcState, it));
+        }
+        CryptoCycle_smul(&pcState);
+        CryptoCycle_final(&pcState);
+        if (!Work_check(pcState.bytes, 0x207fffff)) { continue; }
+        return;
     }
-    fakeMine(&ctx->workers[0], resOut);
+    res->high_nonce = hdr.nonce;
+    res->low_nonce = lowNonce;
 }
