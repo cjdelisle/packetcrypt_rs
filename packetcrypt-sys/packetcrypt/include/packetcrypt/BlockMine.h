@@ -59,4 +59,10 @@ void BlockMine_mine(BlockMine_t* bm,
 
 void BlockMine_stop(BlockMine_t* bm);
 
+void BlockMine_fakeMine(BlockMine_t* bm,
+    BlockMine_Res_t* resOut,
+    const uint8_t* header,
+    uint32_t annCount,
+    const uint32_t* annIndexes);
+
 #endif

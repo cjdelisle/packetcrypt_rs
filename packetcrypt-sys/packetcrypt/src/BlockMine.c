@@ -123,6 +123,31 @@ struct Worker_s {
 
 #define NOISY_LOG_SHARES 0
 
+static void fakeMine(Worker_t* w, BlockMine_Res_t* res)
+{
+    PacketCrypt_BlockHeader_t hdr;
+    Buf_OBJCPY(&hdr, &w->g->hai->header);
+    hdr.nonce = 333;
+    uint32_t lowNonce = 0;
+    Buf32_t hdrHash;
+    Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
+    for (;;) {
+        CryptoCycle_init(&w->pcState, &hdrHash, ++lowNonce);
+        for (int j = 0; j < 4; j++) {
+            uint64_t itnum = res->ann_llocs[j] = CryptoCycle_getItemNo(&w->pcState) % w->g->annCount;
+            assert(itnum < w->g->annCount);
+            uint64_t x = res->ann_mlocs[j] = w->g->hai->index[itnum];
+            assert(x < w->g->maxAnns);
+            CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &w->g->anns[x];
+            assert(CryptoCycle_update(&w->pcState, it));
+        }
+        CryptoCycle_smul(&w->pcState);
+        CryptoCycle_final(&w->pcState);
+        if (!Work_check(w->pcState.bytes, 0x207fffff)) { continue; }
+        return;
+    }
+}
+
 // Worker
 static void mine(Worker_t* w)
 {
@@ -368,4 +393,26 @@ void BlockMine_stop(BlockMine_t* bm) {
     BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
     reqState(ctx, ThreadState_STOPPED);
     waitState(ctx, ThreadState_STOPPED);
+}
+
+void BlockMine_fakeMine(BlockMine_t* bm,
+    BlockMine_Res_t* resOut,
+    const uint8_t* header,
+    uint32_t annCount,
+    const uint32_t* annIndexes)
+{
+    BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
+    reqState(ctx, ThreadState_STOPPED);
+    waitState(ctx, ThreadState_STOPPED);
+    ctx->g.annCount = annCount;
+    ctx->g.effectiveTarget = 0;
+    ctx->g.jobNum = 0;
+    memcpy(&ctx->g.hai->header, header, sizeof(PacketCrypt_BlockHeader_t));
+    // Assertion
+    memset(ctx->g.hai->index, 0xff, ctx->pub.maxAnns * 4);
+    memcpy(ctx->g.hai->index, annIndexes, annCount * 4);
+    for (uint32_t i = 0; i < annCount; i++) {
+        assert(annIndexes[i] < ctx->g.maxAnns);
+    }
+    fakeMine(&ctx->workers[0], resOut);
 }

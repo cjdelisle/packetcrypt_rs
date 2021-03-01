@@ -850,6 +850,15 @@ extern "C" {
 extern "C" {
     pub fn BlockMine_stop(bm: *mut BlockMine_t);
 }
+extern "C" {
+    pub fn BlockMine_fakeMine(
+        bm: *mut BlockMine_t,
+        resOut: *mut BlockMine_Res_t,
+        header: *const u8,
+        annCount: u32,
+        annIndexes: *const u32,
+    );
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct ExportMe {

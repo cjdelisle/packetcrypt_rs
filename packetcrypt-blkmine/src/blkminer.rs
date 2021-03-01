@@ -116,6 +116,30 @@ impl BlkMiner {
             )
         }
     }
+    pub fn fake_mine(&self, block_header: &[u8], ann_indexes: &[u32]) -> BlkResult {
+        let mut res = BlockMine_Res_t {
+            ann_llocs: [0_u32; 4],
+            ann_mlocs: [0_u32; 4],
+            high_nonce: 0,
+            low_nonce: 0,
+            job_num: 0,
+        };
+        unsafe {
+            packetcrypt_sys::BlockMine_fakeMine(
+                self.miner,
+                &mut res as *mut BlockMine_Res_t,
+                block_header.as_ptr(),
+                ann_indexes.len() as u32,
+                ann_indexes.as_ptr(),
+            );
+        };
+        BlkResult {
+            ann_llocs: res.ann_llocs,
+            ann_mlocs: res.ann_mlocs,
+            high_nonce: res.high_nonce,
+            low_nonce: res.low_nonce,
+        }
+    }
     pub fn stop(&self) {
         unsafe { packetcrypt_sys::BlockMine_stop(self.miner) }
     }

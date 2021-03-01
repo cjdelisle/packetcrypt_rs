@@ -631,6 +631,12 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
             },
         )
     };
+
+    // Self-test
+    let mut br = bm
+        .block_miner
+        .fake_mine(&current_mining.block_header[..], &index_table[..]);
+
     debug!("Start mining...");
     bm.block_miner.mine(
         &current_mining.block_header[..],
@@ -650,22 +656,8 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
     );
     bm.current_mining.lock().unwrap().replace(current_mining);
 
-    // Self-test
-    let mut br = BlkResult {
-        ann_llocs: [0_u32; 4],
-        ann_mlocs: [0_u32; 4],
-        high_nonce: 123,
-        low_nonce: 456,
-    };
-    for i in 0..4 {
-        // Simple way to get some entropy without a bunch of messing around
-        let easy_random = &next_work.header.hash_merkle_root[i * 4..(i + 1) * 4];
-        let x = u32::from_le_bytes(easy_random.try_into().unwrap());
-        let lloc = x % (index_table.len() as u32);
-        br.ann_llocs[i] = lloc;
-        br.ann_mlocs[i] = index_table[lloc as usize];
-    }
-    // Crash if fail
+    // Now validate the self-test
+    // crash on failure
     make_share(bm, br, true).unwrap();
 }
 
