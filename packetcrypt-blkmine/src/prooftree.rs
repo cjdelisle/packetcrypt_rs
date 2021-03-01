@@ -133,6 +133,7 @@ impl ProofTree {
                 let pfx = d.hash_pfx();
                 e.start = pfx;
                 assert!(pfx > 0);
+                debug!("{} {:#x}", d.index, e.start);
             });
 
         // Cap off the top with an ffff entry
@@ -151,6 +152,7 @@ impl ProofTree {
             let mut e = *ProofTree_getEntry(self.raw, d.index);
             let e_n = *ProofTree_getEntry(self.raw, d.index + 1);
             e.end = e_n.start;
+            debug!("{} {:#x} {:#x}", d.index, e.start, e.end);
             assert!(e.end > e.start);
         });
 
