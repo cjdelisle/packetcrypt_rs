@@ -156,7 +156,7 @@ impl ProofTree {
             let e = ProofTree_getEntry(self.raw, d.index);
             let e_n = ProofTree_getEntry(self.raw, d.index + 1);
             (*e).end = (*e_n).start;
-            debug!("{} {:#x} {:#x}", d.index, (*e).start, (*e).end);
+            //debug!("{} {:#x} {:#x}", d.index, (*e).start, (*e).end);
             assert!((*e).end > (*e).start);
         });
 

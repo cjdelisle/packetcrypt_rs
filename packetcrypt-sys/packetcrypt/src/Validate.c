@@ -151,15 +151,6 @@ static int checkPcHash(uint64_t indexesOut[PacketCrypt_NUM_ANNS],
     return Validate_checkBlock_INSUF_POW;
 }
 
-int Validate_powOnly(const PacketCrypt_HeaderAndProof_t* hap,
-                     uint32_t shareTarget,
-                     const PacketCrypt_Coinbase_t* coinbaseCommitment,
-                     uint8_t workHashOut[static 32])
-{
-    uint64_t indexesOut[PacketCrypt_NUM_ANNS];
-    return checkPcHash(indexesOut, hap, coinbaseCommitment, shareTarget, workHashOut);
-}
-
 int Validate_checkBlock(const PacketCrypt_HeaderAndProof_t* hap,
                         uint32_t hapLen,
                         uint32_t blockHeight,
@@ -188,8 +179,10 @@ int Validate_checkBlock(const PacketCrypt_HeaderAndProof_t* hap,
     // Validate announcements
     for (int i = 0; i < PacketCrypt_NUM_ANNS; i++) {
         const PacketCrypt_Announce_t* ann = &hap->announcements[i];
-        if (Validate_checkAnn(NULL, ann, &blockHashes[i * 32], vctx)) {
-            return Validate_checkBlock_ANN_INVALID(i);
+        if (blockHashes != NULL) {
+            if (Validate_checkAnn(NULL, ann, &blockHashes[i * 32], vctx)) {
+                return Validate_checkBlock_ANN_INVALID(i);
+            }
         }
         uint32_t effectiveAnnTarget =
             Difficulty_degradeAnnouncementTarget(ann->hdr.workBits,

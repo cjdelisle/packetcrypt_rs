@@ -4,6 +4,7 @@
 
 pub mod difficulty;
 
+use bytes::{BufMut, BytesMut};
 use packetcrypt_util::util;
 
 use std::convert::TryInto;
@@ -76,23 +77,30 @@ pub fn check_block_work(
     share_target: u32,
     anns: &[[u8; 1024]],
     coinbase: &[u8],
+    mining_height: i32,
+    proof: &[u8],
 ) -> Result<[u8; 32], String> {
-    let mut hap = [0_u8; 80 + 8 + (1024 * 4)];
-    hap[0..80].copy_from_slice(header);
-    hap[84..88].copy_from_slice(&low_nonce.to_le_bytes());
-    for (ann, i) in anns.iter().zip(0..4) {
-        let loc = 88 + (i * 1024);
-        hap[loc..loc + 1024].copy_from_slice(ann);
+    let mut hap = BytesMut::with_capacity(80 + 8 + (1024 * 4) + proof.len());
+    hap.put(header);
+    hap.put_u32_le(0);
+    hap.put_u32_le(low_nonce);
+    for ann in anns.iter() {
+        hap.put(&ann[..]);
     }
+    hap.put(proof);
     let aligned_hap = util::aligned_bytes(&hap, 8);
     let aligned_coinbase = util::aligned_bytes(coinbase, 8);
     let mut hashout = [0_u8; 32];
     let res = unsafe {
-        Validate_powOnly(
+        Validate_checkBlock(
             aligned_hap.as_ptr() as *const PacketCrypt_HeaderAndProof_t,
+            aligned_hap.len() as u32,
+            mining_height as u32,
             share_target,
             aligned_coinbase.as_ptr() as *const PacketCrypt_Coinbase_t,
+            std::ptr::null(),
             hashout.as_mut_ptr(),
+            std::ptr::null_mut::<PacketCrypt_ValidateCtx_t>(),
         )
     } as u32;
     if res == Validate_checkBlock_Res_Validate_checkBlock_OK

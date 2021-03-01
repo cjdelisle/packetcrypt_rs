@@ -920,7 +920,7 @@ impl OnShare for BlkMine {
 
 fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
     // Get the header and commit
-    let (mut header_and_proof, coinbase_commit) = {
+    let (mut header_and_proof, coinbase_commit, mining_height) = {
         let mut cm_l = bm.current_mining.lock().unwrap();
         let cm = match &mut *cm_l {
             Some(x) => x,
@@ -929,7 +929,11 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
         if !dry_run {
             cm.shares += 1;
         }
-        (cm.block_header.clone(), cm.coinbase_commit.clone().freeze())
+        (
+            cm.block_header.clone(),
+            cm.coinbase_commit.clone().freeze(),
+            cm.mining_height,
+        )
     };
 
     // Set the correct nonce in the header
@@ -963,7 +967,8 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
             // TODO(cjd): "Ann number out of range" every so often, random big number
             Err(e) => bail!("Mystery error - tree.mk_proof() -> {}", e),
         }
-    };
+    }
+    .freeze();
 
     // Get the 4 anns
     let anns = (0..4)
@@ -988,6 +993,8 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
         share_target,
         &anns,
         &coinbase_commit,
+        mining_height,
+        &pb,
     ) {
         Err(e) => {
             bail!("Unable to validate share [{}]", e);
@@ -996,7 +1003,9 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
             let share_n = bm
                 .share_num
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            info!("[{}] Got share [{}]", share_n, hex::encode(h));
+            if !dry_run {
+                info!("[{}] Got share [{}]", share_n, hex::encode(h));
+            }
             share_n
         }
     };
