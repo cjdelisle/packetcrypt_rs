@@ -64,7 +64,7 @@ void ProofTree_setTotalAnnsZeroIncluded(ProofTree_t* pt, uint32_t total) {
 }
 
 void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc) {
-    uint64_t idx = pt->tree.totalAnnsZeroIncluded - 1;
+    uint64_t idx = pt->tree.totalAnnsZeroIncluded;
     memcpy(pt->tree.entries[idx].hash.bytes, hash, 32);
     pt->tree.entries[idx].start = mloc;
     pt->tree.totalAnnsZeroIncluded++;
