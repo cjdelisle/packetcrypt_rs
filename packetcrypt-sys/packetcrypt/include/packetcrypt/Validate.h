@@ -57,4 +57,10 @@ int Validate_checkBlock(const PacketCrypt_HeaderAndProof_t* hap,
                         uint8_t workHashOut[static 32],
                         PacketCrypt_ValidateCtx_t* vctx);
 
+// For testing and debugging, does not perform a full check
+int Validate_powOnly(const PacketCrypt_HeaderAndProof_t* hap,
+                     uint32_t shareTarget,
+                     const PacketCrypt_Coinbase_t* coinbaseCommitment,
+                     uint8_t workHashOut[static 32]);
+
 #endif

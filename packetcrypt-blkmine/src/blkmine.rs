@@ -11,7 +11,6 @@ use packetcrypt_util::protocol;
 use packetcrypt_util::sprayer;
 use packetcrypt_util::{hash, util};
 use std::cmp::max;
-use std::convert::TryInto;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -606,8 +605,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
             reload
         };
         debug!("Computing tree");
-        let index_table = tree_l.old_compute().unwrap();
-        //let index_table = tree_l.compute().unwrap();
+        let index_table = tree_l.compute().unwrap();
         debug!("Computing block header");
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
@@ -637,7 +635,6 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         &current_mining.block_header[..],
         &index_table[..],
         real_target,
-        0,
     );
     trace!(
         "Mining with header {}",
@@ -650,24 +647,6 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
     );
     bm.current_mining.lock().unwrap().replace(current_mining);
-
-    // Self-test
-    let mut br = BlkResult {
-        ann_llocs: [0_u32; 4],
-        ann_mlocs: [0_u32; 4],
-        high_nonce: 123,
-        low_nonce: 456,
-    };
-    for i in 0..4 {
-        // Simple way to get some entropy without a bunch of messing around
-        let easy_random = &next_work.header.hash_merkle_root[i * 4..(i + 1) * 4];
-        let x = u32::from_le_bytes(easy_random.try_into().unwrap());
-        let lloc = x % (index_table.len() as u32);
-        br.ann_llocs[i] = lloc;
-        br.ann_mlocs[i] = index_table[lloc as usize];
-    }
-    // Crash if fail
-    make_share(bm, br, true).unwrap();
 }
 
 pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
@@ -906,7 +885,7 @@ struct Share {
 
 impl OnShare for BlkMine {
     fn on_share(&self, res: BlkResult) {
-        let s = match make_share(self, res, false) {
+        let s = match make_share(self, res) {
             Err(e) => {
                 warn!("Unable to make share because {}", e);
                 return;
@@ -919,31 +898,23 @@ impl OnShare for BlkMine {
     }
 }
 
-fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
+fn make_share(bm: &BlkMine, share: BlkResult) -> Result<Share> {
     // Get the header and commit
-    let (mut header_and_proof, coinbase_commit, mining_height) = {
+    let (mut header_and_proof, coinbase_commit) = {
         let mut cm_l = bm.current_mining.lock().unwrap();
         let cm = match &mut *cm_l {
             Some(x) => x,
             None => bail!("no current_mining"),
         };
-        if !dry_run {
-            cm.shares += 1;
-        }
-        (
-            cm.block_header.clone(),
-            cm.coinbase_commit.clone().freeze(),
-            cm.mining_height,
-        )
+        cm.shares += 1;
+        (cm.block_header.clone(), cm.coinbase_commit.clone().freeze())
     };
 
     // Set the correct nonce in the header
     header_and_proof.truncate(76);
     header_and_proof.put_u32_le(share.high_nonce);
 
-    let (share_target, handler_url) = if dry_run {
-        (0x207fffff, "dry_run".to_owned())
-    } else {
+    let (share_target, handler_url) = {
         let id = share_id(&header_and_proof[..], share.low_nonce) as usize;
         let cw_l = bm.current_work.lock().unwrap();
         let cw = match &*cw_l {
@@ -968,8 +939,7 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
             // TODO(cjd): "Ann number out of range" every so often, random big number
             Err(e) => bail!("Mystery error - tree.mk_proof() -> {}", e),
         }
-    }
-    .freeze();
+    };
 
     // Get the 4 anns
     let anns = (0..4)
@@ -994,8 +964,6 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
         share_target,
         &anns,
         &coinbase_commit,
-        mining_height,
-        &pb,
     ) {
         Err(e) => {
             bail!("Unable to validate share [{}]", e);
@@ -1004,9 +972,7 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
             let share_n = bm
                 .share_num
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            if !dry_run {
-                info!("[{}] Got share [{}]", share_n, hex::encode(h));
-            }
+            info!("[{}] Got share [{}]", share_n, hex::encode(h));
             share_n
         }
     };

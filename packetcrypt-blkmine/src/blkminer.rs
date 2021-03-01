@@ -104,7 +104,7 @@ impl BlkMiner {
     pub fn hashes_per_second(&self) -> i64 {
         unsafe { packetcrypt_sys::BlockMine_getHashesPerSecond(self.miner) }
     }
-    pub fn mine(&self, block_header: &[u8], ann_indexes: &[u32], target: u32, job_num: u32) {
+    pub fn mine(&self, block_header: &[u8], ann_indexes: &[u32], target: u32) {
         unsafe {
             packetcrypt_sys::BlockMine_mine(
                 self.miner,
@@ -112,7 +112,6 @@ impl BlkMiner {
                 ann_indexes.len() as u32,
                 ann_indexes.as_ptr(),
                 target,
-                job_num,
             )
         }
     }
