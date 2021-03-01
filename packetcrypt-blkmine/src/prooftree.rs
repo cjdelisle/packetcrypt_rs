@@ -151,21 +151,37 @@ impl ProofTree {
         debug!("Loaded {} out of {} anns", out.len(), data.len());
 
         // Copy the data to the location
-        data
-            //par_iter()
-            .iter()
-            .for_each(|d| {
-                if d.index == 0 {
-                    // Removed in dedupe stage
-                    return;
-                }
-                let e = ProofTree_Entry_t {
-                    hash: d.hash,
-                    start: d.hash_pfx(),
-                    end: 0,
-                };
-                unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
-            });
+        data.par_iter().for_each(|d| {
+            if d.index == 0 {
+                // Removed in dedupe stage
+                return;
+            }
+            let e = ProofTree_Entry_t {
+                hash: d.hash,
+                start: d.hash_pfx(),
+                end: 0,
+            };
+            unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
+        });
+
+        // Set the end of each entry to the start of the following entry
+        self.data.par_iter().for_each(|d| unsafe {
+            if d.index == 0 {
+                // Removed in dedupe stage
+                return;
+            }
+            let e = ProofTree_getEntry(self.raw, d.index);
+            let e_n = ProofTree_getEntry(self.raw, d.index + 1);
+            (*e).end = (*e_n).start;
+            assert!((*e).end > (*e).start);
+        });
+
+        // Set the end of the zero entry
+        unsafe {
+            let e = ProofTree_getEntry(self.raw, 0);
+            let e_n = ProofTree_getEntry(self.raw, 1);
+            (*e).end = (*e_n).start;
+        }
 
         // Cap off the top with an ffff entry
         let total_anns_zero_included = out.len() + 1;
@@ -182,26 +198,6 @@ impl ProofTree {
         Ok(out)
 
         /*
-
-        // Set the end of each entry to the start of the following entry
-        self.data.iter().for_each(|d| unsafe {
-            if d.index == 0 {
-                // Removed in dedupe stage
-                return;
-            }
-            let e = ProofTree_getEntry(self.raw, d.index);
-            let e_n = ProofTree_getEntry(self.raw, d.index + 1);
-            (*e).end = (*e_n).start;
-            //debug!("{} {:#x} {:#x}", d.index, (*e).start, (*e).end);
-            assert!((*e).end > (*e).start);
-        });
-
-        // Set the end of the zero entry
-        unsafe {
-            let e = ProofTree_getEntry(self.raw, 0);
-            let e_n = ProofTree_getEntry(self.raw, 1);
-            (*e).end = (*e_n).start;
-        }
 
         let mut count_this_layer = total_anns_zero_included;
         let mut odx = count_this_layer;

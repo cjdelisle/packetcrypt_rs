@@ -156,12 +156,12 @@ void PacketCryptProof_computeTree(PacketCryptProof_Tree_t* _tree)
     Tree_t* tree = (Tree_t*) _tree;
 
     // setup the start and end fields
-    Buf_OBJSET(&tree->entries[tree->totalAnns], 0xff);
-    for (uint64_t i = 0; i < tree->totalAnns; i++) {
-        tree->entries[i].start = tree->entries[i].hash.longs[0];
-        tree->entries[i].end = tree->entries[i+1].hash.longs[0];
-        assert(tree->entries[i].end > tree->entries[i].start);
-    }
+    // Buf_OBJSET(&tree->entries[tree->totalAnns], 0xff);
+    // for (uint64_t i = 0; i < tree->totalAnns; i++) {
+    //     tree->entries[i].start = tree->entries[i].hash.longs[0];
+    //     tree->entries[i].end = tree->entries[i+1].hash.longs[0];
+    //     assert(tree->entries[i].end > tree->entries[i].start);
+    // }
 
     uint64_t countThisLayer = tree->totalAnns;
     uint64_t odx = countThisLayer;
