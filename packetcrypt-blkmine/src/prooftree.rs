@@ -3,7 +3,6 @@ use bytes::BufMut;
 use log::debug;
 use packetcrypt_sys::*;
 use rayon::prelude::*;
-use std::cmp::max;
 use std::convert::TryInto;
 
 pub struct AnnData {

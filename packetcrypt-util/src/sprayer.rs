@@ -451,6 +451,8 @@ impl SprayWorker {
                 Err(e) => {
                     if e.kind() != std::io::ErrorKind::WouldBlock {
                         self.log(&|| info!("Error sending to sprayer socket {}", e));
+                    } else {
+                        self.log(&|| debug!("Send got EWOULDBLOCK"));
                     }
                 }
             }
