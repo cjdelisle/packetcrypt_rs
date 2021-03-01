@@ -39,16 +39,15 @@ pub unsafe extern "C" fn on_share_found(resp: *mut BlockMine_Res_t, vctx: *mut c
 
 pub struct BlkMiner {
     cbc: Pin<Box<CallbackCtx>>,
-    miner: RwLock<*mut BlockMine_t>,
+    miner: *mut BlockMine_t,
     pub max_anns: u32,
 }
 unsafe impl Send for BlkMiner {}
 unsafe impl Sync for BlkMiner {}
 impl Drop for BlkMiner {
     fn drop(&mut self) {
-        let m_l = self.miner.write().unwrap();
         unsafe {
-            packetcrypt_sys::BlockMine_destroy(*m_l);
+            packetcrypt_sys::BlockMine_destroy(self.miner);
         }
     }
 }
@@ -85,7 +84,7 @@ impl BlkMiner {
         };
         Ok(BlkMiner {
             cbc,
-            miner: RwLock::new(miner),
+            miner,
             max_anns,
         })
     }
@@ -93,26 +92,22 @@ impl BlkMiner {
         self.cbc.handler.write().unwrap().replace(Box::new(handler));
     }
     pub fn get_ann(&self, index: u32, ann_out: &mut [u8]) {
-        let m_l = self.miner.read().unwrap();
         unsafe {
-            packetcrypt_sys::BlockMine_getAnn(*m_l, index, ann_out.as_mut_ptr());
+            packetcrypt_sys::BlockMine_getAnn(self.miner, index, ann_out.as_mut_ptr());
         }
     }
     pub fn put_ann(&self, index: u32, ann: &[u8]) {
-        let m_l = self.miner.read().unwrap();
         unsafe {
-            packetcrypt_sys::BlockMine_updateAnn(*m_l, index, ann.as_ptr());
+            packetcrypt_sys::BlockMine_updateAnn(self.miner, index, ann.as_ptr());
         }
     }
     pub fn hashes_per_second(&self) -> i64 {
-        let m_l = self.miner.read().unwrap();
-        unsafe { packetcrypt_sys::BlockMine_getHashesPerSecond(*m_l) }
+        unsafe { packetcrypt_sys::BlockMine_getHashesPerSecond(self.miner) }
     }
     pub fn mine(&self, block_header: &[u8], ann_indexes: &[u32], target: u32) {
-        let m_l = self.miner.write().unwrap();
         unsafe {
             packetcrypt_sys::BlockMine_mine(
-                *m_l,
+                self.miner,
                 block_header.as_ptr(),
                 ann_indexes.len() as u32,
                 ann_indexes.as_ptr(),
@@ -121,7 +116,6 @@ impl BlkMiner {
         }
     }
     pub fn stop(&self) {
-        let m_l = self.miner.write().unwrap();
-        unsafe { packetcrypt_sys::BlockMine_stop(*m_l) }
+        unsafe { packetcrypt_sys::BlockMine_stop(self.miner) }
     }
 }
