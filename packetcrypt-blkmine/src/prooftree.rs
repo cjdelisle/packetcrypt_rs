@@ -160,6 +160,13 @@ impl ProofTree {
             assert!((*e).end > (*e).start);
         });
 
+        // Set the end of the zero entry
+        unsafe {
+            let e = ProofTree_getEntry(self.raw, 0);
+            let e_n = ProofTree_getEntry(self.raw, 1);
+            (*e).end = (*e_n).start;
+        }
+
         let mut count_this_layer = total_anns_zero_included;
         let mut odx = count_this_layer;
         let mut idx = 0;
