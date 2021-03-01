@@ -128,8 +128,6 @@ static int checkPcHash(uint64_t indexesOut[PacketCrypt_NUM_ANNS],
     Buf32_t hdrHash;
     Hash_COMPRESS32_OBJ(&hdrHash, &hap->blockHeader);
     CryptoCycle_init(&pcState, &hdrHash, hap->nonce2);
-    Hash_printHex(&hdrHash, 32);
-    printf("hap->nonce2 = %d\n", hap->nonce2);
 
     for (int j = 0; j < 4; j++) {
         // This gets modded over the total anns in PacketCryptProof_hashProof()

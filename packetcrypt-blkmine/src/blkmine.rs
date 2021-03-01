@@ -11,7 +11,6 @@ use packetcrypt_util::protocol;
 use packetcrypt_util::sprayer;
 use packetcrypt_util::{hash, util};
 use std::cmp::max;
-use std::convert::TryInto;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -971,16 +970,15 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
         })
         .collect::<Vec<_>>();
 
-    debug!("Got share / {} / {}", share.high_nonce, share.low_nonce);
-    debug!("{}", hex::encode(&header_and_proof));
-    debug!("{}", hex::encode(hash::compress32(&header_and_proof)));
-    debug!("{}", hex::encode(&coinbase_commit));
+    trace!("Got share / {} / {}", share.high_nonce, share.low_nonce);
+    trace!("{}", hex::encode(&header_and_proof));
+    trace!("{}", hex::encode(hash::compress32(&header_and_proof)));
+    trace!("{}", hex::encode(&coinbase_commit));
     for (ann, i) in anns.iter().zip(0..) {
-        debug!("{} - {}", share.ann_llocs[i], hex::encode(&ann[0..32]));
+        trace!("{} - {}", share.ann_llocs[i], hex::encode(&ann[0..32]));
     }
 
     // At this point header_and_proof is really just the block header
-    debug!("proof length {}", pb.len());
     let share_n = match packetcrypt_sys::check_block_work(
         &header_and_proof,
         share.low_nonce,
