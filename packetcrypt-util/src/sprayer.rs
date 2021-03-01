@@ -24,8 +24,8 @@ const ANNS_TO_ACCUMULATE: usize = 50 * 1024;
 // 128MB shared outgoing buffer
 const MAX_SEND_QUEUE: usize = 256 * 1024;
 
-// 128k per send attempt
-const SEND_CHUNK_SZ: usize = 1024;
+// 256k per send batch
+const SEND_CHUNK_SZ: usize = 256;
 
 // How long a node doesn't send a subscription update before we stop flooding them
 const SECONDS_UNTIL_SUB_TIMEOUT: usize = 30;
@@ -439,28 +439,30 @@ impl SprayWorker {
                 self.log(&|| info!("Error sending subscription to {}: {}", to, e));
             }
         }
-        let count = self.g.get_to_send(&mut self.sbuf);
-        for i in 0..count {
-            match self.g.0.socket.send_to(
-                &self.sbuf[i].ann[..],
-                &socket2::SockAddr::from(self.sbuf[i].dest),
-            ) {
-                Ok(l) => {
-                    if l == MSG_TOTAL_LEN {
-                        continue;
+        loop {
+            let count = self.g.get_to_send(&mut self.sbuf);
+            for i in 0..count {
+                match self.g.0.socket.send_to(
+                    &self.sbuf[i].ann[..],
+                    &socket2::SockAddr::from(self.sbuf[i].dest),
+                ) {
+                    Ok(l) => {
+                        if l == MSG_TOTAL_LEN {
+                            continue;
+                        }
+                        self.log(&|| info!("Sending to sprayer socket length {}", l));
                     }
-                    self.log(&|| info!("Sending to sprayer socket length {}", l));
-                }
-                Err(e) => {
-                    if e.kind() != std::io::ErrorKind::WouldBlock {
-                        self.log(&|| info!("Error sending to sprayer socket {}", e));
-                    } else {
-                        self.log(&|| debug!("Send got EWOULDBLOCK"));
+                    Err(e) => {
+                        if e.kind() != std::io::ErrorKind::WouldBlock {
+                            self.log(&|| info!("Error sending to sprayer socket {}", e));
+                        } else {
+                            self.log(&|| debug!("Send got EWOULDBLOCK"));
+                        }
                     }
                 }
+                self.g.return_to_send(&self.sbuf[i..count]);
+                return;
             }
-            self.g.return_to_send(&self.sbuf[i..count]);
-            return;
         }
     }
     fn maybe_subscribe(&mut self, msg: &[u8], from: SocketAddr) {
