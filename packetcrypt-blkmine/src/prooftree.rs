@@ -164,24 +164,7 @@ impl ProofTree {
             unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
         });
 
-        // Set the end of each entry to the start of the following entry
-        self.data.par_iter().for_each(|d| unsafe {
-            if d.index == 0 {
-                // Removed in dedupe stage
-                return;
-            }
-            let e = ProofTree_getEntry(self.raw, d.index);
-            let e_n = ProofTree_getEntry(self.raw, d.index + 1);
-            (*e).end = (*e_n).start;
-            assert!((*e).end > (*e).start);
-        });
-
-        // Set the end of the zero entry
-        unsafe {
-            let e = ProofTree_getEntry(self.raw, 0);
-            let e_n = ProofTree_getEntry(self.raw, 1);
-            (*e).end = (*e_n).start;
-        }
+        unsafe { ProofTree_prepare2(self.raw) };
 
         // Cap off the top with an ffff entry
         let total_anns_zero_included = out.len() + 1;

@@ -35,6 +35,16 @@ void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc) {
     pt->tree.totalAnnsZeroIncluded++;
 }
 
+void ProofTree_prepare2(ProofTree_t* pt) {
+    PacketCryptProof_Tree2_t* tree = (PacketCryptProof_Tree2_t*) &pt->tree;
+    // setup the start and end fields
+    Buf_OBJSET(&tree->entries[tree->totalAnns], 0xff);
+    for (uint64_t i = 0; i < tree->totalAnns; i++) {
+        tree->entries[i].end = tree->entries[i+1].start;
+        assert(tree->entries[i].end > tree->entries[i].start);
+    }
+}
+
 void ProofTree_compute2(ProofTree_t* pt, uint8_t* hashOut) {
     PacketCryptProof_computeTree(&pt->tree);
     memcpy(hashOut, pt->tree.root.bytes, 32);
