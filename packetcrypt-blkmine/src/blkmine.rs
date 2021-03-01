@@ -622,6 +622,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
             },
         )
     };
+    debug!("Start mining...");
     bm.block_miner.mine(
         &current_mining.block_header[..],
         &index_table[..],
@@ -632,7 +633,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         hex::encode(&current_mining.block_header)
     );
     debug!(
-        "Start mining {} with {} @ {}",
+        "Mining {} with {} @ {}",
         next_work.height,
         index_table.len(),
         packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
@@ -807,8 +808,6 @@ async fn stats_loop(bm: &BlkMine) {
                     cm.ann_min_work,
                     cm.count as u64,
                 );
-                let (tree, _) = get_tree(bm, true);
-                let anns = tree.lock().unwrap().size();
 
                 let shr = util::pad_to(8, format!("shr: {} ", cm.shares));
                 let hr = util::pad_to(
@@ -820,7 +819,7 @@ async fn stats_loop(bm: &BlkMine) {
                     ),
                 );
                 let diff = packetcrypt_sys::difficulty::tar_to_diff(cm.ann_min_work);
-                let anns = util::pad_to(20, format!("anns: {} @ {}", anns, diff));
+                let anns = util::pad_to(20, format!("anns: {} @ {}", cm.count, diff));
                 info!("{}{}{}{}", shr, hr, anns, dlst);
                 // Restart mining after 45s w/o a block
                 util::now_ms() - cm.time_started_ms > 45_000
