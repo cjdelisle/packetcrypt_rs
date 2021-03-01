@@ -608,7 +608,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
                 })
                 .flatten()
                 .collect::<Vec<_>>();
-            if data.len() == 0 {
+            if data.is_empty() {
                 bm.block_miner.stop();
                 debug!("Not mining, no anns ready");
                 return;

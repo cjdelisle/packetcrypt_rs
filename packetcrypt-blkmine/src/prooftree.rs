@@ -54,15 +54,15 @@ impl ProofTree {
         self.size = 0;
         self.root_hash = None;
     }
-    pub fn size(&self) -> u32 {
-        self.size
-    }
     pub fn compute(&mut self, data: &mut [AnnData]) -> Result<Vec<u32>, &'static str> {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
         if data.is_empty() {
             return Err("no anns, cannot compute tree");
+        }
+        if data.len() > self.capacity as usize {
+            return Err("too many anns");
         }
 
         // Sort the data items
@@ -117,7 +117,7 @@ impl ProofTree {
                 odx += 1;
             }
             (0..count_this_layer)
-                //.into_par_iter()
+                .into_par_iter()
                 .step_by(2)
                 .for_each(|i| unsafe {
                     ProofTree_hashPair(self.raw, (odx + i / 2) as u64, (idx + i) as u64);
