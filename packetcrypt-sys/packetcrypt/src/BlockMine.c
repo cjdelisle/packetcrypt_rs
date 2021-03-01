@@ -226,6 +226,11 @@ BlockMine_Create_t BlockMine_create(uint64_t maxmem, int threads, BlockMine_Call
         bmc.err = strerror(errno);
         return bmc;
     }
+    // Touch the pages so they'll be allocated now
+    uint8_t* ptru8 = ptr;
+    for (uint64_t i = 0; i < maxmem; i += 1024) {
+        ptru8[i] = 1;
+    }
     BlockMine_pvt_t* out = calloc(sizeof(BlockMine_pvt_t), 1);
     Worker_t* workers = calloc(sizeof(Worker_t), threads);
     if (!out || !workers) {
@@ -368,4 +373,36 @@ void BlockMine_stop(BlockMine_t* bm) {
     BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
     reqState(ctx, ThreadState_STOPPED);
     waitState(ctx, ThreadState_STOPPED);
+}
+
+void BlockMine_fakeMine(BlockMine_t* bm,
+    BlockMine_Res_t* res,
+    const uint8_t* header,
+    uint32_t annCount,
+    const uint32_t* annIndexes)
+{
+    BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
+    CryptoCycle_State_t pcState;
+    PacketCrypt_BlockHeader_t hdr;
+    memcpy(&hdr, header, sizeof(PacketCrypt_BlockHeader_t));
+    hdr.nonce = 123;
+    uint32_t lowNonce = 456;
+    Buf32_t hdrHash;
+    Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
+    for (;;) {
+        CryptoCycle_init(&pcState, &hdrHash, ++lowNonce);
+        for (int j = 0; j < 4; j++) {
+            uint64_t itnum = res->ann_llocs[j] = CryptoCycle_getItemNo(&pcState) % annCount;
+            assert(itnum < annCount);
+            uint64_t x = res->ann_mlocs[j] = annIndexes[itnum];
+            CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &ctx->g.anns[x];
+            assert(CryptoCycle_update(&pcState, it));
+        }
+        CryptoCycle_smul(&pcState);
+        CryptoCycle_final(&pcState);
+        if (!Work_check(pcState.bytes, 0x207fffff)) { continue; }
+        break;
+    }
+    res->high_nonce = hdr.nonce;
+    res->low_nonce = lowNonce;
 }

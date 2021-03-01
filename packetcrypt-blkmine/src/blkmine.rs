@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::blkminer::{BlkMiner, BlkResult, OnShare};
 use crate::downloader;
-use crate::prooftree::ProofTree;
+use crate::prooftree::{self, ProofTree};
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use log::{debug, info, trace, warn};
@@ -10,6 +10,7 @@ use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol;
 use packetcrypt_util::sprayer;
 use packetcrypt_util::{hash, util};
+use rayon::prelude::*;
 use std::cmp::max;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -584,28 +585,38 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
     let (index_table, real_target, current_mining) = {
         let (tree, tree_num) = get_tree(bm, false);
         let mut tree_l = tree.lock().unwrap();
-        let reload = {
+        let (reload, mut data) = {
             let mut active_l = bm.active_infos.lock().unwrap();
             let reload = reload_anns(bm, next_work, &mut active_l);
             debug!("Inserting in tree");
             tree_l.reset();
-            for ai in active_l.iter() {
-                //debug!("active_l has {} hashes", ai.hashes.len());
-                for (h, i) in ai.hashes.iter().zip(0..) {
-                    let mloc = ai.mloc + i;
-                    assert!(mloc < bm.block_miner.max_anns);
-                    tree_l.push(h, ai.mloc + i).unwrap();
-                }
-            }
-            if tree_l.size() == 0 {
+            let data = active_l
+                .par_iter()
+                .map(|ai| {
+                    //debug!("active_l has {} hashes", ai.hashes.len());
+                    let mut out: Vec<prooftree::AnnData> = Vec::with_capacity(ai.hashes.len());
+                    for (h, i) in ai.hashes.iter().zip(0..) {
+                        let mloc = ai.mloc + i;
+                        assert!(mloc < bm.block_miner.max_anns);
+                        out.push(prooftree::AnnData {
+                            hash: *h,
+                            mloc,
+                            index: 0,
+                        });
+                    }
+                    out
+                })
+                .flatten()
+                .collect::<Vec<_>>();
+            if data.is_empty() {
                 bm.block_miner.stop();
                 debug!("Not mining, no anns ready");
                 return;
             }
-            reload
+            (reload, data)
         };
         debug!("Computing tree");
-        let index_table = tree_l.compute().unwrap();
+        let index_table = tree_l.compute(&mut data).unwrap();
         debug!("Computing block header");
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
@@ -630,11 +641,18 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
             },
         )
     };
+
+    // Self-test
+    let br = bm
+        .block_miner
+        .fake_mine(&current_mining.block_header[..], &index_table[..]);
+
     debug!("Start mining...");
     bm.block_miner.mine(
         &current_mining.block_header[..],
         &index_table[..],
         real_target,
+        0,
     );
     trace!(
         "Mining with header {}",
@@ -647,6 +665,10 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
     );
     bm.current_mining.lock().unwrap().replace(current_mining);
+
+    // Validate self-test
+    // crash on failure
+    make_share(bm, br, true).unwrap();
 }
 
 pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
@@ -885,7 +907,7 @@ struct Share {
 
 impl OnShare for BlkMine {
     fn on_share(&self, res: BlkResult) {
-        let s = match make_share(self, res) {
+        let s = match make_share(self, res, false) {
             Err(e) => {
                 warn!("Unable to make share because {}", e);
                 return;
@@ -898,23 +920,31 @@ impl OnShare for BlkMine {
     }
 }
 
-fn make_share(bm: &BlkMine, share: BlkResult) -> Result<Share> {
+fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
     // Get the header and commit
-    let (mut header_and_proof, coinbase_commit) = {
+    let (mut header_and_proof, coinbase_commit, mining_height) = {
         let mut cm_l = bm.current_mining.lock().unwrap();
         let cm = match &mut *cm_l {
             Some(x) => x,
             None => bail!("no current_mining"),
         };
-        cm.shares += 1;
-        (cm.block_header.clone(), cm.coinbase_commit.clone().freeze())
+        if !dry_run {
+            cm.shares += 1;
+        }
+        (
+            cm.block_header.clone(),
+            cm.coinbase_commit.clone().freeze(),
+            cm.mining_height,
+        )
     };
 
     // Set the correct nonce in the header
     header_and_proof.truncate(76);
     header_and_proof.put_u32_le(share.high_nonce);
 
-    let (share_target, handler_url) = {
+    let (share_target, handler_url) = if dry_run {
+        (0x207fffff, "dry_run".to_owned())
+    } else {
         let id = share_id(&header_and_proof[..], share.low_nonce) as usize;
         let cw_l = bm.current_work.lock().unwrap();
         let cw = match &*cw_l {
@@ -939,7 +969,8 @@ fn make_share(bm: &BlkMine, share: BlkResult) -> Result<Share> {
             // TODO(cjd): "Ann number out of range" every so often, random big number
             Err(e) => bail!("Mystery error - tree.mk_proof() -> {}", e),
         }
-    };
+    }
+    .freeze();
 
     // Get the 4 anns
     let anns = (0..4)
@@ -953,8 +984,9 @@ fn make_share(bm: &BlkMine, share: BlkResult) -> Result<Share> {
     trace!("Got share / {} / {}", share.high_nonce, share.low_nonce);
     trace!("{}", hex::encode(&header_and_proof));
     trace!("{}", hex::encode(hash::compress32(&header_and_proof)));
+    trace!("{}", hex::encode(&coinbase_commit));
     for (ann, i) in anns.iter().zip(0..) {
-        trace!("{} - {}", share.ann_mlocs[i], hex::encode(&ann[0..32]));
+        trace!("{} - {}", share.ann_llocs[i], hex::encode(&ann[0..32]));
     }
 
     // At this point header_and_proof is really just the block header
@@ -964,16 +996,28 @@ fn make_share(bm: &BlkMine, share: BlkResult) -> Result<Share> {
         share_target,
         &anns,
         &coinbase_commit,
+        mining_height,
+        &pb,
     ) {
         Err(e) => {
-            bail!("Unable to validate share [{}]", e);
+            if e.contains("INSUF_POW") && dry_run {
+                usize::MAX
+            } else {
+                bail!("Unable to validate share [{}]", e);
+            }
         }
         Ok(h) => {
-            let share_n = bm
-                .share_num
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            info!("[{}] Got share [{}]", share_n, hex::encode(h));
-            share_n
+            if dry_run {
+                usize::MAX
+            } else {
+                let share_n = bm
+                    .share_num
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if !dry_run {
+                    info!("[{}] Got share [{}]", share_n, hex::encode(h));
+                }
+                share_n
+            }
         }
     };
 

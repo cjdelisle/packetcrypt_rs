@@ -22,10 +22,10 @@ const INCOMING_BUF_ANN_PER_THREAD: usize = 100 * 1024;
 const ANNS_TO_ACCUMULATE: usize = 50 * 1024;
 
 // 128MB shared outgoing buffer
-const MAX_SEND_QUEUE: usize = 128 * 1024;
+const MAX_SEND_QUEUE: usize = 256 * 1024;
 
-// 128k per send attempt
-const SEND_CHUNK_SZ: usize = 128;
+// 256k per send batch
+const SEND_CHUNK_SZ: usize = 256;
 
 // How long a node doesn't send a subscription update before we stop flooding them
 const SECONDS_UNTIL_SUB_TIMEOUT: usize = 30;
@@ -36,6 +36,7 @@ const SECONDS_UNTIL_RESUB: usize = 5;
 const STATS_EVERY: usize = 10;
 
 const RECV_BUF_SZ: usize = 1 << 26;
+const SEND_BUF_SZ: usize = 1 << 26;
 
 pub const MSG_PREFIX: usize = 8;
 pub const MSG_TOTAL_LEN: usize = 1024 + MSG_PREFIX;
@@ -134,6 +135,7 @@ impl Sprayer {
         socket.set_nonblocking(true)?;
         let s = Socket::from(socket);
         s.set_recv_buffer_size(RECV_BUF_SZ)?;
+        s.set_send_buffer_size(SEND_BUF_SZ)?;
 
         let m = RwLock::new(SprayerMut {
             subscribers: Vec::new(),
@@ -207,10 +209,13 @@ impl Sprayer {
                 Box::new(SprayWorker {
                     g,
                     rbuf: vec![[0_u8; MSG_TOTAL_LEN]; INCOMING_BUF_ANN_PER_THREAD],
-                    sbuf: [ToSend {
-                        dest: SocketAddr::new([127, 0, 0, 1].into(), 0),
-                        ann: [0_u8; MSG_TOTAL_LEN],
-                    }; SEND_CHUNK_SZ],
+                    sbuf: vec![
+                        ToSend {
+                            dest: SocketAddr::new([127, 0, 0, 1].into(), 0),
+                            ann: [0_u8; MSG_TOTAL_LEN],
+                        };
+                        SEND_CHUNK_SZ
+                    ],
                     time_of_last_log: 0_u64,
                     tid,
                 })
@@ -412,7 +417,7 @@ impl Sprayer {
 struct SprayWorker {
     g: Sprayer,
     rbuf: Vec<Ann>,
-    sbuf: [ToSend; SEND_CHUNK_SZ],
+    sbuf: Vec<ToSend>,
     time_of_last_log: u64,
     tid: usize,
 }
@@ -434,26 +439,33 @@ impl SprayWorker {
                 self.log(&|| info!("Error sending subscription to {}: {}", to, e));
             }
         }
-        let count = self.g.get_to_send(&mut self.sbuf);
-        for i in 0..count {
-            match self.g.0.socket.send_to(
-                &self.sbuf[i].ann[..],
-                &socket2::SockAddr::from(self.sbuf[i].dest),
-            ) {
-                Ok(l) => {
-                    if l == MSG_TOTAL_LEN {
-                        continue;
-                    }
-                    self.log(&|| info!("Sending to sprayer socket length {}", l));
-                }
-                Err(e) => {
-                    if e.kind() != std::io::ErrorKind::WouldBlock {
-                        self.log(&|| info!("Error sending to sprayer socket {}", e));
-                    }
-                }
+        loop {
+            let count = self.g.get_to_send(&mut self.sbuf);
+            if count == 0 {
+                return;
             }
-            self.g.return_to_send(&self.sbuf[i..count]);
-            return;
+            for i in 0..count {
+                match self.g.0.socket.send_to(
+                    &self.sbuf[i].ann[..],
+                    &socket2::SockAddr::from(self.sbuf[i].dest),
+                ) {
+                    Ok(l) => {
+                        if l == MSG_TOTAL_LEN {
+                            continue;
+                        }
+                        self.log(&|| info!("Sending to sprayer socket length {}", l));
+                    }
+                    Err(e) => {
+                        if e.kind() != std::io::ErrorKind::WouldBlock {
+                            self.log(&|| info!("Error sending to sprayer socket {}", e));
+                        } else {
+                            self.log(&|| debug!("Send got EWOULDBLOCK"));
+                        }
+                    }
+                }
+                self.g.return_to_send(&self.sbuf[i..count]);
+                return;
+            }
         }
     }
     fn maybe_subscribe(&mut self, msg: &[u8], from: SocketAddr) {

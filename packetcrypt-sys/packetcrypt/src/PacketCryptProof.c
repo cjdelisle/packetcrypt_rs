@@ -26,14 +26,9 @@
 #define DEBUGF(...)
 #endif
 
-typedef struct {
-    uint64_t totalAnns;
-    Buf32_t root;
-    Entry_t entries[];
-} Tree_t;
-_Static_assert(sizeof(Tree_t) == sizeof(PacketCryptProof_Tree_t) - sizeof(Entry_t), "");
+typedef PacketCryptProof_Tree2_t Tree_t;
 
-static uint64_t entryCount(uint64_t totalAnns) {
+uint64_t PacketCryptProof_entryCount(uint64_t totalAnns) {
     uint64_t out = 0;
     while (totalAnns > 1) {
         totalAnns += (totalAnns & 1);
@@ -114,7 +109,7 @@ static void hashBig(
 PacketCryptProof_Tree_t* PacketCryptProof_allocTree(uint64_t totalAnns)
 {
     uint64_t totalAnnsZeroIncluded = totalAnns + 1;
-    uint64_t size = entryCount(totalAnnsZeroIncluded) * sizeof(Entry_t) + sizeof(Tree_t);
+    uint64_t size = PacketCryptProof_entryCount(totalAnnsZeroIncluded) * sizeof(Entry_t) + sizeof(Tree_t);
     PacketCryptProof_Tree_t* out = calloc(size, 1);
     assert(out);
     out->totalAnnsZeroIncluded = totalAnnsZeroIncluded;
@@ -161,12 +156,12 @@ void PacketCryptProof_computeTree(PacketCryptProof_Tree_t* _tree)
     Tree_t* tree = (Tree_t*) _tree;
 
     // setup the start and end fields
-    Buf_OBJSET(&tree->entries[tree->totalAnns], 0xff);
-    for (uint64_t i = 0; i < tree->totalAnns; i++) {
-        tree->entries[i].start = tree->entries[i].hash.longs[0];
-        tree->entries[i].end = tree->entries[i+1].hash.longs[0];
-        assert(tree->entries[i].end > tree->entries[i].start);
-    }
+    // Buf_OBJSET(&tree->entries[tree->totalAnns], 0xff);
+    // for (uint64_t i = 0; i < tree->totalAnns; i++) {
+    //     tree->entries[i].start = tree->entries[i].hash.longs[0];
+    //     tree->entries[i].end = tree->entries[i+1].hash.longs[0];
+    //     assert(tree->entries[i].end > tree->entries[i].start);
+    // }
 
     uint64_t countThisLayer = tree->totalAnns;
     uint64_t odx = countThisLayer;
@@ -193,7 +188,7 @@ void PacketCryptProof_computeTree(PacketCryptProof_Tree_t* _tree)
     } while (countThisLayer > 1);
     // idx == lastHashedEntry+1, odx == root+1
     assert(idx+1 == odx);
-    assert(odx == entryCount(tree->totalAnns));
+    assert(odx == PacketCryptProof_entryCount(tree->totalAnns));
     // root
     DEBUG_OBJ(&tree->entries[odx - 1]);
     Hash_COMPRESS32_OBJ(&tree->root, &tree->entries[odx - 1]);

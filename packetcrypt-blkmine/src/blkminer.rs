@@ -104,7 +104,7 @@ impl BlkMiner {
     pub fn hashes_per_second(&self) -> i64 {
         unsafe { packetcrypt_sys::BlockMine_getHashesPerSecond(self.miner) }
     }
-    pub fn mine(&self, block_header: &[u8], ann_indexes: &[u32], target: u32) {
+    pub fn mine(&self, block_header: &[u8], ann_indexes: &[u32], target: u32, job_num: u32) {
         unsafe {
             packetcrypt_sys::BlockMine_mine(
                 self.miner,
@@ -112,7 +112,32 @@ impl BlkMiner {
                 ann_indexes.len() as u32,
                 ann_indexes.as_ptr(),
                 target,
+                job_num,
             )
+        }
+    }
+    pub fn fake_mine(&self, block_header: &[u8], ann_indexes: &[u32]) -> BlkResult {
+        let mut res = BlockMine_Res_t {
+            ann_llocs: [0_u32; 4],
+            ann_mlocs: [0_u32; 4],
+            high_nonce: 0,
+            low_nonce: 0,
+            job_num: 0,
+        };
+        unsafe {
+            packetcrypt_sys::BlockMine_fakeMine(
+                self.miner,
+                &mut res as *mut BlockMine_Res_t,
+                block_header.as_ptr(),
+                ann_indexes.len() as u32,
+                ann_indexes.as_ptr(),
+            );
+        };
+        BlkResult {
+            ann_llocs: res.ann_llocs,
+            ann_mlocs: res.ann_mlocs,
+            high_nonce: res.high_nonce,
+            low_nonce: res.low_nonce,
         }
     }
     pub fn stop(&self) {
