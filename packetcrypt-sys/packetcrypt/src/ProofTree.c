@@ -35,6 +35,11 @@ void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc) {
     pt->tree.totalAnnsZeroIncluded++;
 }
 
+void ProofTree_compute2(ProofTree_t* pt, uint8_t* hashOut) {
+    PacketCryptProof_computeTree(&pt->tree);
+    memcpy(hashOut, pt->tree.root.bytes, 32);
+}
+
 uint32_t ProofTree_compute(ProofTree_t* pt, uint8_t* hashOut, uint32_t* mlocOut) {
     printf("Prepare tree\n");
     uint64_t count = PacketCryptProof_prepareTree(&pt->tree);

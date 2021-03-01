@@ -605,7 +605,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
             reload
         };
         debug!("Computing tree");
-        let index_table = tree_l.compute().unwrap();
+        let index_table = tree_l.old_compute().unwrap();
         debug!("Computing block header");
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
