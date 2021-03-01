@@ -122,7 +122,7 @@ impl ProofTree {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
-        if self.size == 0 {
+        if data.is_empty() {
             return Err("no anns, cannot compute tree");
         }
 
