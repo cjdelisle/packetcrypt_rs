@@ -441,6 +441,9 @@ impl SprayWorker {
         }
         loop {
             let count = self.g.get_to_send(&mut self.sbuf);
+            if count == 0 {
+                return;
+            }
             for i in 0..count {
                 match self.g.0.socket.send_to(
                     &self.sbuf[i].ann[..],
