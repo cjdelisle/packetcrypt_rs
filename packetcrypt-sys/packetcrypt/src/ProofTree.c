@@ -6,17 +6,18 @@
  */
 #include "packetcrypt/ProofTree.h"
 #include "PacketCryptProof.h"
+#include "Hash.h"
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
 
 struct ProofTree_s {
-    PacketCryptProof_Tree_t tree;
+    PacketCryptProof_Tree2_t tree;
 };
 
 ProofTree_t* ProofTree_create(uint32_t maxAnns) {
-    PacketCryptProof_Tree_t* tree = PacketCryptProof_allocTree(maxAnns);
+    PacketCryptProof_Tree2_t* tree = PacketCryptProof_allocTree(maxAnns);
     tree->totalAnnsZeroIncluded = 1;
     return (ProofTree_t*) tree;
 }
@@ -28,11 +29,33 @@ void ProofTree_clear(ProofTree_t* pt) {
     pt->tree.totalAnnsZeroIncluded = 1;
 }
 
-void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc) {
-    uint64_t idx = pt->tree.totalAnnsZeroIncluded - 1;
-    memcpy(pt->tree.entries[idx].hash.bytes, hash, 32);
-    pt->tree.entries[idx].start = mloc;
-    pt->tree.totalAnnsZeroIncluded++;
+void ProofTree_hashPair(ProofTree_t* pt, uint64_t odx, uint64_t idx)
+{
+    struct TwoEntries { Entry_t e[2]; };
+    Hash_COMPRESS32_OBJ(&pt->tree.entries[odx].hash, (struct TwoEntries*)(&pt->tree.entries[idx]));
+    pt->tree.entries[odx].start = pt->tree.entries[idx].start;
+    pt->tree.entries[odx].end = pt->tree.entries[idx+1].end;
+    assert(pt->tree.entries[idx].end > pt->tree.entries[idx].start);
+    assert(pt->tree.entries[idx+1].end > pt->tree.entries[idx+1].start || (
+        pt->tree.entries[idx+1].start == UINT64_MAX &&
+        pt->tree.entries[idx+1].end == UINT64_MAX));
+}
+
+uint64_t ProofTree_complete(ProofTree_t* pt, uint8_t* rootHash)
+{
+    uint64_t odx = PacketCryptProof_entryCount(pt->tree.totalAnnsZeroIncluded);
+    Hash_COMPRESS32_OBJ(&pt->tree.root, &pt->tree.entries[odx - 1]);
+    memcpy(rootHash, pt->tree.root.bytes, 32);
+    return odx;
+}
+
+ProofTree_Entry_t* ProofTree_getEntry(const ProofTree_t* pt, uint32_t index)
+{
+    return (ProofTree_Entry_t*) &pt->tree.entries[index];
+}
+
+void ProofTree_setTotalAnnsZeroIncluded(ProofTree_t* pt, uint32_t total) {
+    pt->tree.totalAnnsZeroIncluded = total;
 }
 
 uint32_t ProofTree_compute(ProofTree_t* pt, uint8_t* hashOut, uint32_t* mlocOut) {

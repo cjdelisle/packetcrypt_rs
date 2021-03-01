@@ -1,3 +1,6 @@
 {
-    "C_Cpp.loggingLevel": "Debug"
+    "C_Cpp.loggingLevel": "Debug",
+    "files.associations": {
+        "packetcryptproof.h": "c"
+    }
 }

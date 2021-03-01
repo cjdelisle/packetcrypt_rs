@@ -23,22 +23,23 @@ _Static_assert(sizeof(Entry_t) == 32+8+8, "");
 typedef struct {
     uint64_t totalAnnsZeroIncluded;
     Buf32_t root;
-    Entry_t zeroEntry;
     Entry_t entries[];
-} PacketCryptProof_Tree_t;
-_Static_assert(sizeof(PacketCryptProof_Tree_t) == 8+32+sizeof(Entry_t), "");
+} PacketCryptProof_Tree2_t;
+_Static_assert(sizeof(PacketCryptProof_Tree2_t) == 8+32, "");
 
-PacketCryptProof_Tree_t* PacketCryptProof_allocTree(uint64_t totalAnns);
-uint64_t PacketCryptProof_prepareTree(PacketCryptProof_Tree_t* tree);
+PacketCryptProof_Tree2_t* PacketCryptProof_allocTree(uint64_t totalAnns);
+uint64_t PacketCryptProof_prepareTree(PacketCryptProof_Tree2_t* tree);
 
-void PacketCryptProof_computeTree(PacketCryptProof_Tree_t* tree);
+void PacketCryptProof_computeTree(PacketCryptProof_Tree2_t* tree);
 
-void PacketCryptProof_freeTree(PacketCryptProof_Tree_t* bm);
+void PacketCryptProof_freeTree(PacketCryptProof_Tree2_t* bm);
+
+uint64_t PacketCryptProof_entryCount(uint64_t totalAnns);
 
 // sizeOut is assigned to the length, freeable using free()
 uint8_t* PacketCryptProof_mkProof(
     int* sizeOut,
-    const PacketCryptProof_Tree_t* tree,
+    const PacketCryptProof_Tree2_t* tree,
     const uint64_t annNumbers[static PacketCrypt_NUM_ANNS]
 );
 
