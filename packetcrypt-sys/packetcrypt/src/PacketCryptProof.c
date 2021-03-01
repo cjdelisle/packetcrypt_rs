@@ -351,6 +351,7 @@ int PacketCryptProof_hashProof(
     uint64_t annIdxs[PacketCrypt_NUM_ANNS];
     for (int i = 0; i < PacketCrypt_NUM_ANNS; i++) {
         annIdxs[i] = (annIndexes[i] % totalAnns) + 1;
+        printf("ann %d", annIdxs[i]);
     }
     totalAnns++;
 

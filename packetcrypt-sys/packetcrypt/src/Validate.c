@@ -132,7 +132,6 @@ static int checkPcHash(uint64_t indexesOut[PacketCrypt_NUM_ANNS],
     for (int j = 0; j < 4; j++) {
         // This gets modded over the total anns in PacketCryptProof_hashProof()
         indexesOut[j] = CryptoCycle_getItemNo(&pcState);
-        printf("ann index %d\n", indexesOut[j]);
         CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &hap->announcements[j];
         if (Util_unlikely(!CryptoCycle_update(&pcState, it))) { return -1; }
     }
