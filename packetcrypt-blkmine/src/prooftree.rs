@@ -164,17 +164,13 @@ impl ProofTree {
             unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
         });
 
-        unsafe { ProofTree_prepare2(self.raw) };
+        let total_anns_zero_included = out.len() + 1;
+        unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
 
         // Cap off the top with an ffff entry
-        let total_anns_zero_included = out.len() + 1;
         let mut rh = [0u8; 32];
         let rh_p = rh.as_mut_ptr();
-        unsafe {
-            ProofTree_putEntry(self.raw, total_anns_zero_included as u32, fff_entry());
-            ProofTree_setTotalAnnsZeroIncluded(self.raw, total_anns_zero_included as u32);
-            ProofTree_compute2(self.raw, rh_p);
-        }
+        unsafe { ProofTree_compute2(self.raw, rh_p) };
 
         self.root_hash = Some(rh);
         self.size = out.len() as u32;

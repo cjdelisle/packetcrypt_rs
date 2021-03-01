@@ -35,11 +35,13 @@ void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc) {
     pt->tree.totalAnnsZeroIncluded++;
 }
 
-void ProofTree_prepare2(ProofTree_t* pt) {
+void ProofTree_prepare2(ProofTree_t* pt, uint64_t totalAnns)
+{
     PacketCryptProof_Tree2_t* tree = (PacketCryptProof_Tree2_t*) &pt->tree;
     // setup the start and end fields
-    Buf_OBJSET(&tree->entries[tree->totalAnns], 0xff);
-    for (uint64_t i = 0; i < tree->totalAnns; i++) {
+    tree->totalAnns = totalAnns;
+    Buf_OBJSET(&tree->entries[totalAnns], 0xff);
+    for (uint64_t i = 0; i < totalAnns; i++) {
         tree->entries[i].end = tree->entries[i+1].start;
         assert(tree->entries[i].end > tree->entries[i].start);
     }
