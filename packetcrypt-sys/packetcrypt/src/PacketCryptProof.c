@@ -157,6 +157,7 @@ uint64_t PacketCryptProof_prepareTree(PacketCryptProof_Tree_t* tree) {
 
 void PacketCryptProof_computeTree(PacketCryptProof_Tree_t* _tree)
 {
+    printf("PacketCryptProof_computeTree\n");
     Tree_t* tree = (Tree_t*) _tree;
 
     // setup the start and end fields
@@ -196,6 +197,7 @@ void PacketCryptProof_computeTree(PacketCryptProof_Tree_t* _tree)
     // root
     DEBUG_OBJ(&tree->entries[odx - 1]);
     Hash_COMPRESS32_OBJ(&tree->root, &tree->entries[odx - 1]);
+    printf("PacketCryptProof_computeTree complete\n");
 }
 
 void PacketCryptProof_freeTree(PacketCryptProof_Tree_t* bm) {
