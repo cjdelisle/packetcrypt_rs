@@ -982,6 +982,7 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
     debug!("Got share / {} / {}", share.high_nonce, share.low_nonce);
     debug!("{}", hex::encode(&header_and_proof));
     debug!("{}", hex::encode(hash::compress32(&header_and_proof)));
+    debug!("{}", hex::encode(&coinbase_commit));
     for (ann, i) in anns.iter().zip(0..) {
         debug!("{} - {}", share.ann_mlocs[i], hex::encode(&ann[0..32]));
     }
