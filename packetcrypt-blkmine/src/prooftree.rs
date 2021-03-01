@@ -105,13 +105,16 @@ impl ProofTree {
         for d in self.data.iter_mut() {
             let pfx = d.hash_pfx();
             // Deduplicate and insert in the index table
+            #[allow(clippy::comparison_chain)]
             if pfx > last_pfx {
                 out.push(d.mloc);
                 d.index = out.len() as u32 + 1;
                 last_pfx = pfx;
-            } else {
-                debug!("Drop ann with index {}", pfx);
+            } else if pfx == last_pfx {
+                debug!("Drop ann with index {:#x}", pfx);
                 d.index = 0;
+            } else {
+                panic!("list not sorted {:#x} < {:#x}", pfx, last_pfx);
             }
         }
         debug!("Loaded {} out of {} anns", out.len(), self.size);
