@@ -58,3 +58,38 @@ void ProofTree_destroyProof(ProofTree_Proof_t* ptp) {
     free(ptp->data);
     free(ptp);
 }
+
+void ProofTree_hashPair(ProofTree_t* pt, uint64_t odx, uint64_t idx)
+{
+    PacketCryptProof_Tree2_t* tree = (PacketCryptProof_Tree2_t*) &pt->tree;
+    struct TwoEntries { Entry_t e[2]; };
+    Hash_COMPRESS32_OBJ(&tree->entries[odx].hash, (struct TwoEntries*)(&tree->entries[idx]));
+    tree->entries[odx].start = tree->entries[idx].start;
+    tree->entries[odx].end = tree->entries[idx+1].end;
+    assert(tree->entries[idx].end > tree->entries[idx].start);
+    assert(tree->entries[idx+1].end > tree->entries[idx+1].start || (
+        tree->entries[idx+1].start == UINT64_MAX &&
+        tree->entries[idx+1].end == UINT64_MAX));
+}
+
+uint64_t ProofTree_complete(ProofTree_t* pt, uint8_t* rootHash)
+{
+    uint64_t odx = PacketCryptProof_entryCount(pt->tree.totalAnnsZeroIncluded);
+    Hash_COMPRESS32_OBJ(&pt->tree.root, &pt->tree.entries[odx]);
+    memcpy(rootHash, pt->tree.root.bytes, 32);
+    return odx;
+}
+
+ProofTree_Entry_t* ProofTree_getEntry(const ProofTree_t* pt, uint32_t index)
+{
+    return (ProofTree_Entry_t*) &pt->tree.entries[index - 1];
+}
+
+void ProofTree_putEntry(ProofTree_t* pt, uint32_t index, const ProofTree_Entry_t* entry)
+{
+    Buf_OBJCPY(&pt->tree.entries[index - 1], entry);
+}
+
+void ProofTree_setTotalAnnsZeroIncluded(ProofTree_t* pt, uint32_t total) {
+    pt->tree.totalAnnsZeroIncluded = total;
+}

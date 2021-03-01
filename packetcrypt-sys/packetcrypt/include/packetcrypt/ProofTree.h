@@ -12,6 +12,13 @@
 
 #include <stdint.h>
 
+typedef struct {
+    uint8_t hash[32];
+    uint64_t start;
+    uint64_t end;
+} ProofTree_Entry_t;
+_Static_assert(sizeof(ProofTree_Entry_t) == 32+8+8, "");
+
 typedef struct ProofTree_s ProofTree_t;
 
 ProofTree_t* ProofTree_create(uint32_t maxAnns);
@@ -19,9 +26,19 @@ void ProofTree_destroy(ProofTree_t*);
 
 void ProofTree_clear(ProofTree_t*);
 
-void ProofTree_append(ProofTree_t*, const uint8_t* hash, uint32_t mloc);
+void ProofTree_hashPair(ProofTree_t* pt, uint64_t odx, uint64_t idx);
+
+uint64_t ProofTree_complete(ProofTree_t* pt, uint8_t* rootHashOut);
+
+ProofTree_Entry_t* ProofTree_getEntry(const ProofTree_t* pt, uint32_t index);
+
+void ProofTree_putEntry(ProofTree_t* pt, uint32_t index, const ProofTree_Entry_t* entry);
+
+void ProofTree_setTotalAnnsZeroIncluded(ProofTree_t* pt, uint32_t total);
 
 uint32_t ProofTree_compute(ProofTree_t*, uint8_t* hashOut, uint32_t* mlocOut);
+
+void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc);
 
 typedef struct ProofTree_Proof_s {
     uint32_t size;

@@ -26,12 +26,7 @@
 #define DEBUGF(...)
 #endif
 
-typedef struct {
-    uint64_t totalAnns;
-    Buf32_t root;
-    Entry_t entries[];
-} Tree_t;
-_Static_assert(sizeof(Tree_t) == sizeof(PacketCryptProof_Tree_t) - sizeof(Entry_t), "");
+typedef PacketCryptProof_Tree2_t Tree_t;
 
 static uint64_t entryCount(uint64_t totalAnns) {
     uint64_t out = 0;

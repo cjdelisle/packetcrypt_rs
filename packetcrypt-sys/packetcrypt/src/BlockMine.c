@@ -123,31 +123,6 @@ struct Worker_s {
 
 #define NOISY_LOG_SHARES 0
 
-static void fakeMine(Worker_t* w, BlockMine_Res_t* res)
-{
-    PacketCrypt_BlockHeader_t hdr;
-    Buf_OBJCPY(&hdr, &w->g->hai->header);
-    hdr.nonce = 333;
-    uint32_t lowNonce = 0;
-    Buf32_t hdrHash;
-    Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
-    for (;;) {
-        CryptoCycle_init(&w->pcState, &hdrHash, ++lowNonce);
-        for (int j = 0; j < 4; j++) {
-            uint64_t itnum = res->ann_llocs[j] = CryptoCycle_getItemNo(&w->pcState) % w->g->annCount;
-            assert(itnum < w->g->annCount);
-            uint64_t x = res->ann_mlocs[j] = w->g->hai->index[itnum];
-            assert(x < w->g->maxAnns);
-            CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &w->g->anns[x];
-            assert(CryptoCycle_update(&w->pcState, it));
-        }
-        CryptoCycle_smul(&w->pcState);
-        CryptoCycle_final(&w->pcState);
-        if (!Work_check(w->pcState.bytes, 0x207fffff)) { continue; }
-        return;
-    }
-}
-
 // Worker
 static void mine(Worker_t* w)
 {
