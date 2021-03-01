@@ -984,7 +984,7 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
     debug!("{}", hex::encode(hash::compress32(&header_and_proof)));
     debug!("{}", hex::encode(&coinbase_commit));
     for (ann, i) in anns.iter().zip(0..) {
-        debug!("{} - {}", share.ann_mlocs[i], hex::encode(&ann[0..32]));
+        debug!("{} - {}", share.ann_llocs[i], hex::encode(&ann[0..32]));
     }
 
     // At this point header_and_proof is really just the block header
