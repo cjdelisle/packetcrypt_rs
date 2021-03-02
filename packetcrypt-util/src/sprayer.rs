@@ -444,56 +444,56 @@ impl SprayWorker {
         }
     }
 
-    // #[cfg(not(any(
-    //     target_os = "linux",
-    //     target_os = "android",
-    //     target_os = "freebsd",
-    //     target_os = "netbsd",
-    // )))]
-    // fn do_send(&mut self, count: usize) -> usize {
-    //     use nix::sys::socket::{sendmmsg, MsgFlags, SendMmsgData};
-    //     use nix::sys::socket::{InetAddr, SockAddr};
-    //     use nix::sys::uio::IoVec;
-    //     use std::os::unix::io::AsRawFd;
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "netbsd",
+    ))]
+    fn do_send(&mut self, count: usize) -> usize {
+        use nix::sys::socket::{sendmmsg, MsgFlags, SendMmsgData};
+        use nix::sys::socket::{InetAddr, SockAddr};
+        use nix::sys::uio::IoVec;
+        use std::os::unix::io::AsRawFd;
 
-    //     let fd = self.g.0.socket.as_raw_fd();
+        let fd = self.g.0.socket.as_raw_fd();
 
-    //     match sendmmsg(
-    //         fd,
-    //         self.sbuf.iter().take(count).map(|p| SendMmsgData {
-    //             iov: IoVec::from_slice(&p.bytes),
-    //             cmsgs: &[],
-    //             addr: Some(SockAddr::Inet(InetAddr::from_std(&p.peer))),
-    //             _lt: Default::default(),
-    //         }),
-    //         MsgFlags::MSG_DONTWAIT,
-    //     ) {
-    //         Ok(lengths) => {
-    //             for l in lengths {
-    //                 if l != MSG_TOTAL_LEN {
-    //                     self.log(&|| info!("Short send {} bytes", l));
-    //                 }
-    //             }
-    //             lengths.len()
-    //         }
-    //         Err(e) => {
-    //             match e {
-    //                 nix::Error::Sys(nix::errno::Errno::EAGAIN) => (),
-    //                 _ => {
-    //                     self.log(&|| info!("Error sendmmsg {}", e));
-    //                 }
-    //             }
-    //             0
-    //         }
-    //     }
-    // }
+        match sendmmsg(
+            fd,
+            self.sbuf.iter().take(count).map(|p| SendMmsgData {
+                iov: IoVec::from_slice(&p.bytes),
+                cmsgs: &[],
+                addr: Some(SockAddr::Inet(InetAddr::from_std(&p.peer))),
+                _lt: Default::default(),
+            }),
+            MsgFlags::MSG_DONTWAIT,
+        ) {
+            Ok(lengths) => {
+                for l in lengths {
+                    if l != MSG_TOTAL_LEN {
+                        self.log(&|| info!("Short send {} bytes", l));
+                    }
+                }
+                lengths.len()
+            }
+            Err(e) => {
+                match e {
+                    nix::Error::Sys(nix::errno::Errno::EAGAIN) => (),
+                    _ => {
+                        self.log(&|| info!("Error sendmmsg {}", e));
+                    }
+                }
+                0
+            }
+        }
+    }
 
-    // #[cfg(not(any(
-    //     target_os = "linux",
-    //     target_os = "android",
-    //     target_os = "freebsd",
-    //     target_os = "netbsd",
-    // )))]
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "netbsd",
+    )))]
     fn do_send(&mut self, count: usize) -> usize {
         for i in 0..count {
             match self.g.0.socket.send_to(
