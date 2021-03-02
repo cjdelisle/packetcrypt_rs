@@ -470,7 +470,7 @@ impl SprayWorker {
             .collect::<Vec<_>>();
 
         match sendmmsg(fd, to_send.iter(), MsgFlags::MSG_DONTWAIT) {
-            Ok(lengths) => {
+            Ok(mut lengths) => {
                 loop {
                     // a zero-length at the end is not a concern
                     let l = if let Some(l) = lengths.pop() {
