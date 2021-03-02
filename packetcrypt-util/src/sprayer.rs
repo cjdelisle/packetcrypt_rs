@@ -477,10 +477,14 @@ impl SprayWorker {
                         if l == 0 {
                             continue;
                         } else {
-                            l
+                            Some(l)
                         }
+                    } else {
+                        None
                     };
-                    lengths.push(l);
+                    if let Some(l) = l {
+                        lengths.push(l);
+                    }
                     break;
                 }
                 for l in &lengths {
