@@ -521,8 +521,12 @@ impl SprayWorker {
         }
         let res = recvmmsg(fd, &mut msgs, MsgFlags::MSG_DONTWAIT, None)?;
         let mut out = self.rindex;
-        let res_vec = res.into_iter().zip(self.rindex..).collect::<Vec<_>>();
-        for (RecvMsg { address, bytes, .. }, i) in res_vec {
+        let res_vec = res
+            .into_iter()
+            .map(|x| (x.address, x.bytes))
+            .zip(self.rindex..)
+            .collect::<Vec<_>>();
+        for ((address, bytes, ..), i) in res_vec {
             out = i;
             if let Some(addr) = address {
                 if let nix::sys::socket::SockAddr::Inet(addr) = addr {
