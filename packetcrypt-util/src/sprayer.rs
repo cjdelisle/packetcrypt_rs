@@ -503,7 +503,7 @@ impl SprayWorker {
         target_os = "netbsd",
     ))]
     fn do_recv(&mut self) -> Result<usize> {
-        use nix::sys::socket::{recvmmsg, MsgFlags, RecvMmsgData};
+        use nix::sys::socket::{recvmmsg, MsgFlags, RecvMmsgData, RecvMsg};
         use nix::sys::uio::IoVec;
         use std::os::unix::io::AsRawFd;
 
@@ -529,7 +529,7 @@ impl SprayWorker {
                 self.rbuf[i].len = 0;
             }
         }
-        out
+        Ok(out)
     }
 
     #[cfg(not(any(
