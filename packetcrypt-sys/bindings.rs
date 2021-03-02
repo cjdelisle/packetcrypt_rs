@@ -654,34 +654,16 @@ extern "C" {
     pub fn ProofTree_destroy(arg1: *mut ProofTree_t);
 }
 extern "C" {
-    pub fn ProofTree_clear(arg1: *mut ProofTree_t);
-}
-extern "C" {
     pub fn ProofTree_hashPair(pt: *mut ProofTree_t, odx: u64, idx: u64);
 }
 extern "C" {
     pub fn ProofTree_complete(pt: *mut ProofTree_t, rootHashOut: *mut u8) -> u64;
 }
 extern "C" {
-    pub fn ProofTree_getEntry(pt: *const ProofTree_t, index: u32) -> *mut ProofTree_Entry_t;
-}
-extern "C" {
     pub fn ProofTree_putEntry(pt: *mut ProofTree_t, index: u32, entry: *const ProofTree_Entry_t);
 }
 extern "C" {
-    pub fn ProofTree_setTotalAnnsZeroIncluded(pt: *mut ProofTree_t, total: u32);
-}
-extern "C" {
-    pub fn ProofTree_compute2(pt: *mut ProofTree_t, hashOut: *mut u8);
-}
-extern "C" {
-    pub fn ProofTree_compute(arg1: *mut ProofTree_t, hashOut: *mut u8, mlocOut: *mut u32) -> u32;
-}
-extern "C" {
     pub fn ProofTree_prepare2(pt: *mut ProofTree_t, totalAnns: u64);
-}
-extern "C" {
-    pub fn ProofTree_append(pt: *mut ProofTree_t, hash: *const u8, mloc: u32);
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

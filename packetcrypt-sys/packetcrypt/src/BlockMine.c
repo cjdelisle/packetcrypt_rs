@@ -226,11 +226,6 @@ BlockMine_Create_t BlockMine_create(uint64_t maxmem, int threads, BlockMine_Call
         bmc.err = strerror(errno);
         return bmc;
     }
-    // Touch the pages so they'll be allocated now
-    uint8_t* ptru8 = ptr;
-    for (uint64_t i = 0; i < maxmem; i += 1024) {
-        ptru8[i] = 1;
-    }
     BlockMine_pvt_t* out = calloc(sizeof(BlockMine_pvt_t), 1);
     Worker_t* workers = calloc(sizeof(Worker_t), threads);
     if (!out || !workers) {

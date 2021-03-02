@@ -24,17 +24,6 @@ void ProofTree_destroy(ProofTree_t* pt) {
     PacketCryptProof_freeTree(&pt->tree);
 }
 
-void ProofTree_clear(ProofTree_t* pt) {
-    pt->tree.totalAnnsZeroIncluded = 1;
-}
-
-void ProofTree_append(ProofTree_t* pt, const uint8_t* hash, uint32_t mloc) {
-    uint64_t idx = pt->tree.totalAnnsZeroIncluded - 1;
-    memcpy(pt->tree.entries[idx].hash.bytes, hash, 32);
-    pt->tree.entries[idx].start = mloc;
-    pt->tree.totalAnnsZeroIncluded++;
-}
-
 void ProofTree_prepare2(ProofTree_t* pt, uint64_t totalAnns)
 {
     PacketCryptProof_Tree2_t* tree = (PacketCryptProof_Tree2_t*) &pt->tree;
@@ -45,22 +34,6 @@ void ProofTree_prepare2(ProofTree_t* pt, uint64_t totalAnns)
         tree->entries[i].end = tree->entries[i+1].start;
         assert(tree->entries[i].end > tree->entries[i].start);
     }
-}
-
-void ProofTree_compute2(ProofTree_t* pt, uint8_t* hashOut) {
-    PacketCryptProof_computeTree(&pt->tree);
-    memcpy(hashOut, pt->tree.root.bytes, 32);
-}
-
-uint32_t ProofTree_compute(ProofTree_t* pt, uint8_t* hashOut, uint32_t* mlocOut) {
-    printf("Prepare tree\n");
-    uint64_t count = PacketCryptProof_prepareTree(&pt->tree);
-    for (uint32_t i = 0; i < count; i++) {
-        mlocOut[i] = pt->tree.entries[i].start;
-    }
-    PacketCryptProof_computeTree(&pt->tree);
-    memcpy(hashOut, pt->tree.root.bytes, 32);
-    return count;
 }
 
 ProofTree_Proof_t* ProofTree_mkProof(ProofTree_t* pt, const uint64_t annNumbers[4]) {
@@ -98,16 +71,7 @@ uint64_t ProofTree_complete(ProofTree_t* pt, uint8_t* rootHash)
     return odx;
 }
 
-ProofTree_Entry_t* ProofTree_getEntry(const ProofTree_t* pt, uint32_t index)
-{
-    return (ProofTree_Entry_t*) &pt->tree.entries[index - 1];
-}
-
 void ProofTree_putEntry(ProofTree_t* pt, uint32_t index, const ProofTree_Entry_t* entry)
 {
     Buf_OBJCPY(&pt->tree.entries[index - 1], entry);
-}
-
-void ProofTree_setTotalAnnsZeroIncluded(ProofTree_t* pt, uint32_t total) {
-    pt->tree.totalAnnsZeroIncluded = total;
 }

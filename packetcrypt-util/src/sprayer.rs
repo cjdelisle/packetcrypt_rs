@@ -471,6 +471,16 @@ impl SprayWorker {
 
         match sendmmsg(fd, to_send.iter(), MsgFlags::MSG_DONTWAIT) {
             Ok(lengths) => {
+                loop {
+                    // a zero-length at the end is not a concern
+                    if let Some(l) = lengths.last() {
+                        if l == 0 {
+                            last.pop();
+                            continue;
+                        }
+                    }
+                    break;
+                }
                 for l in &lengths {
                     if *l != MSG_TOTAL_LEN {
                         self.log(&|| info!("Short send {} bytes", l));

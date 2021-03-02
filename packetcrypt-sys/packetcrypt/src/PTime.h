@@ -25,6 +25,4 @@ typedef struct {
 
 void Time_nsleep(long nanos);
 
-uint64_t Time_nowMilliseconds();
-
 #endif
