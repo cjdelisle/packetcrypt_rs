@@ -495,7 +495,7 @@ impl SprayWorker {
         self.log(&|| debug!("Got subscription from {}", from));
         self.g.incoming_subscription(from, msg);
     }
-    /*
+
     #[cfg(any(
         target_os = "linux",
         target_os = "android",
@@ -537,7 +537,7 @@ impl SprayWorker {
         target_os = "android",
         target_os = "freebsd",
         target_os = "netbsd",
-    )))]*/
+    )))]
     fn do_recv(&mut self) -> Result<usize> {
         for i in self.rindex..self.rbuf.len() {
             match self.g.0.socket.recv_from(&mut self.rbuf[i].bytes[..]) {
