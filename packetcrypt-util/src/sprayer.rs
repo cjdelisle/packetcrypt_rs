@@ -473,12 +473,14 @@ impl SprayWorker {
             Ok(lengths) => {
                 loop {
                     // a zero-length at the end is not a concern
-                    if let Some(l) = lengths.last() {
-                        if *l == 0 {
-                            lengths.pop();
+                    let l = if let Some(l) = lengths.pop() {
+                        if l == 0 {
                             continue;
+                        } else {
+                            l
                         }
-                    }
+                    };
+                    lengths.push(l);
                     break;
                 }
                 for l in &lengths {
