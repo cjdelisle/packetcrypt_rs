@@ -510,7 +510,7 @@ impl SprayWorker {
         let fd = self.g.0.socket.as_raw_fd();
         let iovs: Vec<_> = self.rbuf[self.rindex..]
             .iter_mut()
-            .map(|buf| [IoVec::from_mut_slice(&mut buf[..])])
+            .map(|buf| [IoVec::from_mut_slice(&mut buf.bytes[..])])
             .collect();
         let mut msgs = std::collections::LinkedList::new();
         for iov in &iovs {
@@ -520,14 +520,17 @@ impl SprayWorker {
             })
         }
         let res = recvmmsg(fd, &mut msgs, MsgFlags::MSG_DONTWAIT, None)?;
-        let out = Vec::with_capacity(res.len());
+        let mut out = self.rindex;
         for (RecvMsg { address, bytes, .. }, i) in res.into_iter().zip(self.rindex..) {
+            out = i;
             if let Some(addr) = address {
-                self.rbuf[i].peer = addr.to_std();
-                self.rbuf[i].len = bytes;
-            } else {
-                self.rbuf[i].len = 0;
+                if let nix::sys::socket::SockAddr::Inet(addr) = addr {
+                    self.rbuf[i].peer = addr.to_std();
+                    self.rbuf[i].len = bytes;
+                    continue;
+                }
             }
+            self.rbuf[i].len = 0;
         }
         Ok(out)
     }
