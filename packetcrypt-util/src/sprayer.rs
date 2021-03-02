@@ -2,12 +2,11 @@
 use crate::protocol::SprayerReq;
 use crate::util;
 use anyhow::{Context, Result};
-use log::{debug, info};
+use log::{debug, info, warn};
 use socket2::Socket;
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::convert::TryInto;
 use std::net::SocketAddr;
 use std::net::UdpSocket;
 use std::sync::atomic::{self, AtomicUsize};
@@ -15,8 +14,8 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 
-// 100MB incoming buffer per thread
-const INCOMING_BUF_ANN_PER_THREAD: usize = 100 * 1024;
+// 200MB incoming buffer per thread
+const INCOMING_BUF_ANN_PER_THREAD: usize = 200 * 1024;
 
 // Don't callback until we have at least this many anns
 const ANNS_TO_ACCUMULATE: usize = 50 * 1024;
@@ -36,17 +35,36 @@ const SECONDS_UNTIL_RESUB: usize = 5;
 const STATS_EVERY: usize = 10;
 
 const RECV_BUF_SZ: usize = 1 << 26;
-const SEND_BUF_SZ: usize = 1 << 26;
 
 pub const MSG_PREFIX: usize = 8;
 pub const MSG_TOTAL_LEN: usize = 1024 + MSG_PREFIX;
 
-pub type Ann = [u8; MSG_TOTAL_LEN];
-
-#[derive(Copy, Clone)]
-struct ToSend {
-    dest: SocketAddr,
-    ann: Ann,
+#[derive(Clone)]
+pub struct Packet {
+    peer: SocketAddr,
+    len: usize,
+    bytes: [u8; MSG_TOTAL_LEN],
+}
+impl Packet {
+    pub fn ann_bytes(&self) -> Option<&[u8]> {
+        if self.len == MSG_TOTAL_LEN {
+            Some(&self.bytes[MSG_PREFIX..])
+        } else {
+            None
+        }
+    }
+    pub fn ann_bytes_mut(&mut self) -> &mut [u8] {
+        &mut self.bytes[MSG_PREFIX..]
+    }
+}
+impl Default for Packet {
+    fn default() -> Packet {
+        Packet {
+            peer: SocketAddr::new([127, 0, 0, 1].into(), 0),
+            len: 0,
+            bytes: [0_u8; MSG_TOTAL_LEN],
+        }
+    }
 }
 
 struct Subscriber {
@@ -68,11 +86,11 @@ struct SprayerMut {
 }
 
 pub trait OnAnns: Send + Sync {
-    fn on_anns(&self, anns: &[Ann]);
+    fn on_anns(&self, anns: &[Packet]);
 }
 // So you can pass None
 impl<T: Send + Sync> OnAnns for Option<T> {
-    fn on_anns(&self, _anns: &[Ann]) {}
+    fn on_anns(&self, _anns: &[Packet]) {}
 }
 
 struct PeerCounters {
@@ -91,12 +109,11 @@ pub struct PeerStats {
 
 struct SprayerS {
     m: RwLock<SprayerMut>,
-    send_queue: Mutex<VecDeque<ToSend>>,
+    send_queue: Mutex<VecDeque<Packet>>,
     passwd: String,
     socket: socket2::Socket,
     handler: RwLock<Option<Box<dyn OnAnns>>>,
     subscribed_to: Vec<Subscription>,
-    always_send_all: bool,
     workers: usize,
     last_computed_stats: AtomicUsize,
     peer_counters: Mutex<HashMap<SocketAddr, PeerCounters>>,
@@ -104,10 +121,6 @@ struct SprayerS {
     log_peer_stats: bool,
 }
 pub struct Sprayer(Arc<SprayerS>);
-
-fn get_ann_key(ann: &Ann) -> u32 {
-    u32::from_le_bytes(ann[64..68].try_into().unwrap())
-}
 
 fn compute_kbps(packets_sent: u64, ms_elapsed: u64) -> f64 {
     // consider the headers here
@@ -134,8 +147,12 @@ impl Sprayer {
         let socket = UdpSocket::bind(addr).with_context(|| format!("UdpSocket::bind({})", addr))?;
         socket.set_nonblocking(true)?;
         let s = Socket::from(socket);
-        s.set_recv_buffer_size(RECV_BUF_SZ)?;
-        s.set_send_buffer_size(SEND_BUF_SZ)?;
+        if let Err(e) = s.set_recv_buffer_size(RECV_BUF_SZ) {
+            warn!(
+                "Unable to set SO_RCVBUF to {}: {} - expect packet loss at high load",
+                RECV_BUF_SZ, e
+            );
+        }
 
         let m = RwLock::new(SprayerMut {
             subscribers: Vec::new(),
@@ -160,7 +177,6 @@ impl Sprayer {
             socket: s,
             workers: cfg.workers,
             handler: RwLock::new(None),
-            always_send_all: cfg.always_send_all,
             last_computed_stats: AtomicUsize::new(0),
             peer_counters: Mutex::new(HashMap::new()),
             peer_stats: Mutex::new(Vec::new()),
@@ -172,31 +188,26 @@ impl Sprayer {
         self.0.handler.write().unwrap().replace(Box::new(handler));
     }
 
-    pub fn push_anns(&self, anns: &[Ann]) -> usize {
+    pub fn push_anns(&self, anns: &[Packet]) -> usize {
         let oldest_allowed_time = (util::now_ms() / 1000) as usize - SECONDS_UNTIL_SUB_TIMEOUT;
         let m = self.0.m.read().unwrap();
         let mut sq = self.0.send_queue.lock().unwrap();
         let mut overflow = 0;
         for ann in anns {
-            let k = get_ann_key(ann);
             for s in &m.subscribers {
                 let lus = s.last_update_sec.load(atomic::Ordering::Relaxed);
                 if lus < oldest_allowed_time {
                     continue;
                 }
-                if self.0.always_send_all || k % s.count == s.num {
-                    if sq.len() >= MAX_SEND_QUEUE {
-                        sq.pop_front();
-                        overflow += 1;
-                    }
-                    let mut ts = ToSend {
-                        dest: s.peer,
-                        ann: *ann,
-                    };
-                    let number = s.packets_sent.fetch_add(1, atomic::Ordering::Relaxed) as u64;
-                    ts.ann[0..MSG_PREFIX].copy_from_slice(&number.to_le_bytes());
-                    sq.push_back(ts);
+                if sq.len() >= MAX_SEND_QUEUE {
+                    sq.pop_front();
+                    overflow += 1;
                 }
+                let mut ts = ann.clone();
+                ts.peer = s.peer;
+                let number = s.packets_sent.fetch_add(1, atomic::Ordering::Relaxed) as u64;
+                ts.bytes[0..MSG_PREFIX].copy_from_slice(&number.to_le_bytes());
+                sq.push_back(ts);
             }
         }
         overflow
@@ -208,15 +219,10 @@ impl Sprayer {
             std::thread::spawn(move || {
                 Box::new(SprayWorker {
                     g,
-                    rbuf: vec![[0_u8; MSG_TOTAL_LEN]; INCOMING_BUF_ANN_PER_THREAD],
-                    sbuf: vec![
-                        ToSend {
-                            dest: SocketAddr::new([127, 0, 0, 1].into(), 0),
-                            ann: [0_u8; MSG_TOTAL_LEN],
-                        };
-                        SEND_CHUNK_SZ
-                    ],
-                    time_of_last_log: 0_u64,
+                    rbuf: vec![Packet::default(); INCOMING_BUF_ANN_PER_THREAD],
+                    sbuf: vec![Packet::default(); SEND_CHUNK_SZ],
+                    rindex: 0,
+                    time_of_last_log: AtomicUsize::new(0),
                     tid,
                 })
                 .run();
@@ -224,7 +230,7 @@ impl Sprayer {
         }
     }
 
-    fn get_to_send(&self, send: &mut [ToSend]) -> usize {
+    fn get_to_send(&self, send: &mut [Packet]) -> usize {
         let mut sql = self.0.send_queue.lock().unwrap();
         let mut i = 0;
         for s in send {
@@ -239,10 +245,10 @@ impl Sprayer {
         i
     }
 
-    fn return_to_send(&self, send: &[ToSend]) {
+    fn return_to_send(&self, send: &[Packet]) {
         let mut sql = self.0.send_queue.lock().unwrap();
         for s in send {
-            sql.push_front(*s);
+            sql.push_front(s.clone());
         }
     }
 
@@ -416,18 +422,19 @@ impl Sprayer {
 
 struct SprayWorker {
     g: Sprayer,
-    rbuf: Vec<Ann>,
-    sbuf: Vec<ToSend>,
-    time_of_last_log: u64,
+    rbuf: Vec<Packet>,
+    sbuf: Vec<Packet>,
+    time_of_last_log: AtomicUsize,
     tid: usize,
+    rindex: usize,
 }
 
 impl SprayWorker {
-    fn log(&mut self, f: &dyn Fn()) -> bool {
-        let now = util::now_ms();
-        if now > self.time_of_last_log + 1000 {
+    fn log(&self, f: &dyn Fn()) -> bool {
+        let now = util::now_ms() as usize;
+        if now > self.time_of_last_log.load(atomic::Ordering::Relaxed) + 1000 {
             f();
-            self.time_of_last_log = now;
+            self.time_of_last_log.store(now, atomic::Ordering::Relaxed);
             true
         } else {
             false
@@ -446,8 +453,8 @@ impl SprayWorker {
             }
             for i in 0..count {
                 match self.g.0.socket.send_to(
-                    &self.sbuf[i].ann[..],
-                    &socket2::SockAddr::from(self.sbuf[i].dest),
+                    &self.sbuf[i].bytes[..],
+                    &socket2::SockAddr::from(self.sbuf[i].peer),
                 ) {
                     Ok(l) => {
                         if l == MSG_TOTAL_LEN {
@@ -468,7 +475,7 @@ impl SprayWorker {
             }
         }
     }
-    fn maybe_subscribe(&mut self, msg: &[u8], from: SocketAddr) {
+    fn maybe_subscribe(&self, msg: &[u8], from: SocketAddr) {
         let msg = if let Ok(x) = serde_json::from_slice::<SprayerReq>(msg) {
             x
         } else {
@@ -488,6 +495,99 @@ impl SprayWorker {
         self.log(&|| debug!("Got subscription from {}", from));
         self.g.incoming_subscription(from, msg);
     }
+    /*
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "netbsd",
+    ))]
+    fn do_recv(&mut self) -> Result<usize> {
+        use nix::sys::socket::{recvmmsg, MsgFlags, RecvMmsgData};
+        use nix::sys::uio::IoVec;
+        use std::os::unix::io::AsRawFd;
+
+        let fd = self.g.0.socket.as_raw_fd();
+        let iovs: Vec<_> = self.rbuf[self.rindex..]
+            .iter_mut()
+            .map(|buf| [IoVec::from_mut_slice(&mut buf[..])])
+            .collect();
+        let mut msgs = std::collections::LinkedList::new();
+        for iov in &iovs {
+            msgs.push_back(RecvMmsgData {
+                iov,
+                cmsg_buffer: None,
+            })
+        }
+        let res = recvmmsg(fd, &mut msgs, MsgFlags::MSG_DONTWAIT, None)?;
+        let out = Vec::with_capacity(res.len());
+        for (RecvMsg { address, bytes, .. }, i) in res.into_iter().zip(self.rindex..) {
+            if let Some(addr) = address {
+                self.rbuf[i].peer = addr.to_std();
+                self.rbuf[i].len = bytes;
+            } else {
+                self.rbuf[i].len = 0;
+            }
+        }
+        out
+    }
+
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "netbsd",
+    )))]*/
+    fn do_recv(&mut self) -> Result<usize> {
+        for i in self.rindex..self.rbuf.len() {
+            match self.g.0.socket.recv_from(&mut self.rbuf[i].bytes[..]) {
+                Ok((len, fr)) => {
+                    self.rbuf[i].len = len;
+                    self.rbuf[i].peer = fr.as_std().unwrap();
+                }
+                Err(e) => {
+                    if e.kind() != std::io::ErrorKind::WouldBlock {
+                        self.log(&|| info!("Error reading sprayer socket {}", e));
+                    }
+                    return Ok(i);
+                }
+            }
+        }
+        Ok(self.rbuf.len())
+    }
+
+    fn recv(&mut self) {
+        let next_i = match self.do_recv() {
+            Err(e) => {
+                self.log(&|| info!("Error receiving packets {}", e));
+                return;
+            }
+            Ok(m) => m,
+        };
+        for i in self.rindex..next_i {
+            {
+                let msg = &self.rbuf[i];
+                if msg.len < MSG_TOTAL_LEN {
+                    let mut x = [0_u8; MSG_TOTAL_LEN];
+                    x[0..msg.len].copy_from_slice(&msg.bytes[0..msg.len]);
+                    self.maybe_subscribe(&x[0..msg.len], msg.peer);
+                } else if let Some(sub) = self
+                    .g
+                    .0
+                    .subscribed_to
+                    .iter()
+                    .find(|sub| sub.peer == msg.peer)
+                {
+                    sub.packets_received.fetch_add(1, atomic::Ordering::Relaxed);
+                    continue;
+                }
+            }
+            // Packets we don't want being processed...
+            self.rbuf[i].len = 0;
+        }
+        self.rindex = next_i;
+    }
+
     #[allow(clippy::comparison_chain)]
     fn run(mut self) {
         info!("Launched sprayer thread");
@@ -495,38 +595,7 @@ impl SprayWorker {
         let mut last_i = 0;
         let mut overflow = 0;
         loop {
-            match self.g.0.socket.recv_from(&mut self.rbuf[i][..]) {
-                Ok((l, fr)) => {
-                    let from = fr.as_std().unwrap();
-                    if l > MSG_TOTAL_LEN {
-                        self.log(&|| info!("Spurious packet from {}", from));
-                        continue;
-                    } else if l < MSG_TOTAL_LEN {
-                        let mut x = [0_u8; MSG_TOTAL_LEN];
-                        x[0..l].copy_from_slice(&self.rbuf[i][0..l]);
-                        self.maybe_subscribe(&x[0..l], from);
-                        continue;
-                    }
-                    match self.g.0.subscribed_to.iter().find(|sub| sub.peer == from) {
-                        Some(sub) => {
-                            sub.packets_received.fetch_add(1, atomic::Ordering::Relaxed);
-                            i += 1;
-                            if i < self.rbuf.len() {
-                                continue;
-                            }
-                        }
-                        None => {
-                            // spurious packet
-                            continue;
-                        }
-                    }
-                }
-                Err(e) => {
-                    if e.kind() != std::io::ErrorKind::WouldBlock {
-                        self.log(&|| info!("Error reading sprayer socket {}", e));
-                    }
-                }
-            }
+            self.recv();
             self.try_send();
             if self.g.0.log_peer_stats {
                 self.g.get_peer_stats();

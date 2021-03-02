@@ -225,8 +225,8 @@ fn enqueue_write(w: &mut Worker, output: &mut Output) {
             .out
             .iter()
             .map(|ann| {
-                let mut out = [0_u8; sprayer::MSG_TOTAL_LEN];
-                out[sprayer::MSG_PREFIX..].copy_from_slice(&ann.bytes[..]);
+                let mut out = sprayer::Packet::default();
+                out.ann_bytes_mut().copy_from_slice(&ann.bytes[..]);
                 out
             })
             .collect::<Vec<_>>()[..],

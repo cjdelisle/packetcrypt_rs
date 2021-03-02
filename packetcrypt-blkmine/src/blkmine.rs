@@ -273,12 +273,12 @@ struct HeightWork {
     work: u32,
 }
 struct AnnChunk<'a> {
-    anns: &'a [sprayer::Ann],
+    anns: &'a [sprayer::Packet],
     indexes: &'a [u32],
 }
 impl<'a> GetAnn for AnnChunk<'a> {
     fn get_ann(&self, num: usize) -> &[u8] {
-        &self.anns[self.indexes[num] as usize][sprayer::MSG_PREFIX..]
+        self.anns[self.indexes[num] as usize].ann_bytes().unwrap()
     }
     fn ann_count(&self) -> usize {
         self.indexes.len()
@@ -324,20 +324,22 @@ fn on_anns(bm: &BlkMine, ac: AnnChunk) {
 }
 
 impl sprayer::OnAnns for BlkMine {
-    fn on_anns(&self, anns: &[sprayer::Ann]) {
+    fn on_anns(&self, anns: &[sprayer::Packet]) {
         struct Ai {
             hw: HeightWork,
             index: u32,
         }
         let mut v: Vec<Ai> = Vec::with_capacity(anns.len());
-        for (a, i) in anns.iter().map(|a| &a[sprayer::MSG_PREFIX..]).zip(0..) {
-            v.push(Ai {
-                hw: HeightWork {
-                    block_height: packetcrypt_sys::parent_block_height(a),
-                    work: packetcrypt_sys::work_bits(a),
-                },
-                index: i,
-            });
+        for (a, i) in anns.iter().zip(0..) {
+            if let Some(bytes) = a.ann_bytes() {
+                v.push(Ai {
+                    hw: HeightWork {
+                        block_height: packetcrypt_sys::parent_block_height(bytes),
+                        work: packetcrypt_sys::work_bits(bytes),
+                    },
+                    index: i,
+                });
+            }
         }
         v.sort_by(|a, b| {
             if a.hw.block_height != b.hw.block_height {
