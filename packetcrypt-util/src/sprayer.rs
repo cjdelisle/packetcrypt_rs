@@ -34,8 +34,8 @@ const SECONDS_UNTIL_RESUB: usize = 5;
 
 const STATS_EVERY: usize = 10;
 
-// 128M incoming buffer
-const RECV_BUF_SZ: usize = 128 * 1024 * 1024;
+// 512M incoming buffer
+const RECV_BUF_SZ: usize = 512 * 1024 * 1024;
 
 pub const MSG_PREFIX: usize = 8;
 pub const MSG_TOTAL_LEN: usize = 1024 + MSG_PREFIX;

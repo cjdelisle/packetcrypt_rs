@@ -324,7 +324,6 @@ async fn main() -> Result<()> {
                         .short("s")
                         .long("subscribe")
                         .help("Sprayer interface to subscribe to")
-                        .default_value("")
                         .takes_value(true),
                 )
                 .arg(
