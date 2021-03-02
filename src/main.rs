@@ -339,7 +339,6 @@ async fn main() -> Result<()> {
                         .short("b")
                         .long("bind")
                         .help("UDP socket to bind to for sprayer interface")
-                        .default_value("")
                         .takes_value(true),
                 )
                 .arg(
@@ -433,8 +432,6 @@ async fn main() -> Result<()> {
         } else {
             if blk.is_present("bind") {
                 bail!("--bind (bind UDP sprayer socket) is nonsensical without --subscribe");
-            } else if blk.is_present("sprayerthreads") {
-                bail!("--sprayerthreads is nonsensical without --subscribe");
             }
             None
         };
