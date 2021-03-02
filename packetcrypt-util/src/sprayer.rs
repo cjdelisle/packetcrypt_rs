@@ -461,7 +461,7 @@ impl SprayWorker {
             .sbuf
             .iter()
             .take(count)
-            .map(|p| &SendMmsgData {
+            .map(|p| SendMmsgData {
                 iov: [IoVec::from_slice(&p.bytes)],
                 cmsgs: &[],
                 addr: Some(SockAddr::Inet(InetAddr::from_std(&p.peer))),
@@ -472,7 +472,7 @@ impl SprayWorker {
         match sendmmsg(fd, to_send.iter(), MsgFlags::MSG_DONTWAIT) {
             Ok(lengths) => {
                 for l in &lengths {
-                    if l != MSG_TOTAL_LEN {
+                    if *l != MSG_TOTAL_LEN {
                         self.log(&|| info!("Short send {} bytes", l));
                     }
                 }
