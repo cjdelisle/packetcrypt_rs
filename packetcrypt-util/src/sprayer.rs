@@ -444,12 +444,12 @@ impl SprayWorker {
         }
     }
 
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "android",
-        target_os = "freebsd",
-        target_os = "netbsd",
-    ))]
+    // #[cfg(any(
+    //     target_os = "linux",
+    //     target_os = "android",
+    //     target_os = "freebsd",
+    //     target_os = "netbsd",
+    // ))]
     fn do_send(&mut self, count: usize) -> usize {
         use nix::sys::socket::{sendmmsg, MsgFlags, SendMmsgData};
         use nix::sys::socket::{InetAddr, SockAddr};
@@ -457,19 +457,21 @@ impl SprayWorker {
         use std::os::unix::io::AsRawFd;
 
         let fd = self.g.0.socket.as_raw_fd();
-
-        match sendmmsg(
-            fd,
-            self.sbuf.iter().take(count).map(|p| SendMmsgData {
-                iov: IoVec::from_slice(&p.bytes),
+        let to_send = self
+            .sbuf
+            .iter()
+            .take(count)
+            .map(|p| &SendMmsgData {
+                iov: [IoVec::from_slice(&p.bytes)],
                 cmsgs: &[],
                 addr: Some(SockAddr::Inet(InetAddr::from_std(&p.peer))),
                 _lt: Default::default(),
-            }),
-            MsgFlags::MSG_DONTWAIT,
-        ) {
+            })
+            .collect::<Vec<_>>();
+
+        match sendmmsg(fd, to_send.iter(), MsgFlags::MSG_DONTWAIT) {
             Ok(lengths) => {
-                for l in lengths {
+                for l in &lengths {
                     if l != MSG_TOTAL_LEN {
                         self.log(&|| info!("Short send {} bytes", l));
                     }
