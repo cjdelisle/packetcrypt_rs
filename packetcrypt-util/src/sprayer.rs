@@ -194,6 +194,9 @@ impl Sprayer {
         let mut sq = self.0.send_queue.lock().unwrap();
         let mut overflow = 0;
         for ann in anns {
+            if ann.len < MSG_TOTAL_LEN {
+                continue;
+            }
             for s in &m.subscribers {
                 let lus = s.last_update_sec.load(atomic::Ordering::Relaxed);
                 if lus < oldest_allowed_time {
@@ -599,7 +602,6 @@ impl SprayWorker {
     #[allow(clippy::comparison_chain)]
     fn run(mut self) {
         info!("Launched sprayer thread");
-        let mut i = 0;
         let mut last_i = 0;
         let mut overflow = 0;
         loop {
@@ -608,24 +610,24 @@ impl SprayWorker {
             if self.g.0.log_peer_stats {
                 self.g.get_peer_stats();
             }
-            if i == 0 {
+            if self.rindex == 0 {
                 std::thread::sleep(std::time::Duration::from_micros(100));
                 continue;
             }
-            if i > last_i {
-                overflow += self.g.push_anns(&self.rbuf[last_i..i]);
+            if self.rindex > last_i {
+                overflow += self.g.push_anns(&self.rbuf[last_i..self.rindex]);
                 if overflow > 0 && self.log(&|| info!("Send overflow of {} anns", overflow)) {
                     overflow = 0;
                 }
-                last_i = i;
+                last_i = self.rindex;
             }
-            if i > ANNS_TO_ACCUMULATE {
+            if self.rindex > ANNS_TO_ACCUMULATE {
                 let handler = self.g.0.handler.read().unwrap();
                 match &*handler {
-                    Some(h) => h.on_anns(&self.rbuf[0..i]),
+                    Some(h) => h.on_anns(&self.rbuf[0..self.rindex]),
                     None => (),
                 }
-                i = 0;
+                self.rindex = 0;
                 last_i = 0;
             }
         }
