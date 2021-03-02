@@ -563,7 +563,7 @@ impl SprayWorker {
         target_os = "freebsd",
         target_os = "netbsd",
     ))]
-    fn do_recv(&mut self) -> Result<usize> {
+    fn do_recv(&mut self) -> usize {
         use nix::sys::socket::{recvmmsg, MsgFlags, RecvMmsgData};
         use nix::sys::uio::IoVec;
         use std::os::unix::io::AsRawFd;
@@ -589,7 +589,7 @@ impl SprayWorker {
                         self.log(&|| info!("Error recvmmsg {}", e));
                     }
                 }
-                return i;
+                return 0;
             }
         };
         let mut out = self.rindex;
@@ -609,7 +609,7 @@ impl SprayWorker {
             }
             self.rbuf[i].len = 0;
         }
-        Ok(out)
+        out
     }
 
     #[cfg(not(any(
