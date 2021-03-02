@@ -359,7 +359,7 @@ impl Sprayer {
                     };
                     if self.0.log_peer_stats {
                         info!(
-                            "{} <- anns: {} {}",
+                            "<- {} sent {} anns {}",
                             sub.peer,
                             packets,
                             util::format_kbps(st.kbps_out)
@@ -396,9 +396,9 @@ impl Sprayer {
                     };
                     if self.0.log_peer_stats {
                         info!(
-                            "{} -> {} ({})",
+                            "-> {} recv {} anns ({})",
                             sub.peer,
-                            util::big_number(packets as f64),
+                            packets,
                             util::format_kbps(st.kbps_in)
                         );
                     }
@@ -444,12 +444,12 @@ impl SprayWorker {
         }
     }
 
-    // #[cfg(any(
-    //     target_os = "linux",
-    //     target_os = "android",
-    //     target_os = "freebsd",
-    //     target_os = "netbsd",
-    // ))]
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "freebsd",
+        target_os = "netbsd",
+    ))]
     fn do_send(&mut self, count: usize) -> usize {
         use nix::sys::socket::{sendmmsg, MsgFlags, SendMmsgData};
         use nix::sys::socket::{InetAddr, SockAddr};
@@ -565,7 +565,7 @@ impl SprayWorker {
         target_os = "freebsd",
         target_os = "netbsd",
     ))]
-    fn do_recv(&mut self) -> usize {
+    fn do_recv(&mut self) {
         use nix::sys::socket::{recvmmsg, MsgFlags, RecvMmsgData};
         use nix::sys::uio::IoVec;
         use std::os::unix::io::AsRawFd;
@@ -591,7 +591,7 @@ impl SprayWorker {
                         self.log(&|| info!("Error recvmmsg {}", e));
                     }
                 }
-                return 0;
+                return;
             }
         };
         let mut out = self.rindex;
@@ -611,7 +611,7 @@ impl SprayWorker {
             }
             self.rbuf[i].len = 0;
         }
-        out
+        self.rindex = out;
     }
 
     #[cfg(not(any(
@@ -620,7 +620,7 @@ impl SprayWorker {
         target_os = "freebsd",
         target_os = "netbsd",
     )))]
-    fn do_recv(&mut self) -> usize {
+    fn do_recv(&mut self) {
         for i in self.rindex..self.rbuf.len() {
             match self.g.0.socket.recv_from(&mut self.rbuf[i].bytes[..]) {
                 Ok((len, fr)) => {
@@ -631,16 +631,18 @@ impl SprayWorker {
                     if e.kind() != std::io::ErrorKind::WouldBlock {
                         self.log(&|| info!("Error reading sprayer socket {}", e));
                     }
-                    return i;
+                    self.rindex = i;
+                    return;
                 }
             }
         }
-        self.rbuf.len()
+        self.rindex = self.rbuf.len();
     }
 
     fn recv(&mut self) {
-        let next_i = self.do_recv();
-        for i in self.rindex..next_i {
+        let last_i = self.rindex;
+        self.do_recv();
+        for i in last_i..self.rindex {
             {
                 let msg = &self.rbuf[i];
                 if msg.len < MSG_TOTAL_LEN {
@@ -661,7 +663,6 @@ impl SprayWorker {
             // Packets we don't want being processed...
             self.rbuf[i].len = 0;
         }
-        self.rindex = next_i;
     }
 
     #[allow(clippy::comparison_chain)]
@@ -675,17 +676,15 @@ impl SprayWorker {
             if self.g.0.log_peer_stats {
                 self.g.get_peer_stats();
             }
-            if self.rindex == 0 {
+            if self.rindex <= last_i {
                 std::thread::sleep(std::time::Duration::from_micros(100));
                 continue;
             }
-            if self.rindex > last_i {
-                overflow += self.g.push_anns(&self.rbuf[last_i..self.rindex]);
-                if overflow > 0 && self.log(&|| info!("Send overflow of {} anns", overflow)) {
-                    overflow = 0;
-                }
-                last_i = self.rindex;
+            overflow += self.g.push_anns(&self.rbuf[last_i..self.rindex]);
+            if overflow > 0 && self.log(&|| info!("Send overflow of {} anns", overflow)) {
+                overflow = 0;
             }
+            last_i = self.rindex;
             if self.rindex > ANNS_TO_ACCUMULATE {
                 let handler = self.g.0.handler.read().unwrap();
                 match &*handler {
