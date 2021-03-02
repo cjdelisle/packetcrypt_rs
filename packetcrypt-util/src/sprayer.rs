@@ -443,6 +443,82 @@ impl SprayWorker {
             false
         }
     }
+
+    // #[cfg(not(any(
+    //     target_os = "linux",
+    //     target_os = "android",
+    //     target_os = "freebsd",
+    //     target_os = "netbsd",
+    // )))]
+    // fn do_send(&mut self, count: usize) -> usize {
+    //     use nix::sys::socket::{sendmmsg, MsgFlags, SendMmsgData};
+    //     use nix::sys::socket::{InetAddr, SockAddr};
+    //     use nix::sys::uio::IoVec;
+    //     use std::os::unix::io::AsRawFd;
+
+    //     let fd = self.g.0.socket.as_raw_fd();
+
+    //     match sendmmsg(
+    //         fd,
+    //         self.sbuf.iter().take(count).map(|p| SendMmsgData {
+    //             iov: IoVec::from_slice(&p.bytes),
+    //             cmsgs: &[],
+    //             addr: Some(SockAddr::Inet(InetAddr::from_std(&p.peer))),
+    //             _lt: Default::default(),
+    //         }),
+    //         MsgFlags::MSG_DONTWAIT,
+    //     ) {
+    //         Ok(lengths) => {
+    //             for l in lengths {
+    //                 if l != MSG_TOTAL_LEN {
+    //                     self.log(&|| info!("Short send {} bytes", l));
+    //                 }
+    //             }
+    //             lengths.len()
+    //         }
+    //         Err(e) => {
+    //             match e {
+    //                 nix::Error::Sys(nix::errno::Errno::EAGAIN) => (),
+    //                 _ => {
+    //                     self.log(&|| info!("Error sendmmsg {}", e));
+    //                 }
+    //             }
+    //             0
+    //         }
+    //     }
+    // }
+
+    // #[cfg(not(any(
+    //     target_os = "linux",
+    //     target_os = "android",
+    //     target_os = "freebsd",
+    //     target_os = "netbsd",
+    // )))]
+    fn do_send(&mut self, count: usize) -> usize {
+        for i in 0..count {
+            match self.g.0.socket.send_to(
+                &self.sbuf[i].bytes[..],
+                &socket2::SockAddr::from(self.sbuf[i].peer),
+            ) {
+                Ok(l) => {
+                    if l == MSG_TOTAL_LEN {
+                        continue;
+                    }
+                    self.log(&|| info!("Sending to sprayer socket length {}", l));
+                }
+                Err(e) => {
+                    if e.kind() != std::io::ErrorKind::WouldBlock {
+                        self.log(&|| info!("Error sending to sprayer socket {}", e));
+                    } else {
+                        self.log(&|| debug!("Send got EWOULDBLOCK"));
+                    }
+                }
+            }
+            return i;
+        }
+        count
+    }
+
     fn try_send(&mut self) {
         if self.tid == 0 {
             if let Some((e, to)) = self.g.send_subs() {
@@ -454,27 +530,9 @@ impl SprayWorker {
             if count == 0 {
                 return;
             }
-            for i in 0..count {
-                match self.g.0.socket.send_to(
-                    &self.sbuf[i].bytes[..],
-                    &socket2::SockAddr::from(self.sbuf[i].peer),
-                ) {
-                    Ok(l) => {
-                        if l == MSG_TOTAL_LEN {
-                            continue;
-                        }
-                        self.log(&|| info!("Sending to sprayer socket length {}", l));
-                    }
-                    Err(e) => {
-                        if e.kind() != std::io::ErrorKind::WouldBlock {
-                            self.log(&|| info!("Error sending to sprayer socket {}", e));
-                        } else {
-                            self.log(&|| debug!("Send got EWOULDBLOCK"));
-                        }
-                    }
-                }
-                self.g.return_to_send(&self.sbuf[i..count]);
-                return;
+            let sent = self.do_send(count);
+            if sent < count {
+                self.g.return_to_send(&self.sbuf[sent..count]);
             }
         }
     }
@@ -522,7 +580,18 @@ impl SprayWorker {
                 cmsg_buffer: None,
             })
         }
-        let res = recvmmsg(fd, &mut msgs, MsgFlags::MSG_DONTWAIT, None)?;
+        let res = match recvmmsg(fd, &mut msgs, MsgFlags::MSG_DONTWAIT, None) {
+            Ok(r) => r,
+            Err(e) => {
+                match e {
+                    nix::Error::Sys(nix::errno::Errno::EAGAIN) => (),
+                    _ => {
+                        self.log(&|| info!("Error recvmmsg {}", e));
+                    }
+                }
+                return i;
+            }
+        };
         let mut out = self.rindex;
         let res_vec = res
             .into_iter()
@@ -549,7 +618,7 @@ impl SprayWorker {
         target_os = "freebsd",
         target_os = "netbsd",
     )))]
-    fn do_recv(&mut self) -> Result<usize> {
+    fn do_recv(&mut self) -> usize {
         for i in self.rindex..self.rbuf.len() {
             match self.g.0.socket.recv_from(&mut self.rbuf[i].bytes[..]) {
                 Ok((len, fr)) => {
@@ -560,21 +629,15 @@ impl SprayWorker {
                     if e.kind() != std::io::ErrorKind::WouldBlock {
                         self.log(&|| info!("Error reading sprayer socket {}", e));
                     }
-                    return Ok(i);
+                    return i;
                 }
             }
         }
-        Ok(self.rbuf.len())
+        self.rbuf.len()
     }
 
     fn recv(&mut self) {
-        let next_i = match self.do_recv() {
-            Err(e) => {
-                self.log(&|| info!("Error receiving packets {}", e));
-                return;
-            }
-            Ok(m) => m,
-        };
+        let next_i = self.do_recv();
         for i in self.rindex..next_i {
             {
                 let msg = &self.rbuf[i];
