@@ -496,49 +496,49 @@ impl SprayWorker {
         self.g.incoming_subscription(from, msg);
     }
 
-    #[cfg(any(
-        target_os = "linux",
-        target_os = "android",
-        target_os = "freebsd",
-        target_os = "netbsd",
-    ))]
-    fn do_recv(&mut self) -> Result<usize> {
-        use nix::sys::socket::{recvmmsg, MsgFlags, RecvMmsgData, RecvMsg};
-        use nix::sys::uio::IoVec;
-        use std::os::unix::io::AsRawFd;
+    // #[cfg(any(
+    //     target_os = "linux",
+    //     target_os = "android",
+    //     target_os = "freebsd",
+    //     target_os = "netbsd",
+    // ))]
+    // fn do_recv(&mut self) -> Result<usize> {
+    //     use nix::sys::socket::{recvmmsg, MsgFlags, RecvMmsgData};
+    //     use nix::sys::uio::IoVec;
+    //     use std::os::unix::io::AsRawFd;
 
-        let fd = self.g.0.socket.as_raw_fd();
-        let iovs: Vec<_> = self.rbuf[self.rindex..]
-            .iter_mut()
-            .map(|buf| [IoVec::from_mut_slice(&mut buf.bytes[..])])
-            .collect();
-        let mut msgs = std::collections::LinkedList::new();
-        for iov in &iovs {
-            msgs.push_back(RecvMmsgData {
-                iov,
-                cmsg_buffer: None,
-            })
-        }
-        let res = recvmmsg(fd, &mut msgs, MsgFlags::MSG_DONTWAIT, None)?;
-        let mut out = self.rindex;
-        let res_vec = res
-            .into_iter()
-            .map(|x| (x.address, x.bytes))
-            .zip(self.rindex..)
-            .collect::<Vec<_>>();
-        for ((address, bytes, ..), i) in res_vec {
-            out = i;
-            if let Some(addr) = address {
-                if let nix::sys::socket::SockAddr::Inet(addr) = addr {
-                    self.rbuf[i].peer = addr.to_std();
-                    self.rbuf[i].len = bytes;
-                    continue;
-                }
-            }
-            self.rbuf[i].len = 0;
-        }
-        Ok(out)
-    }
+    //     let fd = self.g.0.socket.as_raw_fd();
+    //     let iovs: Vec<_> = self.rbuf[self.rindex..]
+    //         .iter_mut()
+    //         .map(|buf| [IoVec::from_mut_slice(&mut buf.bytes[..])])
+    //         .collect();
+    //     let mut msgs = std::collections::LinkedList::new();
+    //     for iov in &iovs {
+    //         msgs.push_back(RecvMmsgData {
+    //             iov,
+    //             cmsg_buffer: None,
+    //         })
+    //     }
+    //     let res = recvmmsg(fd, &mut msgs, MsgFlags::MSG_DONTWAIT, None)?;
+    //     let mut out = self.rindex;
+    //     let res_vec = res
+    //         .into_iter()
+    //         .map(|x| (x.address, x.bytes))
+    //         .zip(self.rindex..)
+    //         .collect::<Vec<_>>();
+    //     for ((address, bytes, ..), i) in res_vec {
+    //         out = i;
+    //         if let Some(addr) = address {
+    //             if let nix::sys::socket::SockAddr::Inet(addr) = addr {
+    //                 self.rbuf[i].peer = addr.to_std();
+    //                 self.rbuf[i].len = bytes;
+    //                 continue;
+    //             }
+    //         }
+    //         self.rbuf[i].len = 0;
+    //     }
+    //     Ok(out)
+    // }
 
     #[cfg(not(any(
         target_os = "linux",
