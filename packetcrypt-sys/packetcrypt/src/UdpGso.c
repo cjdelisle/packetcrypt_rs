@@ -107,6 +107,9 @@ int UdpGro_recvmsg(int fd, struct UdpGro_Sockaddr* addrOut, uint8_t* buf, int le
 	*pktSize = -1;
 	int len = recvmsg(fd, &msg, MSG_TRUNC | MSG_DONTWAIT);
     if (len == -1) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return 0;
+        }
         return -errno;
     }
 
