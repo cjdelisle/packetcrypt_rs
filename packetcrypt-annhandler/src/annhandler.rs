@@ -553,8 +553,8 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         bind: cfg.bind_pvt.clone(),
         workers: cfg.spray_workers as usize,
         subscribe_to: cfg.subscribe_to.clone(),
-        always_send_all: true,
         log_peer_stats: true,
+        mss: if let Some(mss) = cfg.mss { mss } else { 1472 },
     })?;
 
     let (submit_send, submit_recv) = crossbeam_channel::bounded(cfg.input_queue_len);

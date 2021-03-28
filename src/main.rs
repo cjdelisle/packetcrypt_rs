@@ -348,6 +348,14 @@ async fn main() -> Result<()> {
                         .help("Number of share-upload threads, be careful not to overload the block handlers")
                         .default_value("4")
                         .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("mss")
+                        .short("M")
+                        .long("maxsegmentsize")
+                        .help("Maximum packet size to send when using UDP sprayer, remember IP and UDP overhead")
+                        .default_value("1472")
+                        .takes_value(true)
                 ),
         )
         .subcommand(
@@ -382,6 +390,14 @@ async fn main() -> Result<()> {
                         .help("Sprayers so subscribe to")
                         .required(true)
                         .min_values(1),
+                )
+                .arg(
+                    Arg::with_name("mss")
+                        .short("M")
+                        .long("maxsegmentsize")
+                        .help("Maximum packet size to send, remember IP and UDP overhead")
+                        .default_value("1472")
+                        .takes_value(true)
                 ),
         )
         .get_matches();
@@ -421,13 +437,14 @@ async fn main() -> Result<()> {
             }
             let subscribe = get_str!(blk, "subscribe").into();
             let workers = get_usize!(blk, "sprayerthreads");
+            let mss = get_usize!(blk, "mss");
             Some(packetcrypt_sprayer::Config {
                 passwd,
                 bind,
                 workers,
                 subscribe_to: vec![subscribe],
-                always_send_all: false,
                 log_peer_stats: false,
+                mss,
             })
         } else {
             if blk.is_present("bind") {
@@ -454,8 +471,8 @@ async fn main() -> Result<()> {
             bind: get_str!(spray, "bind").into(),
             workers: get_usize!(spray, "threads"),
             subscribe_to: get_strs!(spray, "subscribe"),
-            always_send_all: false,
             log_peer_stats: true,
+            mss: get_usize!(spray, "mss"),
         })
         .await?;
     }

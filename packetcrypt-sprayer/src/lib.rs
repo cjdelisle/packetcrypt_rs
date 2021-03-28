@@ -192,6 +192,8 @@ struct SprayerS {
     peer_stats: Mutex<Vec<PeerStats>>,
     log_peer_stats: bool,
     chunk_pool: Arc<ChunkPool>,
+    pkt_size: usize,
+    self_addr: SocketAddr,
 }
 pub struct Sprayer(Arc<SprayerS>);
 
@@ -207,8 +209,8 @@ pub struct Config {
     pub bind: String,
     pub workers: usize,
     pub subscribe_to: Vec<String>,
-    pub always_send_all: bool,
     pub log_peer_stats: bool,
+    pub mss: usize,
 }
 
 fn raw_fd(s: &UdpSocket) -> i32 {
@@ -235,10 +237,12 @@ impl Sprayer {
         socket.set_nonblocking(true)?;
         let fd = raw_fd(&socket);
 
+        let pkt_size = (cfg.mss / PKT_LENGTH) * PKT_LENGTH;
+
         if let Some(ref err) = gso_err {
             warn!("UDP_GSO not supported {}, expect high CPU usage", err);
         } else {
-            let res = unsafe { packetcrypt_sys::UdpGro_enable(fd, PKT_LENGTH as i32) };
+            let res = unsafe { packetcrypt_sys::UdpGro_enable(fd, pkt_size as i32) };
             if res != 0 {
                 bail!("UdpGro_enable() failed {}", res);
             }
@@ -283,6 +287,8 @@ impl Sprayer {
             chunk_pool: Arc::new(ChunkPool {
                 q: Mutex::new(VecDeque::new()),
             }),
+            pkt_size,
+            self_addr: addr,
         })))
     }
 
@@ -569,16 +575,20 @@ impl SprayWorker {
             IpAddr::V6(a) => caddr.addr.copy_from_slice(&a.octets()),
             IpAddr::V4(a) => caddr.addr[0..4].copy_from_slice(&a.octets()),
         }
+        let max_len = 0xffff / PKT_LENGTH * PKT_LENGTH;
+        let pkt_size = if addr == self.g.0.self_addr {
+            max_len
+        } else {
+            self.g.0.pkt_size
+        } as i32;
         let ret = loop {
-            let max_len = 0xffff / PKT_LENGTH * PKT_LENGTH;
             let buf = &chunk.bytes[chunk.bcur..chunk.ecur];
             if buf.is_empty() {
                 break 0;
             }
             let len = std::cmp::min(buf.len(), max_len) as i32;
-            let ret = unsafe {
-                packetcrypt_sys::UdpGro_sendmsg(fd, &caddr, buf.as_ptr(), len, PKT_LENGTH as i32)
-            };
+            let ret =
+                unsafe { packetcrypt_sys::UdpGro_sendmsg(fd, &caddr, buf.as_ptr(), len, pkt_size) };
             if ret > 0 {
                 let uret = ret as usize;
                 let count = uret / PKT_LENGTH;
@@ -704,6 +714,9 @@ impl SprayWorker {
             return;
         } else {
             self.rchunk.ecur = res_len as usize;
+        }
+        if pkt_sz != self.g.0.pkt_size as i32 {
+            self.log(&|| info!("Hmmm pkt_sz is {}", pkt_sz));
         }
 
         // IP addr
