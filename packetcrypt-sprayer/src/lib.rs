@@ -367,7 +367,7 @@ impl Sprayer {
             let req = serde_json::to_string(&SprayerReq {
                 yes_please_dos_me_passwd: self.0.passwd.clone(),
                 num: 0,
-                count: 0,
+                count: 1,
             })
             .unwrap();
             debug!("subscribing to {}", peer);
