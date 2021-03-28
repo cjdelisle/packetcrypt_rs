@@ -572,6 +572,9 @@ impl SprayWorker {
         let ret = loop {
             let max_len = 0xffff / PKT_LENGTH * PKT_LENGTH;
             let buf = &chunk.bytes[chunk.bcur..chunk.ecur];
+            if buf.is_empty() {
+                break 0;
+            }
             let len = std::cmp::min(buf.len(), max_len) as i32;
             let ret = unsafe {
                 packetcrypt_sys::UdpGro_sendmsg(fd, &caddr, buf.as_ptr(), len, PKT_LENGTH as i32)
