@@ -328,11 +328,20 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
             hw: HeightWork,
             index: u32,
         }
+        let min_height = if let Some(w) = &*self.current_work.lock().unwrap() {
+            w.conf.current_height
+        } else {
+            0
+        };
         let mut v: Vec<Ai> = Vec::with_capacity(anns.len());
         for (bytes, i) in anns.iter().zip(0..) {
+            let block_height = packetcrypt_sys::parent_block_height(bytes);
+            if block_height < min_height {
+                continue;
+            }
             v.push(Ai {
                 hw: HeightWork {
-                    block_height: packetcrypt_sys::parent_block_height(bytes),
+                    block_height,
                     work: packetcrypt_sys::work_bits(bytes),
                 },
                 index: i,
