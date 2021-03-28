@@ -580,7 +580,7 @@ impl SprayWorker {
             // If same IP as our socket, this is going to internally use the loopback
             // which does not support GRO/GSO but does have a big MTU so we need to send
             // a max size packet otherwise CPU usage will spike.
-            self.log(&|| info!("sending max_len packet"));
+            //self.log(&|| info!("sending max_len packet"));
             max_len
         } else {
             self.g.0.pkt_size
@@ -723,8 +723,10 @@ impl SprayWorker {
             if pkt_sz != -1 {
                 self.log(&|| info!("Hmmm pkt_sz is {}, res_len is {}", pkt_sz, res_len));
             }
+        // This is when GRO was not invoked and it pulled just one packet
         } else {
-            self.log(&|| info!("pkt_sz is {}", pkt_sz));
+            //self.log(&|| info!("pkt_sz is {}", pkt_sz));
+            // GRO was invoked
         }
 
         // IP addr
