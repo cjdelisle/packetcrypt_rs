@@ -189,11 +189,35 @@ int UdpGro_sendmsg(int fd, const struct UdpGro_Sockaddr* addr, const uint8_t* da
     return size;
 }
 
+#ifndef SO_RCVBUFFORCE
+    #define SO_RCVBUFFORCE 0
+    #define HAS_RCVBUFFORCE 0
+#else
+    #define HAS_RCVBUFFORCE 1
+#endif
+
 int UdpGro_setRecvBuf(int fd, int bufSz)
 {
+    if (HAS_RCVBUFFORCE) {
+        if (setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &bufSz, sizeof(bufSz))) {
+            if (errno != EPERM) {
+                printf("Error in setsockopt SO_RCVBUFFORCE %d (%s)", errno, strerror(errno));
+                return -errno;
+            }
+        }    
+    }
     if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bufSz, sizeof(bufSz))) {
-        printf("Error in setsockopt SOL_SOCKET %d (%s)", errno, strerror(errno));
+        printf("Error in setsockopt SO_RCVBUF %d (%s)", errno, strerror(errno));
         return -errno;
+    }
+    int bufSz1 = 0;
+    socklen_t bufSz1l = sizeof(bufSz1);
+    if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bufSz1, &bufSz1l)) {
+        printf("Error in getsockopt SO_RCVBUF %d (%s)", errno, strerror(errno));
+        return -errno;
+    }
+    if (bufSz1 != bufSz) {
+        printf("Error Unable to set SOL_SOCKET %d (%s)", errno, strerror(errno));
     }
     return 0;
 }
