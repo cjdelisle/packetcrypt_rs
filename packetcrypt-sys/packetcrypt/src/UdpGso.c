@@ -184,6 +184,9 @@ int UdpGro_sendmsg(int fd, const struct UdpGro_Sockaddr* addr, const uint8_t* da
       size = sendmsg(fd, &h, 0);
     } while (size == -1 && errno == EINTR);
     if (size < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            return 0;
+        }
         return -errno;
     }
     return size;
