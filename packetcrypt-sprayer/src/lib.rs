@@ -576,7 +576,10 @@ impl SprayWorker {
             IpAddr::V4(a) => caddr.addr[0..4].copy_from_slice(&a.octets()),
         }
         let max_len = 0xffff / PKT_LENGTH * PKT_LENGTH;
-        let pkt_size = if addr == self.g.0.self_addr {
+        let pkt_size = if addr.ip() == self.g.0.self_addr.ip() {
+            // If same IP as our socket, this is going to internally use the loopback
+            // which does not support GRO/GSO but does have a big MTU so we need to send
+            // a max size packet otherwise CPU usage will spike.
             self.log(&|| info!("sending max_len packet"));
             max_len
         } else {
@@ -717,7 +720,11 @@ impl SprayWorker {
             self.rchunk.ecur = res_len as usize;
         }
         if pkt_sz != self.g.0.pkt_size as i32 {
-            self.log(&|| info!("Hmmm pkt_sz is {}, res_len is {}", pkt_sz, res_len));
+            if pkt_sz != -1 {
+                self.log(&|| info!("Hmmm pkt_sz is {}, res_len is {}", pkt_sz, res_len));
+            }
+        } else {
+            self.log(&|| info!("pkt_sz is {}", pkt_sz));
         }
 
         // IP addr
