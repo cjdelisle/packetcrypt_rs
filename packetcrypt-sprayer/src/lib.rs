@@ -604,13 +604,15 @@ impl SprayWorker {
         }
     }
 
-    fn try_send(&mut self) {
+    fn try_send(&mut self) -> bool {
         if self.tid == 0 {
             if let Some((e, to)) = self.g.send_subs() {
                 self.log(&|| info!("Error sending subscription to {}: {}", to, e));
             }
         }
+        let mut did_something = false;
         while let Some((mut chunk, addr)) = self.g.get_to_send(self.tid) {
+            did_something = true;
             if self.g.0.gso_ok {
                 self.send_gso(&mut chunk, addr);
             } else {
@@ -623,6 +625,7 @@ impl SprayWorker {
                 self.g.0.chunk_pool.give(chunk);
             }
         }
+        did_something
     }
 
     fn maybe_subscribe(&self, msg: &[u8], from: SocketAddr) {
@@ -740,8 +743,7 @@ impl SprayWorker {
     fn recv(&mut self) {
         if self.g.0.gso_ok {
             self.recv_gso();
-        }
-        if let Some(v) = self.recv_slow() {
+        } else if let Some(v) = self.recv_slow() {
             self.maybe_subscribe(&v.1, v.0);
         }
     }
@@ -753,11 +755,11 @@ impl SprayWorker {
         loop {
             self.rchunk.reset();
             self.recv();
-            self.try_send();
+            let sent_something = self.try_send();
             if self.g.0.log_peer_stats {
                 self.g.get_peer_stats();
             }
-            if self.rchunk.len() == 0 {
+            if self.rchunk.is_empty() && !sent_something {
                 std::thread::sleep(std::time::Duration::from_micros(100));
                 continue;
             }
