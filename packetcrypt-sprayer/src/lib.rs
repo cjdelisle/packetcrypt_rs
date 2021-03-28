@@ -61,6 +61,9 @@ impl Chunk {
     pub fn len(&self) -> usize {
         (self.ecur - self.bcur) / PKT_LENGTH
     }
+    pub fn cap(&self) -> usize {
+        CHUNK_LEN / PKT_LENGTH
+    }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -666,8 +669,10 @@ impl SprayWorker {
     // If there's a stub packet then this is returned
     fn recv_slow(&mut self) -> Option<(SocketAddr, Vec<u8>)> {
         let mut out = None;
-        self.rchunk.reset();
         loop {
+            if self.rchunk.ecur >= self.rchunk.bytes.len() {
+                break;
+            }
             let buf = &mut self.rchunk.bytes[self.rchunk.ecur..(self.rchunk.ecur + PKT_LENGTH)];
             match self.g.0.socket.recv_from(buf) {
                 Ok((len, fr)) => {
@@ -702,12 +707,16 @@ impl SprayWorker {
             addr: [0_u8; 16usize],
         };
         let mut pkt_sz = 0_i32;
+        let buf = &mut self.rchunk.bytes[self.rchunk.ecur..];
+        if buf.len() < PKT_LENGTH {
+            return;
+        }
         let res_len = unsafe {
             packetcrypt_sys::UdpGro_recvmsg(
                 fd,
                 &mut addr,
-                self.rchunk.bytes.as_mut_ptr(),
-                self.rchunk.bytes.len() as i32,
+                buf.as_mut_ptr(),
+                buf.len() as i32,
                 &mut pkt_sz,
             )
         };
@@ -716,13 +725,12 @@ impl SprayWorker {
                 self.log(&|| info!("Error reading sprayer socket {}", res_len));
             }
             return;
-        } else {
-            self.rchunk.ecur = res_len as usize;
         }
+        let len = res_len as usize;
         if pkt_sz != self.g.0.pkt_size as i32 {
             // This is when GRO was not invoked and it pulled just one packet
             if pkt_sz != -1 {
-                self.log(&|| info!("Hmmm pkt_sz is {}, res_len is {}", pkt_sz, res_len));
+                self.log(&|| info!("Hmmm pkt_sz is {}, len is {}", pkt_sz, len));
             }
         } else {
             //self.log(&|| info!("pkt_sz is {}", pkt_sz));
@@ -739,27 +747,26 @@ impl SprayWorker {
         };
 
         // Stub message at the end? maybe it's a subscribe...
-        let count = self.rchunk.ecur / PKT_LENGTH;
-        let full_len = count * PKT_LENGTH;
-        let stub_len = self.rchunk.ecur - full_len;
+        let count = len / PKT_LENGTH;
+        let anns_len = count * PKT_LENGTH;
+        let stub_len = len - anns_len;
         if stub_len != 0 {
             let mut x = [0_u8; PKT_LENGTH];
-            x[0..stub_len].copy_from_slice(&self.rchunk.bytes[full_len..self.rchunk.ecur]);
+            x[0..stub_len].copy_from_slice(&self.rchunk.bytes[anns_len..len]);
             self.maybe_subscribe(&x[0..stub_len], address);
         }
 
         if let Some(sub) = self.g.0.subscribed_to.get(&address) {
             sub.packets_received
                 .fetch_add(count, atomic::Ordering::Relaxed);
+            self.rchunk.ecur += len;
         } else {
             self.log(&|| {
                 warn!(
                     "Got message from unsubscribed node {} (len: {})",
-                    address, full_len
+                    address, len
                 )
             });
-            // We don't want any of this being received
-            self.rchunk.reset();
         }
     }
 
@@ -776,7 +783,6 @@ impl SprayWorker {
         info!("Launched sprayer thread");
         let mut overflow = 0;
         loop {
-            self.rchunk.reset();
             self.recv();
             let sent_something = self.try_send();
             if self.g.0.log_peer_stats {
@@ -784,6 +790,10 @@ impl SprayWorker {
             }
             if self.rchunk.is_empty() && !sent_something {
                 std::thread::sleep(std::time::Duration::from_micros(100));
+                continue;
+            }
+            if self.rchunk.len() < self.rchunk.cap() - 64 {
+                // keep polling until we have neatly a full buffer
                 continue;
             }
             let bufs = self
@@ -795,12 +805,12 @@ impl SprayWorker {
             if overflow > 0 && self.log(&|| info!("Send overflow of {} anns", overflow)) {
                 overflow = 0;
             }
-
             let handler = self.g.0.handler.read();
             match &*handler {
                 Some(h) => h.on_anns(&bufs),
                 None => (),
             }
+            self.rchunk.reset();
         }
     }
 }
