@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use anyhow::{bail, Context, Result};
-use lockfree::queue::Queue;
 use log::{debug, info, warn};
 use packetcrypt_util::protocol::SprayerReq;
 use packetcrypt_util::util;
+use parking_lot::{Mutex, RwLock};
 
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -12,8 +12,6 @@ use std::net::SocketAddr;
 use std::net::UdpSocket;
 use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
-use std::sync::Mutex;
-use std::sync::RwLock;
 
 // 1MB per send/recv chunk
 const ANN_PER_CHUNK: usize = 1024;
@@ -95,11 +93,11 @@ impl Chunk {
 }
 
 struct ChunkPool {
-    q: Queue<Box<Chunk>>,
+    q: Mutex<VecDeque<Box<Chunk>>>,
 }
 impl ChunkPool {
     fn take(&self) -> Box<Chunk> {
-        if let Some(c) = self.q.pop() {
+        if let Some(c) = self.q.lock().pop_back() {
             c
         } else {
             Box::new(Chunk {
@@ -110,7 +108,7 @@ impl ChunkPool {
         }
     }
     fn give(&self, bc: Box<Chunk>) {
-        self.q.push(bc)
+        self.q.lock().push_back(bc)
     }
 }
 
@@ -275,24 +273,26 @@ impl Sprayer {
             peer_counters: Mutex::new(HashMap::new()),
             peer_stats: Mutex::new(Vec::new()),
             log_peer_stats: cfg.log_peer_stats,
-            chunk_pool: Arc::new(ChunkPool { q: Queue::new() }),
+            chunk_pool: Arc::new(ChunkPool {
+                q: Mutex::new(VecDeque::new()),
+            }),
         })))
     }
 
     pub fn set_handler<T: 'static + OnAnns>(&self, handler: T) {
-        self.0.handler.write().unwrap().replace(Box::new(handler));
+        self.0.handler.write().replace(Box::new(handler));
     }
 
     pub fn push_anns(&self, anns: &[&[u8]]) -> usize {
         let oldest_allowed_time = (util::now_ms() / 1000) as usize - SECONDS_UNTIL_SUB_TIMEOUT;
-        let m = self.0.m.read().unwrap();
+        let m = self.0.m.read();
         let mut overflow = 0;
         for s in &m.subscribers {
             let lus = s.last_update_sec.load(atomic::Ordering::Relaxed);
             if lus < oldest_allowed_time {
                 continue;
             }
-            let mut sq = s.send_queue.lock().unwrap();
+            let mut sq = s.send_queue.lock();
             for ann in anns {
                 overflow += sq.push_ann(ann);
             }
@@ -317,15 +317,15 @@ impl Sprayer {
     }
 
     fn get_to_send(&self, tid: usize) -> Option<(Box<Chunk>, SocketAddr)> {
-        let m = self.0.m.read().unwrap();
+        let m = self.0.m.read();
         let start = tid % m.subscribers.len();
         for sub in &m.subscribers[start..] {
-            if let Some(chunk) = sub.send_queue.lock().unwrap().q.pop_back() {
+            if let Some(chunk) = sub.send_queue.lock().q.pop_back() {
                 return Some((chunk, sub.peer));
             }
         }
         for sub in &m.subscribers[0..start] {
-            if let Some(chunk) = sub.send_queue.lock().unwrap().q.pop_back() {
+            if let Some(chunk) = sub.send_queue.lock().q.pop_back() {
                 return Some((chunk, sub.peer));
             }
         }
@@ -333,10 +333,10 @@ impl Sprayer {
     }
 
     fn return_to_send(&self, chunk: Box<Chunk>, addr: SocketAddr) {
-        let m = self.0.m.read().unwrap();
+        let m = self.0.m.read();
         for sub in &m.subscribers {
             if sub.peer == addr {
-                sub.send_queue.lock().unwrap().q.push_back(chunk);
+                sub.send_queue.lock().q.push_back(chunk);
                 return;
             }
         }
@@ -374,7 +374,7 @@ impl Sprayer {
         let now_sec = (util::now_ms() / 1000) as usize;
         let oldest_allowed_time = now_sec - SECONDS_UNTIL_SUB_TIMEOUT;
         {
-            let m = self.0.m.read().unwrap();
+            let m = self.0.m.read();
             for s in &m.subscribers {
                 if s.peer == from {
                     s.last_update_sec.store(now_sec, atomic::Ordering::Relaxed);
@@ -383,7 +383,7 @@ impl Sprayer {
             }
         }
         {
-            let mut m = self.0.m.write().unwrap();
+            let mut m = self.0.m.write();
             let mut i = 0;
             while i < m.subscribers.len() {
                 let s = &mut m.subscribers[i];
@@ -415,20 +415,20 @@ impl Sprayer {
         let now_sec = (now_ms / 1000) as usize;
         let last_computed_stats = self.0.last_computed_stats.load(atomic::Ordering::Relaxed);
         if last_computed_stats + STATS_EVERY > now_sec {
-            return self.0.peer_stats.lock().unwrap().clone();
+            return self.0.peer_stats.lock().clone();
         }
         self.0
             .last_computed_stats
             .store(now_sec, atomic::Ordering::Relaxed);
 
-        let mut ps = self.0.peer_counters.lock().unwrap();
-        let m = self.0.m.read().unwrap();
+        let mut ps = self.0.peer_counters.lock();
+        let m = self.0.m.read();
         let mut peer_stats = Vec::new();
         if self.0.log_peer_stats {
             info!("Sprayer links:");
         }
         for sub in &m.subscribers {
-            let packets_sent_ever = { sub.send_queue.lock().unwrap().next_num };
+            let packets_sent_ever = { sub.send_queue.lock().next_num };
             match ps.get_mut(&sub.peer) {
                 Some(p) => {
                     let packets = (packets_sent_ever - p.last_packets_sent) as u64;
@@ -501,7 +501,7 @@ impl Sprayer {
                 }
             }
         }
-        *self.0.peer_stats.lock().unwrap() = peer_stats.clone();
+        *self.0.peer_stats.lock() = peer_stats.clone();
         peer_stats
     }
 }
@@ -743,7 +743,7 @@ impl SprayWorker {
                 overflow = 0;
             }
 
-            let handler = self.g.0.handler.read().unwrap();
+            let handler = self.g.0.handler.read();
             match &*handler {
                 Some(h) => h.on_anns(&bufs),
                 None => (),

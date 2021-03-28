@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <netinet/in.h>
+#include <stdio.h>
 
 #ifndef SOCK_NONBLOCK
     #define SOCK_NONBLOCK 0
