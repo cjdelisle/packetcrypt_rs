@@ -3,7 +3,7 @@ use num_traits::ToPrimitive;
 use num_traits::{One, Zero};
 use std::cmp::min;
 
-fn bn_for_compact(compact: u32) -> BigUint {
+pub fn bn_for_compact(compact: u32) -> BigUint {
     let size = compact >> 24;
     if (compact & 0x00800000) != 0 {
         panic!("Negative bignum not supported");
@@ -142,17 +142,17 @@ pub fn pc_is_min_ann_diff_ok(ann_tar: u32) -> bool {
     false
 }
 
-pub fn tar_to_difficulty(ann_tar: u32) -> String {
+pub fn tar_to_diff(ann_tar: u32) -> f64 {
     if is_valid(ann_tar) {
         let tar = bn_for_compact(ann_tar);
         if !tar.is_zero() {
             let work = work_for_tar(tar);
             if !work.is_zero() && work.bits() < 257 {
-                return work.to_string();
+                return work.to_f64().unwrap_or(0.0);
             }
         }
     }
-    "<invalid>".to_owned()
+    0.0
 }
 
 #[cfg(all(test, feature = "difficulty-test"))]

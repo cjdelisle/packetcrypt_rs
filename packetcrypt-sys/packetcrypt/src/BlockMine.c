@@ -43,6 +43,7 @@ typedef struct Global_s {
     uint32_t annCount;
     uint32_t maxAnns;
     uint32_t effectiveTarget;
+    uint32_t jobNum;
 
     // Synchronization
     pthread_mutex_t lock;
@@ -120,6 +121,8 @@ struct Worker_s {
 
 #define HASHES_PER_CYCLE 2000
 
+#define NOISY_LOG_SHARES 0
+
 // Worker
 static void mine(Worker_t* w)
 {
@@ -132,14 +135,10 @@ static void mine(Worker_t* w)
 
     uint32_t lowNonce = w->lowNonce;
 
-    for (;;) {
-        // if (hdr.timeSeconds != (uint32_t) t.tv0.tv_sec && !w->bm->beDeterministic) {
-        //     lowNonce = 0;
-        //     hdr.timeSeconds = (uint32_t) t.tv0.tv_sec;
-        // }
-        Buf32_t hdrHash;
-        Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
+    Buf32_t hdrHash;
+    Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
 
+    for (;;) {
         for (int i = 0; i < HASHES_PER_CYCLE; i++) {
             CryptoCycle_init(&w->pcState, &hdrHash, ++lowNonce);
             //MineResult_t res;
@@ -155,6 +154,22 @@ static void mine(Worker_t* w)
             CryptoCycle_smul(&w->pcState);
             CryptoCycle_final(&w->pcState);
             if (!Work_check(w->pcState.bytes, w->g->effectiveTarget)) { continue; }
+
+            if (NOISY_LOG_SHARES) {
+                printf("share / %u / %u\n", hdr.nonce, lowNonce);
+                printf("effective target %x\n", w->g->effectiveTarget);
+                for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
+                printf("\n");
+                for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
+                printf("\n");
+                for (int j = 0; j < 4; j++) {
+                    uint64_t loc = res.ann_mlocs[j];
+                    printf("%llu - ", (long long unsigned) loc);
+                    for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
+                    printf("\n");
+                }
+            }
+
             res.low_nonce = lowNonce;
             res.high_nonce = hdr.nonce;
             //Buf_OBJCPY(&res.hdr, &hdr);
@@ -329,13 +344,15 @@ void BlockMine_mine(BlockMine_t* bm,
     const uint8_t* header,
     uint32_t annCount,
     const uint32_t* annIndexes,
-    uint32_t effectiveTarget)
+    uint32_t effectiveTarget,
+    uint32_t jobNum)
 {
     BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
     reqState(ctx, ThreadState_STOPPED);
     waitState(ctx, ThreadState_STOPPED);
     ctx->g.annCount = annCount;
     ctx->g.effectiveTarget = effectiveTarget;
+    ctx->g.jobNum = jobNum;
     memcpy(&ctx->g.hai->header, header, sizeof(PacketCrypt_BlockHeader_t));
     // Assertion
     memset(ctx->g.hai->index, 0xff, ctx->pub.maxAnns * 4);
@@ -351,4 +368,36 @@ void BlockMine_stop(BlockMine_t* bm) {
     BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
     reqState(ctx, ThreadState_STOPPED);
     waitState(ctx, ThreadState_STOPPED);
+}
+
+void BlockMine_fakeMine(BlockMine_t* bm,
+    BlockMine_Res_t* res,
+    const uint8_t* header,
+    uint32_t annCount,
+    const uint32_t* annIndexes)
+{
+    BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
+    CryptoCycle_State_t pcState;
+    PacketCrypt_BlockHeader_t hdr;
+    memcpy(&hdr, header, sizeof(PacketCrypt_BlockHeader_t));
+    hdr.nonce = 123;
+    uint32_t lowNonce = 456;
+    Buf32_t hdrHash;
+    Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
+    for (;;) {
+        CryptoCycle_init(&pcState, &hdrHash, ++lowNonce);
+        for (int j = 0; j < 4; j++) {
+            uint64_t itnum = res->ann_llocs[j] = CryptoCycle_getItemNo(&pcState) % annCount;
+            assert(itnum < annCount);
+            uint64_t x = res->ann_mlocs[j] = annIndexes[itnum];
+            CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &ctx->g.anns[x];
+            assert(CryptoCycle_update(&pcState, it));
+        }
+        CryptoCycle_smul(&pcState);
+        CryptoCycle_final(&pcState);
+        if (!Work_check(pcState.bytes, 0x207fffff)) { continue; }
+        break;
+    }
+    res->high_nonce = hdr.nonce;
+    res->low_nonce = lowNonce;
 }

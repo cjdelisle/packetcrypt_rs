@@ -8,9 +8,13 @@ pub struct AnnHandlerCfg {
     pub num_workers: usize,
     pub input_queue_len: usize,
     pub public_url: String,
-    pub bind_port: u16,
+    pub bind_pub: String,
     pub files_to_keep: usize,
-    pub block_miner_passwd: Option<String>,
+
+    pub block_miner_passwd: String,
+    pub bind_pvt: String,
+    pub spray_workers: u32,
+    pub subscribe_to: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -19,7 +23,4 @@ pub struct Config {
     pub master_url: String,
     pub root_workdir: String,
     pub ann_handler: HashMap<String, AnnHandlerCfg>,
-}
-pub fn get_ah_workdir(root_workdir: &str, ahc: &AnnHandlerCfg) -> String {
-    format!("{}/ann_{}", root_workdir, ahc.bind_port)
 }

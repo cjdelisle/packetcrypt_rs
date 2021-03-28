@@ -222,3 +222,10 @@ pub struct BlkShare {
     #[serde(with = "SerHexSeq::<Strict>")]
     pub header_and_proof: Bytes,
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct SprayerReq {
+    pub yes_please_dos_me_passwd: String,
+    pub num: u32,
+    pub count: u32,
+}

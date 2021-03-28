@@ -28,10 +28,16 @@ typedef struct {
 } PacketCryptProof_Tree_t;
 _Static_assert(sizeof(PacketCryptProof_Tree_t) == 8+32+sizeof(Entry_t), "");
 
-PacketCryptProof_Tree_t* PacketCryptProof_allocTree(uint64_t totalAnns);
-uint64_t PacketCryptProof_prepareTree(PacketCryptProof_Tree_t* tree);
+typedef struct {
+    uint64_t totalAnns;
+    Buf32_t root;
+    Entry_t entries[];
+} PacketCryptProof_Tree2_t;
+_Static_assert(sizeof(PacketCryptProof_Tree2_t) == sizeof(PacketCryptProof_Tree_t) - sizeof(Entry_t), "");
 
-void PacketCryptProof_computeTree(PacketCryptProof_Tree_t* tree);
+uint64_t PacketCryptProof_entryCount(uint64_t totalAnns);
+
+PacketCryptProof_Tree_t* PacketCryptProof_allocTree(uint64_t totalAnns);
 
 void PacketCryptProof_freeTree(PacketCryptProof_Tree_t* bm);
 

@@ -58,12 +58,6 @@ pub fn new(miner_id: u32, workers: usize) -> (AnnMiner, UnboundedReceiver<AnnRes
     )
 }
 
-pub fn encryptions_per_second(miner: &AnnMiner) -> f64 {
-    unsafe {
-        packetcrypt_sys::AnnMiner_getEncryptionsPerSecond(*miner.miner.lock().unwrap().get_mut())
-    }
-}
-
 const ANN_VERSION: c_int = 1;
 
 pub fn start(

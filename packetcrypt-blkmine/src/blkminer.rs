@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use anyhow::{bail, Result};
-use log::warn;
 use packetcrypt_sys::{BlockMine_Res_t, BlockMine_t};
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_void};
 use std::pin::Pin;
-use std::sync::Mutex;
 use std::sync::RwLock;
 
 #[derive(Default)]
@@ -16,11 +14,12 @@ pub struct BlkResult {
     pub ann_mlocs: [u32; 4],
 }
 
-// This should be small so we don't have tons of (stale) shares piling up
-const SHARE_CHAN_SZ: usize = 16;
-
 struct CallbackCtx {
-    sender: Mutex<tokio::sync::mpsc::Sender<BlkResult>>,
+    handler: RwLock<Option<Box<dyn OnShare>>>,
+}
+
+pub trait OnShare: 'static + Sync + Send {
+    fn on_share(&self, res: BlkResult);
 }
 
 #[allow(clippy::field_reassign_with_default)]
@@ -33,24 +32,22 @@ pub unsafe extern "C" fn on_share_found(resp: *mut BlockMine_Res_t, vctx: *mut c
         res.ann_mlocs[i] = (*resp).ann_mlocs[i];
     }
     let ctx = vctx as *const CallbackCtx;
-    if let Err(e) = (*ctx).sender.lock().unwrap().try_send(res) {
-        warn!("Unable to send block share to channel because [{}]", e);
+    if let Some(handler) = &*(*ctx).handler.read().unwrap() {
+        handler.on_share(res);
     }
 }
 
 pub struct BlkMiner {
-    _cbc: Pin<Box<CallbackCtx>>,
-    miner: RwLock<*mut BlockMine_t>,
-    pub receiver: Mutex<Option<tokio::sync::mpsc::Receiver<BlkResult>>>,
+    cbc: Pin<Box<CallbackCtx>>,
+    miner: *mut BlockMine_t,
     pub max_anns: u32,
 }
 unsafe impl Send for BlkMiner {}
 unsafe impl Sync for BlkMiner {}
 impl Drop for BlkMiner {
     fn drop(&mut self) {
-        let m_l = self.miner.write().unwrap();
         unsafe {
-            packetcrypt_sys::BlockMine_destroy(*m_l);
+            packetcrypt_sys::BlockMine_destroy(self.miner);
         }
     }
 }
@@ -65,9 +62,8 @@ unsafe fn mk_str(ptr: *const c_char) -> &'static str {
 
 impl BlkMiner {
     pub fn new(maxmem: u64, threads: u32) -> Result<BlkMiner> {
-        let (sender, receiver) = tokio::sync::mpsc::channel(SHARE_CHAN_SZ);
         let mut cbc = Box::pin(CallbackCtx {
-            sender: Mutex::new(sender),
+            handler: RwLock::new(None),
         });
         let ptr = (&mut *cbc as *mut CallbackCtx) as *mut c_void;
         let (max_anns, miner) = unsafe {
@@ -87,42 +83,64 @@ impl BlkMiner {
             }
         };
         Ok(BlkMiner {
-            _cbc: cbc,
-            miner: RwLock::new(miner),
-            receiver: Mutex::new(Some(receiver)),
+            cbc,
+            miner,
             max_anns,
         })
     }
+    pub fn set_handler(&self, handler: impl OnShare) {
+        self.cbc.handler.write().unwrap().replace(Box::new(handler));
+    }
     pub fn get_ann(&self, index: u32, ann_out: &mut [u8]) {
-        let m_l = self.miner.read().unwrap();
         unsafe {
-            packetcrypt_sys::BlockMine_getAnn(*m_l, index, ann_out.as_mut_ptr());
+            packetcrypt_sys::BlockMine_getAnn(self.miner, index, ann_out.as_mut_ptr());
         }
     }
     pub fn put_ann(&self, index: u32, ann: &[u8]) {
-        let m_l = self.miner.read().unwrap();
         unsafe {
-            packetcrypt_sys::BlockMine_updateAnn(*m_l, index, ann.as_ptr());
+            packetcrypt_sys::BlockMine_updateAnn(self.miner, index, ann.as_ptr());
         }
     }
     pub fn hashes_per_second(&self) -> i64 {
-        let m_l = self.miner.read().unwrap();
-        unsafe { packetcrypt_sys::BlockMine_getHashesPerSecond(*m_l) }
+        unsafe { packetcrypt_sys::BlockMine_getHashesPerSecond(self.miner) }
     }
-    pub fn mine(&self, block_header: &[u8], ann_indexes: &[u32], target: u32) {
-        let m_l = self.miner.write().unwrap();
+    pub fn mine(&self, block_header: &[u8], ann_indexes: &[u32], target: u32, job_num: u32) {
         unsafe {
             packetcrypt_sys::BlockMine_mine(
-                *m_l,
+                self.miner,
                 block_header.as_ptr(),
                 ann_indexes.len() as u32,
                 ann_indexes.as_ptr(),
                 target,
+                job_num,
             )
         }
     }
+    pub fn fake_mine(&self, block_header: &[u8], ann_indexes: &[u32]) -> BlkResult {
+        let mut res = BlockMine_Res_t {
+            ann_llocs: [0_u32; 4],
+            ann_mlocs: [0_u32; 4],
+            high_nonce: 0,
+            low_nonce: 0,
+            job_num: 0,
+        };
+        unsafe {
+            packetcrypt_sys::BlockMine_fakeMine(
+                self.miner,
+                &mut res as *mut BlockMine_Res_t,
+                block_header.as_ptr(),
+                ann_indexes.len() as u32,
+                ann_indexes.as_ptr(),
+            );
+        };
+        BlkResult {
+            ann_llocs: res.ann_llocs,
+            ann_mlocs: res.ann_mlocs,
+            high_nonce: res.high_nonce,
+            low_nonce: res.low_nonce,
+        }
+    }
     pub fn stop(&self) {
-        let m_l = self.miner.write().unwrap();
-        unsafe { packetcrypt_sys::BlockMine_stop(*m_l) }
+        unsafe { packetcrypt_sys::BlockMine_stop(self.miner) }
     }
 }

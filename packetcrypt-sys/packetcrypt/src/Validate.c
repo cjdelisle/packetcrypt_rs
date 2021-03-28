@@ -103,6 +103,12 @@ static bool isWorkOk(const CryptoCycle_State_t* ccState,
 {
     uint32_t effectiveTarget = Difficulty_getEffectiveTarget(
         target, cb->annLeastWorkTarget, cb->numAnns);
+    // printf("Checking share with %llu %x %x -> %x",
+    //     (long long unsigned)cb->numAnns,
+    //     cb->annLeastWorkTarget,
+    //     target,
+    //     effectiveTarget
+    // );
     return Work_check(ccState->bytes, effectiveTarget);
 }
 
@@ -173,8 +179,10 @@ int Validate_checkBlock(const PacketCrypt_HeaderAndProof_t* hap,
     // Validate announcements
     for (int i = 0; i < PacketCrypt_NUM_ANNS; i++) {
         const PacketCrypt_Announce_t* ann = &hap->announcements[i];
-        if (Validate_checkAnn(NULL, ann, &blockHashes[i * 32], vctx)) {
-            return Validate_checkBlock_ANN_INVALID(i);
+        if (blockHashes != NULL) {
+            if (Validate_checkAnn(NULL, ann, &blockHashes[i * 32], vctx)) {
+                return Validate_checkBlock_ANN_INVALID(i);
+            }
         }
         uint32_t effectiveAnnTarget =
             Difficulty_degradeAnnouncementTarget(ann->hdr.workBits,

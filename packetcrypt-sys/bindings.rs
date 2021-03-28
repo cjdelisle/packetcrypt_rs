@@ -443,6 +443,19 @@ extern "C" {
         vctx: *mut PacketCrypt_ValidateCtx_t,
     ) -> ::std::os::raw::c_int;
 }
+pub const Validate_checkBlock_Res_Validate_checkBlock_OK: Validate_checkBlock_Res = 0;
+pub const Validate_checkBlock_Res_Validate_checkBlock_SHARE_OK: Validate_checkBlock_Res = 256;
+pub const Validate_checkBlock_Res_Validate_checkBlock_ANN_INVALID_: Validate_checkBlock_Res = 512;
+pub const Validate_checkBlock_Res_Validate_checkBlock_ANN_INSUF_POW_: Validate_checkBlock_Res = 768;
+pub const Validate_checkBlock_Res_Validate_checkBlock_ANN_SIG_INVALID_: Validate_checkBlock_Res =
+    1024;
+pub const Validate_checkBlock_Res_Validate_checkBlock_ANN_CONTENT_INVALID_:
+    Validate_checkBlock_Res = 1280;
+pub const Validate_checkBlock_Res_Validate_checkBlock_PCP_INVAL: Validate_checkBlock_Res = 1536;
+pub const Validate_checkBlock_Res_Validate_checkBlock_PCP_MISMATCH: Validate_checkBlock_Res = 1792;
+pub const Validate_checkBlock_Res_Validate_checkBlock_INSUF_POW: Validate_checkBlock_Res = 2048;
+pub const Validate_checkBlock_Res_Validate_checkBlock_BAD_COINBASE: Validate_checkBlock_Res = 2304;
+pub type Validate_checkBlock_Res = ::std::os::raw::c_uint;
 extern "C" {
     pub fn Validate_checkBlock_outToString(
         code: ::std::os::raw::c_int,
@@ -578,8 +591,55 @@ extern "C" {
 extern "C" {
     pub fn AnnMiner_free(miner: *mut AnnMiner_t);
 }
-extern "C" {
-    pub fn AnnMiner_getEncryptionsPerSecond(ctx: *const AnnMiner_t) -> f64;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ProofTree_Entry_t {
+    pub hash: [u8; 32usize],
+    pub start: u64,
+    pub end: u64,
+}
+#[test]
+fn bindgen_test_layout_ProofTree_Entry_t() {
+    assert_eq!(
+        ::std::mem::size_of::<ProofTree_Entry_t>(),
+        48usize,
+        concat!("Size of: ", stringify!(ProofTree_Entry_t))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<ProofTree_Entry_t>(),
+        8usize,
+        concat!("Alignment of ", stringify!(ProofTree_Entry_t))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<ProofTree_Entry_t>())).hash as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(ProofTree_Entry_t),
+            "::",
+            stringify!(hash)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<ProofTree_Entry_t>())).start as *const _ as usize },
+        32usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(ProofTree_Entry_t),
+            "::",
+            stringify!(start)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<ProofTree_Entry_t>())).end as *const _ as usize },
+        40usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(ProofTree_Entry_t),
+            "::",
+            stringify!(end)
+        )
+    );
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -594,13 +654,16 @@ extern "C" {
     pub fn ProofTree_destroy(arg1: *mut ProofTree_t);
 }
 extern "C" {
-    pub fn ProofTree_clear(arg1: *mut ProofTree_t);
+    pub fn ProofTree_hashPair(pt: *mut ProofTree_t, odx: u64, idx: u64);
 }
 extern "C" {
-    pub fn ProofTree_append(arg1: *mut ProofTree_t, hash: *const u8, mloc: u32);
+    pub fn ProofTree_complete(pt: *mut ProofTree_t, rootHashOut: *mut u8) -> u64;
 }
 extern "C" {
-    pub fn ProofTree_compute(arg1: *mut ProofTree_t, hashOut: *mut u8, mlocOut: *mut u32) -> u32;
+    pub fn ProofTree_putEntry(pt: *mut ProofTree_t, index: u32, entry: *const ProofTree_Entry_t);
+}
+extern "C" {
+    pub fn ProofTree_prepare2(pt: *mut ProofTree_t, totalAnns: u64);
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -658,12 +721,13 @@ pub struct BlockMine_Res_s {
     pub low_nonce: u32,
     pub ann_mlocs: [u32; 4usize],
     pub ann_llocs: [u32; 4usize],
+    pub job_num: u32,
 }
 #[test]
 fn bindgen_test_layout_BlockMine_Res_s() {
     assert_eq!(
         ::std::mem::size_of::<BlockMine_Res_s>(),
-        40usize,
+        44usize,
         concat!("Size of: ", stringify!(BlockMine_Res_s))
     );
     assert_eq!(
@@ -709,6 +773,16 @@ fn bindgen_test_layout_BlockMine_Res_s() {
             stringify!(BlockMine_Res_s),
             "::",
             stringify!(ann_llocs)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<BlockMine_Res_s>())).job_num as *const _ as usize },
+        40usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(BlockMine_Res_s),
+            "::",
+            stringify!(job_num)
         )
     );
 }
@@ -823,8 +897,46 @@ extern "C" {
         annCount: u32,
         annIndexes: *const u32,
         effectiveTarget: u32,
+        jobNum: u32,
     );
 }
 extern "C" {
     pub fn BlockMine_stop(bm: *mut BlockMine_t);
+}
+extern "C" {
+    pub fn BlockMine_fakeMine(
+        bm: *mut BlockMine_t,
+        resOut: *mut BlockMine_Res_t,
+        header: *const u8,
+        annCount: u32,
+        annIndexes: *const u32,
+    );
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ExportMe {
+    pub a: Validate_checkBlock_Res,
+}
+#[test]
+fn bindgen_test_layout_ExportMe() {
+    assert_eq!(
+        ::std::mem::size_of::<ExportMe>(),
+        4usize,
+        concat!("Size of: ", stringify!(ExportMe))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<ExportMe>(),
+        4usize,
+        concat!("Alignment of ", stringify!(ExportMe))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<ExportMe>())).a as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(ExportMe),
+            "::",
+            stringify!(a)
+        )
+    );
 }

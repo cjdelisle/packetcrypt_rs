@@ -59,6 +59,7 @@ fn main() {
             .clang_args(&["-I", "packetcrypt/include"])
             .generate_comments(false)
             .whitelist_function(".*")
+            .whitelist_type("ExportMe")
             .generate()
             .expect("Unable to generate bindings")
             .write_to_file("bindings.rs")

@@ -10,6 +10,7 @@ use packetcrypt_pool::poolcfg::AnnHandlerCfg;
 use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol::{AnnPostReply, AnnsEvent, BlockInfo, MasterConf};
+use packetcrypt_util::sprayer;
 use packetcrypt_util::{hash, util};
 use regex::Regex;
 use std::cmp::{max, min};
@@ -85,6 +86,8 @@ pub struct Global {
     sockaddr: std::net::SocketAddr,
 
     skip_check_chance: u8,
+
+    sprayer: sprayer::Sprayer,
 }
 
 struct Worker {
@@ -217,6 +220,17 @@ fn enqueue_write(w: &mut Worker, output: &mut Output) {
         debug!("Nothing to write");
         return;
     }
+    w.global.sprayer.push_anns(
+        &output
+            .out
+            .iter()
+            .map(|ann| {
+                let mut out = sprayer::Packet::default();
+                out.ann_bytes_mut().copy_from_slice(&ann.bytes[..]);
+                out
+            })
+            .collect::<Vec<_>>()[..],
+    );
     let mut anns = bytes::BytesMut::with_capacity(len);
     for a in output.out.drain(..len) {
         anns.put(a.bytes);
@@ -538,6 +552,16 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         .try_into()
         .unwrap();
 
+    let bind_pub: SocketAddr = cfg.bind_pub.parse()?;
+    let sprayer = sprayer::Sprayer::new(&sprayer::Config {
+        passwd: cfg.block_miner_passwd.clone(),
+        bind: cfg.bind_pvt.clone(),
+        workers: cfg.spray_workers as usize,
+        subscribe_to: cfg.subscribe_to.clone(),
+        always_send_all: true,
+        log_peer_stats: true,
+    })?;
+
     let (submit_send, submit_recv) = crossbeam_channel::bounded(cfg.input_queue_len);
     let (pc_update_send, pc_update_recv) = crossbeam_channel::bounded(POOL_UPDATE_QUEUE_LEN);
     let global = Arc::new(Global {
@@ -549,7 +573,7 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         pc_update_send,
         fileno: AtomicUsize::new(0),
         pmc: pmc.clone(),
-        sockaddr: ([0; 16], cfg.bind_port).into(),
+        sockaddr: bind_pub,
         skip_check_chance: 255 * cfg.skip_check_chance as u8,
         ann_tbl: std::sync::RwLock::new(AnnTable {
             files: HashMap::new(),
@@ -557,6 +581,7 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
             top_file: 0,
         }),
         cfg,
+        sprayer,
     });
 
     Ok(global)
@@ -576,16 +601,18 @@ async fn handle_get(
             },
         )));
     }
-    match &ah.cfg.block_miner_passwd {
-        None => (),
-        Some(p) => {
-            if passwd.as_deref() != Some(p) {
-                return Ok(Box::new(warp::reply::with_status(
-                    warp::reply::json(&"x-pc-passwd incorrect".to_owned()),
-                    warp::http::StatusCode::UNAUTHORIZED,
-                )));
-            }
+    if let Some(pass) = passwd {
+        if ah.cfg.block_miner_passwd != pass {
+            return Ok(Box::new(warp::reply::with_status(
+                warp::reply::json(&"x-pc-passwd incorrect".to_owned()),
+                warp::http::StatusCode::UNAUTHORIZED,
+            )));
         }
+    } else {
+        return Ok(Box::new(warp::reply::with_status(
+            warp::reply::json(&"x-pc-passwd missing".to_owned()),
+            warp::http::StatusCode::UNAUTHORIZED,
+        )));
     }
     if let Some(f) = tbl.files.get(&filename) {
         Ok(Box::new(warp::http::Response::builder().body(f.clone())))
@@ -692,6 +719,8 @@ pub async fn start(ah: &AnnHandler) {
             worker_loop(g);
         });
     }
+
+    ah.sprayer.start();
 }
 
 #[cfg(test)]

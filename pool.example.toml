@@ -11,6 +11,13 @@ root_workdir = "./datastore/pool"
 # You select the one you want using the command line, for example:
 # packetcrypt ah --config /path/to/config.toml ah0
 [ann_handler.ah0]
+    # This is an optional password, if specified then no block miners will be
+    # able to use this handler unless they are using the same password on their
+    # command line using the -P or --handlerpass flag
+    # This will help prevent free-loader pools which pull announcements from
+    # your handlers but don't remunerate the announcement miners.
+    #block_miner_passwd = "you_can_put_a_secret_here"
+
     # Randomly skip validation of some announcements to reduce CPU effort
     # Set to 0 to check all announcements.
     skip_check_chance = 0.5
@@ -29,7 +36,16 @@ root_workdir = "./datastore/pool"
     # Bind to this port
     # NOTE: To bind low ports with non-root user:
     # sudo setcap CAP_NET_BIND_SERVICE=+eip $(which packetcrypt)
-    bind_port = 80
+    bind_pub = "0.0.0.0:80"
+
+    # Bind this port for the sprayer component, this should be on your local network
+    bind_pvt = "192.168.123.234:6666"
+
+    # How many threads to occupy with running sprayer
+    spray_workers = 8
+
+    # Subscribe to other sprayer nodes? Typically a handler will not do this.
+    subscribe_to = []
 
     # Keep this many of the newest ann files
     files_to_keep = 500

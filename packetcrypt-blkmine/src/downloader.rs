@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
-use anyhow::{bail, Result};
+use anyhow::{bail, format_err, Result};
 use log::{debug, info};
 use packetcrypt_util::protocol::AnnIndex;
 use packetcrypt_util::util;
@@ -33,6 +33,7 @@ pub struct DownloaderS<T: OnAnns> {
     onanns: T,
     downloader_count: usize,
     url_base: String,
+    handler_pass: Option<String>,
     m: Mutex<DownloaderM>,
 }
 pub type Downloader<T> = Arc<DownloaderS<T>>;
@@ -41,6 +42,7 @@ struct AhPollWorker<T: OnAnns> {
     url_base: String,
     worker_num: usize,
     ahp: Downloader<T>,
+    handler_pass: Option<String>,
     wakeup: broadcast::Receiver<()>,
     client: reqwest::Client,
 }
@@ -50,6 +52,34 @@ async fn done_downloading<T: OnAnns>(apw: &AhPollWorker<T>, success: bool) {
     ahp_l.downloading -= 1;
     if success {
         ahp_l.downloaded += 1;
+    }
+}
+
+async fn get_url_bin(
+    url: &str,
+    ignore_statuses: &[u16],
+    client: &reqwest::Client,
+    passwd: &Option<String>,
+) -> Result<Option<bytes::Bytes>> {
+    loop {
+        let mut req = client.get(url);
+        if let Some(p) = passwd {
+            req = req.header("x-pc-passwd", p);
+        }
+        let res = req.send().await?;
+        return match res.status() {
+            reqwest::StatusCode::OK => Ok(Some(res.bytes().await?)),
+            reqwest::StatusCode::MULTIPLE_CHOICES => {
+                continue;
+            }
+            st => {
+                if ignore_statuses.contains(&st.as_u16()) {
+                    Ok(None)
+                } else {
+                    Err(format_err!("Status code was {:?}", st))
+                }
+            }
+        };
     }
 }
 
@@ -70,15 +100,12 @@ async fn poll_ann_handler_worker<T: OnAnns>(mut apw: AhPollWorker<T>) {
         } {
             to_dl
         } else {
-            if let Err(e) = apw.wakeup.recv().await {
-                info!("{} error receiving wakeup {}", worker_id, e);
-                util::sleep_ms(5_000).await;
-            }
+            let _ = apw.wakeup.recv().await;
             continue;
         };
         let url = format!("{}/anns/{}", apw.url_base, to_dl);
         //debug!("get {} ...", url);
-        let bin = match util::get_url_bin2(&url, &[404, 405], &apw.client).await {
+        let bin = match get_url_bin(&url, &[404, 405], &apw.client, &apw.handler_pass).await {
             Ok(x) => x,
             Err(e) => {
                 // We will not try to re-download the file because it might be gone
@@ -102,6 +129,7 @@ async fn poll_ann_handlers<T: OnAnns + 'static>(downloader: &Downloader<T>) {
     for worker_num in 0..downloader.downloader_count {
         let apw = AhPollWorker {
             url_base: downloader.url_base.clone(),
+            handler_pass: downloader.handler_pass.clone(),
             worker_num,
             ahp: Arc::clone(downloader),
             wakeup: wakeup_tx.subscribe(),
@@ -189,7 +217,12 @@ async fn poll_ann_handlers<T: OnAnns + 'static>(downloader: &Downloader<T>) {
     }
 }
 
-pub async fn new<T>(downloader_count: usize, url_base: String, onanns: &T) -> Downloader<T>
+pub async fn new<T>(
+    downloader_count: usize,
+    url_base: String,
+    onanns: &T,
+    handler_pass: Option<String>,
+) -> Downloader<T>
 where
     T: OnAnns + 'static + Clone,
 {
@@ -197,6 +230,7 @@ where
         downloader_count,
         url_base,
         onanns: onanns.clone(),
+        handler_pass,
         m: Mutex::new(DownloaderM {
             downloading: 0,
             downloaded: 0,

@@ -80,10 +80,7 @@ struct Worker_s {
     PacketCrypt_ValidateCtx_t* vctx;
 
     AnnMiner_t* ctx;
-    pthread_t thread;
-
-    // read by the main thread
-    sig_atomic_t encryptionsPerSecond; 
+    pthread_t thread; 
 
     uint32_t workerNum;
 
@@ -188,19 +185,15 @@ static int annHash(Worker_t* restrict w, uint32_t nonce) {
     return 1;
 }
 
-#define HASHES_PER_CYCLE 256
+#define HASHES_PER_CYCLE 16
 
 static void search(Worker_t* restrict w)
 {
     int nonce = w->softNonce;
-    Time t;
-    Time_BEGIN(t);
     for (int i = 0; i < HASHES_PER_CYCLE; i++) {
         if (Util_likely(!annHash(w, nonce++))) { continue; }
         w->ctx->ann_found(w->ctx->callback_ctx, (uint8_t*) &w->ann);
     }
-    Time_END(t);
-    w->encryptionsPerSecond = ((HASHES_PER_CYCLE * 1024) / (Time_MICROS(t) / 1024));
     w->softNonce = nonce;
 
     return;
@@ -373,13 +366,4 @@ void AnnMiner_free(AnnMiner_t* ctx)
     }
 
     freeCtx(ctx);
-}
-
-double AnnMiner_getEncryptionsPerSecond(const AnnMiner_t* ctx)
-{
-    double totalEPS = 0.0;
-    for (int i = 0; i < ctx->numWorkers; i++) {
-        totalEPS += ctx->workers[i].encryptionsPerSecond;
-    }
-    return totalEPS;
 }

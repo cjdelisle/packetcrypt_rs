@@ -3,3 +3,7 @@
 #include "packetcrypt/AnnMiner.h"
 #include "packetcrypt/ProofTree.h"
 #include "packetcrypt/BlockMine.h"
+
+struct ExportMe {
+    enum Validate_checkBlock_Res a;
+};
