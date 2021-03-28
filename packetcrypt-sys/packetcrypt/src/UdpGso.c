@@ -12,26 +12,27 @@
 #include <stdbool.h>
 #include <netinet/in.h>
 #include <stdio.h>
+#include <netinet/udp.h>
 
 #ifndef SOCK_NONBLOCK
     #define SOCK_NONBLOCK 0
-    #define NO_GO
+    #define NO_GO "SOCK_NONBLOCK"
 #endif
 #ifndef IPPROTO_UDP
     #define IPPROTO_UDP 0
-    #define NO_GO
+    #define NO_GO "IPPROTO_UDP"
 #endif
 #ifndef UDP_SEGMENT
     #define UDP_SEGMENT 0
-    #define NO_GO
+    #define NO_GO "UDP_SEGMENT"
 #endif
 #ifndef UDP_GRO
     #define UDP_GRO 0
-    #define NO_GO
+    #define NO_GO "UDP_GRO"
 #endif
 #ifndef SOL_UDP
     #define SOL_UDP 0
-    #define NO_GO
+    #define NO_GO "SOL_UDP"
 #endif
 
 bool UdpGso_supported() {
