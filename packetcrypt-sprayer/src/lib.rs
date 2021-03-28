@@ -218,7 +218,14 @@ fn raw_fd(s: &UdpSocket) -> i32 {
 
 impl Sprayer {
     pub fn new(cfg: &Config) -> Result<Sprayer> {
-        let gso_ok = unsafe { packetcrypt_sys::UdpGso_supported() };
+        let gso_err = unsafe {
+            let err = packetcrypt_sys::UdpGso_supported();
+            if !err.is_null() {
+                Some(std::ffi::CStr::from_ptr(err).to_string_lossy())
+            } else {
+                None
+            }
+        };
 
         let addr: SocketAddr = cfg
             .bind
@@ -228,13 +235,13 @@ impl Sprayer {
         socket.set_nonblocking(true)?;
         let fd = raw_fd(&socket);
 
-        if gso_ok {
+        if let Some(ref err) = gso_err {
+            warn!("UDP_GSO not supported {}, expect high CPU usage", err);
+        } else {
             let res = unsafe { packetcrypt_sys::UdpGro_enable(fd, PKT_LENGTH as i32) };
             if res != 0 {
                 bail!("UdpGro_enable() failed {}", res);
             }
-        } else {
-            warn!("UDP_GSO not supported, expect high CPU usage");
         }
 
         let res = unsafe { packetcrypt_sys::UdpGro_setRecvBuf(fd, RECV_BUF_SZ as i32) };
@@ -266,7 +273,7 @@ impl Sprayer {
             subscribed_to,
             passwd: cfg.passwd.clone(),
             socket,
-            gso_ok,
+            gso_ok: gso_err.is_none(),
             workers: cfg.workers,
             handler: RwLock::new(None),
             last_computed_stats: AtomicUsize::new(0),

@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
  */
 #include <stdint.h>
-#include <stdbool.h>
 
 struct UdpGro_Sockaddr {
     uint16_t isIpv6;
@@ -13,7 +12,7 @@ struct UdpGro_Sockaddr {
     uint8_t addr[16];
 };
 
-bool UdpGso_supported();
+const char* UdpGso_supported();
 int UdpGro_enable(int fd, int pktSize);
 int UdpGro_recvmsg(int fd, struct UdpGro_Sockaddr* addrOut, uint8_t* buf, int len, int* pktSize);
 int UdpGro_sendmsg(int fd, const struct UdpGro_Sockaddr* addr, const uint8_t* data, int length, int pktSize);

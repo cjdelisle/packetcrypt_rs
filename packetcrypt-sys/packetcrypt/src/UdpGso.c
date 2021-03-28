@@ -14,41 +14,56 @@
 #include <stdio.h>
 #include <netinet/udp.h>
 
+#ifndef __linux__
+    #define NO_GO "not linux"
+#endif
 #ifndef SOCK_NONBLOCK
     #define SOCK_NONBLOCK 0
-    #define NO_GO "SOCK_NONBLOCK"
+    #ifndef NO_GO
+        #define NO_GO "missing SOCK_NONBLOCK"
+    #endif
 #endif
 #ifndef IPPROTO_UDP
     #define IPPROTO_UDP 0
-    #define NO_GO "IPPROTO_UDP"
+    #ifndef NO_GO
+        #define NO_GO "missing IPPROTO_UDP"
+    #endif
 #endif
 #ifndef UDP_SEGMENT
     #define UDP_SEGMENT 0
-    #define NO_GO "UDP_SEGMENT"
+    #ifndef NO_GO
+        #define NO_GO "missing UDP_SEGMENT"
+    #endif
 #endif
 #ifndef UDP_GRO
     #define UDP_GRO 0
-    #define NO_GO "UDP_GRO"
+    #ifndef NO_GO
+        #define NO_GO "missing UDP_GRO"
+    #endif
 #endif
 #ifndef SOL_UDP
     #define SOL_UDP 0
-    #define NO_GO "SOL_UDP"
+    #ifndef NO_GO
+        #define NO_GO "missing SOL_UDP"
+    #endif
 #endif
 
-bool UdpGso_supported() {
-    #if defined(__linux__) || defined(NO_GO)
-        return false;
+const char* UdpGso_supported() {
+    #ifdef NO_GO
+        return NO_GO;
     #endif
     int fd = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, IPPROTO_UDP);
     if (fd < 0) {
-        return false;
+        return "fd < 0";
     }
     int val = 1;
-    bool result = true;
+    const char* result = NULL;
     if (setsockopt(fd, IPPROTO_UDP, UDP_GRO, &val, sizeof(val))) {
-        result = false;
+        printf("setsockopt(UDP_GRO) -> %d (%s)", errno, strerror(errno));
+        result = "setsockopt(UDP_GRO)";
     } else if (setsockopt(fd, IPPROTO_UDP, UDP_SEGMENT, &val, sizeof(val))) {
-        result = false;
+        printf("setsockopt(UDP_SEGMENT) -> %d (%s)", errno, strerror(errno));
+        result = "setsockopt(UDP_SEGMENT)";
     }
     close(fd);
     return result;

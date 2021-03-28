@@ -963,7 +963,7 @@ fn bindgen_test_layout_UdpGro_Sockaddr() {
     );
 }
 extern "C" {
-    pub fn UdpGso_supported() -> bool;
+    pub fn UdpGso_supported() -> *const ::std::os::raw::c_char;
 }
 extern "C" {
     pub fn UdpGro_enable(
