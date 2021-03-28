@@ -68,6 +68,7 @@ int UdpGro_enable(int fd, int pktSize) {
         printf("Error in setsockopt UDP_SEGMENT %d (%s)", errno, strerror(errno));
         return -errno;
     }
+    return 0;
 }
 
 int UdpGro_recvmsg(int fd, struct UdpGro_Sockaddr* addrOut, uint8_t* buf, int length, int* pktSize) {
