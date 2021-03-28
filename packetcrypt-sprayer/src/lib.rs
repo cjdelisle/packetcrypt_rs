@@ -372,8 +372,8 @@ impl Sprayer {
             }
             let req = serde_json::to_string(&SprayerReq {
                 yes_please_dos_me_passwd: self.0.passwd.clone(),
-                num: 0,
-                count: 1,
+                num: Some(0),
+                count: Some(1),
             })
             .unwrap();
             debug!("subscribing to {}", peer);
@@ -720,10 +720,10 @@ impl SprayWorker {
             self.rchunk.ecur = res_len as usize;
         }
         if pkt_sz != self.g.0.pkt_size as i32 {
+            // This is when GRO was not invoked and it pulled just one packet
             if pkt_sz != -1 {
                 self.log(&|| info!("Hmmm pkt_sz is {}, res_len is {}", pkt_sz, res_len));
             }
-        // This is when GRO was not invoked and it pulled just one packet
         } else {
             //self.log(&|| info!("pkt_sz is {}", pkt_sz));
             // GRO was invoked

@@ -226,6 +226,8 @@ pub struct BlkShare {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct SprayerReq {
     pub yes_please_dos_me_passwd: String,
-    pub num: u32,
-    pub count: u32,
+
+    // deprecated, nolonger used
+    pub num: Option<u32>,
+    pub count: Option<u32>,
 }
