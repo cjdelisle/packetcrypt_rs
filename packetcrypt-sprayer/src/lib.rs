@@ -569,32 +569,36 @@ impl SprayWorker {
             IpAddr::V6(a) => caddr.addr.copy_from_slice(&a.octets()),
             IpAddr::V4(a) => caddr.addr[0..4].copy_from_slice(&a.octets()),
         }
-        let ret = unsafe {
-            packetcrypt_sys::UdpGro_sendmsg(
-                fd,
-                &caddr,
-                chunk.all_anns().as_ptr(),
-                (chunk.len() * PKT_LENGTH) as i32,
-                PKT_LENGTH as i32,
-            )
+        let ret = loop {
+            let max_len = 0xffff / PKT_LENGTH * PKT_LENGTH;
+            let buf = &chunk.bytes[chunk.bcur..chunk.ecur];
+            let len = std::cmp::min(buf.len(), max_len) as i32;
+            let ret = unsafe {
+                packetcrypt_sys::UdpGro_sendmsg(fd, &caddr, buf.as_ptr(), len, PKT_LENGTH as i32)
+            };
+            if ret > 0 {
+                let uret = ret as usize;
+                let count = uret / PKT_LENGTH;
+                if (count * PKT_LENGTH) != uret {
+                    self.log(&|| {
+                        warn!(
+                            "Partial write to {}, only {} of {}",
+                            addr,
+                            uret,
+                            chunk.len() * PKT_LENGTH
+                        )
+                    });
+                }
+                chunk.bcur += count * PKT_LENGTH;
+            }
+            if ret != len {
+                break ret;
+            }
         };
         if ret < 0 {
             self.log(&|| warn!("Unable to send packet to {}, {}", addr, ret));
             return;
         }
-        let uret = ret as usize;
-        let count = uret / PKT_LENGTH;
-        if (count * PKT_LENGTH) != uret {
-            self.log(&|| {
-                warn!(
-                    "Partial write to {}, only {} of {}",
-                    addr,
-                    uret,
-                    chunk.len() * PKT_LENGTH
-                )
-            });
-        }
-        chunk.bcur += count * PKT_LENGTH;
     }
 
     fn try_send(&mut self) {
