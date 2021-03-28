@@ -15,6 +15,7 @@ hex-literal = "0.3"
 tokio = { version = "0.2", features = ["macros","sync","fs","signal"], default-features = false }
 toml = "0.5"
 anyhow = "1.0"
+packetcrypt-sprayer = { version = "0.4", path = "packetcrypt-sprayer" }
 packetcrypt-sys = { version = "0.4", path = "packetcrypt-sys" }
 packetcrypt-util = { version = "0.4", path = "packetcrypt-util" }
 packetcrypt-pool = { version = "0.4", path = "packetcrypt-pool" }

@@ -132,8 +132,8 @@ async fn ann_main(
     util::sleep_forever().await
 }
 
-async fn sprayer_main(cfg: packetcrypt_util::sprayer::Config) -> Result<()> {
-    packetcrypt_util::sprayer::Sprayer::new(&cfg)?.start();
+async fn sprayer_main(cfg: packetcrypt_sprayer::Config) -> Result<()> {
+    packetcrypt_sprayer::Sprayer::new(&cfg)?.start();
     util::sleep_forever().await
 }
 
@@ -421,7 +421,7 @@ async fn main() -> Result<()> {
             }
             let subscribe = get_str!(blk, "subscribe").into();
             let workers = get_usize!(blk, "sprayerthreads");
-            Some(packetcrypt_util::sprayer::Config {
+            Some(packetcrypt_sprayer::Config {
                 passwd,
                 bind,
                 workers,
@@ -449,7 +449,7 @@ async fn main() -> Result<()> {
         })
         .await?;
     } else if let Some(spray) = matches.subcommand_matches("sprayer") {
-        sprayer_main(packetcrypt_util::sprayer::Config {
+        sprayer_main(packetcrypt_sprayer::Config {
             passwd: get_str!(spray, "passwd").into(),
             bind: get_str!(spray, "bind").into(),
             workers: get_usize!(spray, "threads"),

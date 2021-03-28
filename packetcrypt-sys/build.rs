@@ -116,6 +116,7 @@ fn main() {
         .file("packetcrypt/src/ProofTree.c")
         .file("packetcrypt/src/BlockMine.c")
         .file("packetcrypt/src/Work.c")
+        .file("packetcrypt/src/UdpGso.c")
         .out_dir(dst.join("lib"))
         .opt_level(3)
         .compile("libpacketcrypt.a");

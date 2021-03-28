@@ -10,7 +10,6 @@ use packetcrypt_pool::poolcfg::AnnHandlerCfg;
 use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol::{AnnPostReply, AnnsEvent, BlockInfo, MasterConf};
-use packetcrypt_util::sprayer;
 use packetcrypt_util::{hash, util};
 use regex::Regex;
 use std::cmp::{max, min};
@@ -87,7 +86,7 @@ pub struct Global {
 
     skip_check_chance: u8,
 
-    sprayer: sprayer::Sprayer,
+    sprayer: packetcrypt_sprayer::Sprayer,
 }
 
 struct Worker {
@@ -224,11 +223,7 @@ fn enqueue_write(w: &mut Worker, output: &mut Output) {
         &output
             .out
             .iter()
-            .map(|ann| {
-                let mut out = sprayer::Packet::default();
-                out.ann_bytes_mut().copy_from_slice(&ann.bytes[..]);
-                out
-            })
+            .map(|ann| &ann.bytes[..])
             .collect::<Vec<_>>()[..],
     );
     let mut anns = bytes::BytesMut::with_capacity(len);
@@ -553,7 +548,7 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         .unwrap();
 
     let bind_pub: SocketAddr = cfg.bind_pub.parse()?;
-    let sprayer = sprayer::Sprayer::new(&sprayer::Config {
+    let sprayer = packetcrypt_sprayer::Sprayer::new(&packetcrypt_sprayer::Config {
         passwd: cfg.block_miner_passwd.clone(),
         bind: cfg.bind_pvt.clone(),
         workers: cfg.spray_workers as usize,

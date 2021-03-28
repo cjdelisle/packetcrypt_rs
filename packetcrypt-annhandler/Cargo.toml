@@ -19,3 +19,4 @@ serde_json = "1.0"
 packetcrypt-sys = { version = "0.4", path = "../packetcrypt-sys" }
 packetcrypt-util = { version = "0.4", path = "../packetcrypt-util" }
 packetcrypt-pool = { version = "0.4", path = "../packetcrypt-pool" }
+packetcrypt-sprayer = { version = "0.4", path = "../packetcrypt-sprayer" }

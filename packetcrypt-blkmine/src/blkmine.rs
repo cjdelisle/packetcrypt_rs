@@ -8,7 +8,6 @@ use log::{debug, info, trace, warn};
 use packetcrypt_sys::difficulty::{pc_degrade_announcement_target, pc_get_effective_target};
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol;
-use packetcrypt_util::sprayer;
 use packetcrypt_util::{hash, util};
 use rayon::prelude::*;
 use std::cmp::max;
@@ -27,7 +26,7 @@ pub struct BlkArgs {
     pub upload_timeout: usize,
     pub uploaders: usize,
     pub handler_pass: String,
-    pub spray_cfg: Option<sprayer::Config>,
+    pub spray_cfg: Option<packetcrypt_sprayer::Config>,
 }
 
 struct FreeInfo {
@@ -107,7 +106,7 @@ pub struct BlkMineS {
     pcli: PoolClient,
     ba: BlkArgs,
 
-    spray: Option<sprayer::Sprayer>,
+    spray: Option<packetcrypt_sprayer::Sprayer>,
 
     share_channel_send: Mutex<tokio::sync::mpsc::UnboundedSender<Share>>,
     share_channel_recv: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<Share>>,
@@ -273,12 +272,12 @@ struct HeightWork {
     work: u32,
 }
 struct AnnChunk<'a> {
-    anns: &'a [sprayer::Packet],
+    anns: &'a [&'a [u8]],
     indexes: &'a [u32],
 }
 impl<'a> GetAnn for AnnChunk<'a> {
     fn get_ann(&self, num: usize) -> &[u8] {
-        self.anns[self.indexes[num] as usize].ann_bytes().unwrap()
+        self.anns[self.indexes[num] as usize]
     }
     fn ann_count(&self) -> usize {
         self.indexes.len()
@@ -323,23 +322,21 @@ fn on_anns(bm: &BlkMine, ac: AnnChunk) {
     );
 }
 
-impl sprayer::OnAnns for BlkMine {
-    fn on_anns(&self, anns: &[sprayer::Packet]) {
+impl packetcrypt_sprayer::OnAnns for BlkMine {
+    fn on_anns(&self, anns: &[&[u8]]) {
         struct Ai {
             hw: HeightWork,
             index: u32,
         }
         let mut v: Vec<Ai> = Vec::with_capacity(anns.len());
-        for (a, i) in anns.iter().zip(0..) {
-            if let Some(bytes) = a.ann_bytes() {
-                v.push(Ai {
-                    hw: HeightWork {
-                        block_height: packetcrypt_sys::parent_block_height(bytes),
-                        work: packetcrypt_sys::work_bits(bytes),
-                    },
-                    index: i,
-                });
-            }
+        for (bytes, i) in anns.iter().zip(0..) {
+            v.push(Ai {
+                hw: HeightWork {
+                    block_height: packetcrypt_sys::parent_block_height(bytes),
+                    work: packetcrypt_sys::work_bits(bytes),
+                },
+                index: i,
+            });
         }
         v.sort_by(|a, b| {
             if a.hw.block_height != b.hw.block_height {
@@ -678,7 +675,7 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
     let block_miner = BlkMiner::new(ba.max_mem as u64, ba.threads as u32)?;
     let max_anns = block_miner.max_anns;
     let spray = if let Some(sc) = &ba.spray_cfg {
-        Some(sprayer::Sprayer::new(sc)?)
+        Some(packetcrypt_sprayer::Sprayer::new(sc)?)
     } else {
         None
     };

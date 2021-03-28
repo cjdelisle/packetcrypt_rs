@@ -10,5 +10,4 @@ macro_rules! async_spawn {
 pub mod hash;
 pub mod poolclient;
 pub mod protocol;
-pub mod sprayer;
 pub mod util;

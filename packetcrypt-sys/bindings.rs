@@ -914,6 +914,89 @@ extern "C" {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct UdpGro_Sockaddr {
+    pub isIpv6: u16,
+    pub port: u16,
+    pub addr: [u8; 16usize],
+}
+#[test]
+fn bindgen_test_layout_UdpGro_Sockaddr() {
+    assert_eq!(
+        ::std::mem::size_of::<UdpGro_Sockaddr>(),
+        20usize,
+        concat!("Size of: ", stringify!(UdpGro_Sockaddr))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<UdpGro_Sockaddr>(),
+        2usize,
+        concat!("Alignment of ", stringify!(UdpGro_Sockaddr))
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<UdpGro_Sockaddr>())).isIpv6 as *const _ as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(UdpGro_Sockaddr),
+            "::",
+            stringify!(isIpv6)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<UdpGro_Sockaddr>())).port as *const _ as usize },
+        2usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(UdpGro_Sockaddr),
+            "::",
+            stringify!(port)
+        )
+    );
+    assert_eq!(
+        unsafe { &(*(::std::ptr::null::<UdpGro_Sockaddr>())).addr as *const _ as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(UdpGro_Sockaddr),
+            "::",
+            stringify!(addr)
+        )
+    );
+}
+extern "C" {
+    pub fn UdpGso_supported() -> bool;
+}
+extern "C" {
+    pub fn UdpGro_enable(
+        fd: ::std::os::raw::c_int,
+        pktSize: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn UdpGro_recvmsg(
+        fd: ::std::os::raw::c_int,
+        addrOut: *mut UdpGro_Sockaddr,
+        buf: *mut u8,
+        len: ::std::os::raw::c_int,
+        pktSize: *mut ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn UdpGro_sendmsg(
+        fd: ::std::os::raw::c_int,
+        addr: *const UdpGro_Sockaddr,
+        data: *const u8,
+        length: ::std::os::raw::c_int,
+        pktSize: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn UdpGro_setRecvBuf(
+        fd: ::std::os::raw::c_int,
+        bufSz: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct ExportMe {
     pub a: Validate_checkBlock_Res,
 }
