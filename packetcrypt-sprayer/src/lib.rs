@@ -577,6 +577,7 @@ impl SprayWorker {
         }
         let max_len = 0xffff / PKT_LENGTH * PKT_LENGTH;
         let pkt_size = if addr == self.g.0.self_addr {
+            self.log(&|| info!("sending max_len packet"));
             max_len
         } else {
             self.g.0.pkt_size
@@ -716,7 +717,7 @@ impl SprayWorker {
             self.rchunk.ecur = res_len as usize;
         }
         if pkt_sz != self.g.0.pkt_size as i32 {
-            self.log(&|| info!("Hmmm pkt_sz is {}", pkt_sz));
+            self.log(&|| info!("Hmmm pkt_sz is {}, res_len is {}", pkt_sz, res_len));
         }
 
         // IP addr
