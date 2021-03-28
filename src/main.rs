@@ -324,7 +324,8 @@ async fn main() -> Result<()> {
                         .short("s")
                         .long("subscribe")
                         .help("Sprayer interface to subscribe to")
-                        .takes_value(true),
+                        .takes_value(true)
+                        .min_values(1),
                 )
                 .arg(
                     Arg::with_name("sprayerthreads")
@@ -435,14 +436,14 @@ async fn main() -> Result<()> {
             if bind.is_empty() {
                 bail!("When sprayer is enabled, --bind is required");
             }
-            let subscribe = get_str!(blk, "subscribe").into();
+            let subscribe_to = get_strs!(blk, "subscribe");
             let workers = get_usize!(blk, "sprayerthreads");
             let mss = get_usize!(blk, "mss");
             Some(packetcrypt_sprayer::Config {
                 passwd,
                 bind,
                 workers,
-                subscribe_to: vec![subscribe],
+                subscribe_to,
                 log_peer_stats: false,
                 mss,
             })
