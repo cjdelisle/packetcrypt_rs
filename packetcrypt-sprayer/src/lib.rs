@@ -761,7 +761,11 @@ impl SprayWorker {
                 std::thread::sleep(std::time::Duration::from_micros(100));
                 continue;
             }
-            let bufs = self.rchunk.ann_iter().collect::<Vec<_>>();
+            let bufs = self
+                .rchunk
+                .ann_iter()
+                .map(|v| &v[MSG_PREFIX..])
+                .collect::<Vec<_>>();
             overflow += self.g.push_anns(&bufs);
             if overflow > 0 && self.log(&|| info!("Send overflow of {} anns", overflow)) {
                 overflow = 0;
