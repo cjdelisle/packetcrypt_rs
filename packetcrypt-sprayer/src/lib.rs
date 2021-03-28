@@ -657,7 +657,7 @@ impl SprayWorker {
                         out = Some((fr, Vec::from(&buf[0..len])));
                         continue;
                     }
-                    self.log(&|| warn!("Got message from unsubscribed node {}", fr));
+                    self.log(&|| warn!("Got message (len {}) from unsubscribed node {}", len, fr));
                 }
                 Err(e) => {
                     if e.kind() != std::io::ErrorKind::WouldBlock {
@@ -687,8 +687,10 @@ impl SprayWorker {
                 &mut pkt_sz,
             )
         };
-        if res_len < 0 {
-            self.log(&|| info!("Error reading sprayer socket {}", res_len));
+        if res_len <= 0 {
+            if res_len < 0 {
+                self.log(&|| info!("Error reading sprayer socket {}", res_len));
+            }
             return;
         } else {
             self.rchunk.ecur = res_len as usize;
@@ -717,7 +719,12 @@ impl SprayWorker {
             sub.packets_received
                 .fetch_add(count, atomic::Ordering::Relaxed);
         } else {
-            self.log(&|| warn!("Got message from unsubscribed node {}", address));
+            self.log(&|| {
+                warn!(
+                    "Got message from unsubscribed node {} (len: {})",
+                    address, full_len
+                )
+            });
             // We don't want any of this being received
             self.rchunk.reset();
         }
