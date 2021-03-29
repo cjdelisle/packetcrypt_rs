@@ -761,7 +761,9 @@ impl SprayWorker {
         let stub_len = len - anns_len;
         if stub_len != 0 {
             let mut x = [0_u8; PKT_LENGTH];
-            x[0..stub_len].copy_from_slice(&self.rchunk.bytes[anns_len..len]);
+            x[0..stub_len].copy_from_slice(
+                &self.rchunk.bytes[self.rchunk.ecur + anns_len..self.rchunk.ecur + len],
+            );
             self.maybe_subscribe(&x[0..stub_len], address);
         }
 
