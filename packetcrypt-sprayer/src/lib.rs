@@ -184,6 +184,7 @@ pub struct PeerStats {
 
 struct SprayerS {
     m: RwLock<SprayerMut>,
+    subscribe_to: Vec<SocketAddr>,
     passwd: String,
     socket: UdpSocket,
     handler: RwLock<Option<Box<dyn OnAnns>>>,
@@ -264,8 +265,10 @@ impl Sprayer {
         });
 
         let mut subscribed_to: HashMap<SocketAddr, Subscription> = HashMap::new();
+        let mut subscribe_to = Vec::new();
         for s in &cfg.subscribe_to {
             let peer = s.parse()?;
+            subscribe_to.push(peer);
             subscribed_to.insert(
                 peer,
                 Subscription {
@@ -277,6 +280,7 @@ impl Sprayer {
 
         Ok(Sprayer(Arc::new(SprayerS {
             m,
+            subscribe_to,
             subscribed_to,
             passwd: cfg.passwd.clone(),
             socket,
@@ -483,7 +487,12 @@ impl Sprayer {
                 }
             }
         }
-        for (peer, sub) in &self.0.subscribed_to {
+        for peer in &self.0.subscribe_to {
+            let sub = if let Some(p) = self.0.subscribed_to.get(peer) {
+                p
+            } else {
+                continue;
+            };
             match ps.get_mut(peer) {
                 Some(p) => {
                     let packets_recv_ever = sub.packets_received.load(atomic::Ordering::Relaxed);
