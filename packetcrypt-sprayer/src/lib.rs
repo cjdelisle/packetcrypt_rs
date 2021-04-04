@@ -756,23 +756,29 @@ impl SprayWorker {
     fn recv_slow(&mut self) -> Option<(SocketAddr, Vec<u8>)> {
         let mut out = None;
         loop {
-            if self.rchunk.ecur >= self.rchunk.bytes.len() {
+            let max_recv = self.rchunk.bytes.len() - self.rchunk.ecur;
+            if max_recv < PKT_LENGTH {
                 break;
             }
-            let buf = &mut self.rchunk.bytes[self.rchunk.ecur..(self.rchunk.ecur + PKT_LENGTH)];
+            let buf = &mut self.rchunk.bytes[self.rchunk.ecur..(self.rchunk.ecur + max_recv)];
             match self.g.0.socket.recv_from(buf) {
                 Ok((len, fr)) => {
-                    if len == PKT_LENGTH {
+                    let mut ok = false;
+                    let pkt_recv = len / PKT_LENGTH * PKT_LENGTH;
+                    if pkt_recv > 0 {
                         if let Some(sub) = self.g.0.subscribed_to.get(&fr) {
-                            sub.packets_received.fetch_add(1, atomic::Ordering::Relaxed);
-                            self.rchunk.ecur += PKT_LENGTH;
-                            continue;
+                            sub.packets_received.fetch_add(pkt_recv / 1024, atomic::Ordering::Relaxed);
+                            self.rchunk.ecur += pkt_recv;
+                            ok = true;
                         }
-                    } else {
-                        out = Some((fr, Vec::from(&buf[0..len])));
-                        continue;
                     }
-                    self.log(&|| warn!("Got message (len {}) from unsubscribed node {}", len, fr));
+                    if len > pkt_recv {
+                        out = Some((fr, Vec::from(&buf[pkt_recv..len])));
+                        ok = true;
+                    }
+                    if !ok {
+                      self.log(&|| warn!("Got message (len {}) from unsubscribed node {}", len, fr));
+                    }
                 }
                 Err(e) => {
                     if e.kind() != std::io::ErrorKind::WouldBlock {
