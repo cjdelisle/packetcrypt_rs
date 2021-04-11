@@ -356,7 +356,13 @@ async fn main() -> Result<()> {
                         .long("maxsegmentsize")
                         .help("Maximum packet size to send when using UDP sprayer, remember IP and UDP overhead")
                         .default_value("1472")
-                        .takes_value(true)
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("mcast")
+                    .long("mcast")
+                    .help("Connect to this multicast group")
+                    .takes_value(true),
                 ),
         )
         .subcommand(
@@ -448,6 +454,12 @@ async fn main() -> Result<()> {
             let subscribe_to = get_strs!(blk, "subscribe");
             let workers = get_usize!(blk, "sprayerthreads");
             let mss = get_usize!(blk, "mss");
+            let mcast = if blk.is_present("mcast") {
+                get_str!(blk, "mcast")
+            } else {
+                ""
+            }
+            .to_owned();
             Some(packetcrypt_sprayer::Config {
                 passwd,
                 bind,
@@ -456,6 +468,7 @@ async fn main() -> Result<()> {
                 log_peer_stats: false,
                 mss,
                 spray_at: Vec::new(),
+                mcast,
             })
         } else {
             if blk.is_present("bind") {
@@ -490,6 +503,7 @@ async fn main() -> Result<()> {
             log_peer_stats: true,
             mss: get_usize!(spray, "mss"),
             spray_at,
+            mcast: "".to_owned(),
         })
         .await?;
     }

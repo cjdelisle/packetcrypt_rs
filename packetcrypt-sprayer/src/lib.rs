@@ -8,6 +8,7 @@ use parking_lot::{Mutex, RwLock};
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::net::IpAddr;
+use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::UdpSocket;
 use std::sync::atomic::{self, AtomicUsize};
@@ -217,6 +218,7 @@ pub struct Config {
     pub log_peer_stats: bool,
     pub mss: usize,
     pub spray_at: Vec<String>,
+    pub mcast: String,
 }
 
 fn raw_fd(s: &UdpSocket) -> i32 {
@@ -235,16 +237,32 @@ impl Sprayer {
             }
         };
 
+        let mcast: Option<Ipv4Addr> = if !cfg.mcast.is_empty() {
+            Some(
+                cfg.mcast
+                    .parse()
+                    .with_context(|| format!("mcast parse({})", cfg.mcast))?,
+            )
+        } else {
+            None
+        };
+
         let addr: SocketAddr = cfg
             .bind
             .parse()
             .with_context(|| format!("SocketAddr parse({})", cfg.bind))?;
         let socket = UdpSocket::bind(addr).with_context(|| format!("UdpSocket::bind({})", addr))?;
         socket.set_nonblocking(true)?;
+        if let Some(mcast) = mcast {
+            if let SocketAddr::V4(addr) = addr {
+                socket.join_multicast_v4(&mcast, addr.ip())?;
+            } else {
+                bail!("Cannot do multicast with ipv6 bind");
+            }
+        }
+
         let fd = raw_fd(&socket);
-
         let pkt_size = (cfg.mss / PKT_LENGTH) * PKT_LENGTH;
-
         if let Some(ref err) = gso_err {
             warn!("UDP_GSO not supported {}, expect high CPU usage", err);
         } else {
