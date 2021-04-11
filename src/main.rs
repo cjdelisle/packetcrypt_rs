@@ -388,14 +388,18 @@ async fn main() -> Result<()> {
                 )
                 .arg(
                     Arg::with_name("subscribe")
+                        .short("s")
+                        .long("subscribe")
                         .help("Sprayers so subscribe to")
                         .required(true)
                         .min_values(1),
                 )
                 .arg(
                     Arg::with_name("sprayat")
-                    .help("Bypass subscription and always spray at these addresses")
-                    .min_values(1),
+                        .short("S")
+                        .long("sprayat")
+                        .help("Bypass subscription and always spray at these addresses")
+                        .min_values(1),
                 )
                 .arg(
                     Arg::with_name("mss")
