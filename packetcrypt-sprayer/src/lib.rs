@@ -382,18 +382,17 @@ impl Sprayer {
     fn get_to_send(&self, tid: usize) -> Option<(Box<Chunk>, SocketAddr)> {
         {
             let m = self.0.m.read();
-            if m.subscribers.is_empty() {
-                return None;
-            }
-            let start = tid % m.subscribers.len();
-            for sub in &m.subscribers[start..] {
-                if let Some(chunk) = sub.send_queue.lock().q.pop_back() {
-                    return Some((chunk, sub.peer));
+            if !m.subscribers.is_empty() {
+                let start = tid % m.subscribers.len();
+                for sub in &m.subscribers[start..] {
+                    if let Some(chunk) = sub.send_queue.lock().q.pop_back() {
+                        return Some((chunk, sub.peer));
+                    }
                 }
-            }
-            for sub in &m.subscribers[0..start] {
-                if let Some(chunk) = sub.send_queue.lock().q.pop_back() {
-                    return Some((chunk, sub.peer));
+                for sub in &m.subscribers[0..start] {
+                    if let Some(chunk) = sub.send_queue.lock().q.pop_back() {
+                        return Some((chunk, sub.peer));
+                    }
                 }
             }
         }
