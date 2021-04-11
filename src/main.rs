@@ -398,7 +398,7 @@ async fn main() -> Result<()> {
                     Arg::with_name("sprayat")
                         .short("S")
                         .long("sprayat")
-                        .help("Bypass subscription and always spray at these addresses")
+                        .help("Always spray at these addresses")
                         .min_values(1),
                 )
                 .arg(
@@ -477,6 +477,11 @@ async fn main() -> Result<()> {
         })
         .await?;
     } else if let Some(spray) = matches.subcommand_matches("sprayer") {
+        let spray_at = if spray.is_present("sprayat") {
+            get_strs!(spray, "sprayat")
+        } else {
+            Vec::new()
+        };
         sprayer_main(packetcrypt_sprayer::Config {
             passwd: get_str!(spray, "passwd").into(),
             bind: get_str!(spray, "bind").into(),
@@ -484,7 +489,7 @@ async fn main() -> Result<()> {
             subscribe_to: get_strs!(spray, "subscribe"),
             log_peer_stats: true,
             mss: get_usize!(spray, "mss"),
-            spray_at: get_strs!(spray, "sprayat"),
+            spray_at,
         })
         .await?;
     }
