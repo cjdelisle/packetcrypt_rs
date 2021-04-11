@@ -393,6 +393,11 @@ async fn main() -> Result<()> {
                         .min_values(1),
                 )
                 .arg(
+                    Arg::with_name("sprayat")
+                    .help("Bypass subscription and always spray at these addresses")
+                    .min_values(1),
+                )
+                .arg(
                     Arg::with_name("mss")
                         .short("M")
                         .long("maxsegmentsize")
@@ -446,6 +451,7 @@ async fn main() -> Result<()> {
                 subscribe_to,
                 log_peer_stats: false,
                 mss,
+                spray_at: Vec::new(),
             })
         } else {
             if blk.is_present("bind") {
@@ -474,6 +480,7 @@ async fn main() -> Result<()> {
             subscribe_to: get_strs!(spray, "subscribe"),
             log_peer_stats: true,
             mss: get_usize!(spray, "mss"),
+            spray_at: get_strs!(spray, "sprayat"),
         })
         .await?;
     }

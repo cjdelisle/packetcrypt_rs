@@ -189,6 +189,7 @@ struct SprayerS {
     socket: UdpSocket,
     handler: RwLock<Option<Box<dyn OnAnns>>>,
     subscribed_to: HashMap<SocketAddr, Subscription>,
+    force_subscribe: Vec<Subscriber>,
     workers: usize,
     gso_ok: bool,
     last_computed_stats: AtomicUsize,
@@ -215,6 +216,7 @@ pub struct Config {
     pub subscribe_to: Vec<String>,
     pub log_peer_stats: bool,
     pub mss: usize,
+    pub spray_at: Vec<String>,
 }
 
 fn raw_fd(s: &UdpSocket) -> i32 {
@@ -278,10 +280,29 @@ impl Sprayer {
             );
         }
 
+        let chunk_pool = Arc::new(ChunkPool {
+            q: Mutex::new(VecDeque::new()),
+        });
+
+        let mut force_subscribe = Vec::new();
+        for s in &cfg.spray_at {
+            let peer = s.parse()?;
+            force_subscribe.push(Subscriber {
+                peer,
+                send_queue: Mutex::new(SendQueue {
+                    next_num: 0,
+                    q: VecDeque::new(),
+                    chunk_pool: Arc::clone(&chunk_pool),
+                }),
+                last_update_sec: AtomicUsize::new(0),
+            });
+        }
+
         Ok(Sprayer(Arc::new(SprayerS {
             m,
             subscribe_to,
             subscribed_to,
+            force_subscribe,
             passwd: cfg.passwd.clone(),
             socket,
             gso_ok: gso_err.is_none(),
@@ -291,9 +312,7 @@ impl Sprayer {
             peer_counters: Mutex::new(HashMap::new()),
             peer_stats: Mutex::new(Vec::new()),
             log_peer_stats: cfg.log_peer_stats,
-            chunk_pool: Arc::new(ChunkPool {
-                q: Mutex::new(VecDeque::new()),
-            }),
+            chunk_pool,
             pkt_size,
             self_addr: addr,
         })))
@@ -305,8 +324,14 @@ impl Sprayer {
 
     pub fn push_anns(&self, anns: &[&[u8]]) -> usize {
         let oldest_allowed_time = (util::now_ms() / 1000) as usize - SECONDS_UNTIL_SUB_TIMEOUT;
-        let m = self.0.m.read();
         let mut overflow = 0;
+        for s in &self.0.force_subscribe {
+            let mut sq = s.send_queue.lock();
+            for ann in anns {
+                overflow += sq.push_ann(ann);
+            }
+        }
+        let m = self.0.m.read();
         for s in &m.subscribers {
             let lus = s.last_update_sec.load(atomic::Ordering::Relaxed);
             if lus < oldest_allowed_time {
@@ -337,17 +362,24 @@ impl Sprayer {
     }
 
     fn get_to_send(&self, tid: usize) -> Option<(Box<Chunk>, SocketAddr)> {
-        let m = self.0.m.read();
-        if m.subscribers.is_empty() {
-            return None;
-        }
-        let start = tid % m.subscribers.len();
-        for sub in &m.subscribers[start..] {
-            if let Some(chunk) = sub.send_queue.lock().q.pop_back() {
-                return Some((chunk, sub.peer));
+        {
+            let m = self.0.m.read();
+            if m.subscribers.is_empty() {
+                return None;
+            }
+            let start = tid % m.subscribers.len();
+            for sub in &m.subscribers[start..] {
+                if let Some(chunk) = sub.send_queue.lock().q.pop_back() {
+                    return Some((chunk, sub.peer));
+                }
+            }
+            for sub in &m.subscribers[0..start] {
+                if let Some(chunk) = sub.send_queue.lock().q.pop_back() {
+                    return Some((chunk, sub.peer));
+                }
             }
         }
-        for sub in &m.subscribers[0..start] {
+        for sub in &self.0.force_subscribe {
             if let Some(chunk) = sub.send_queue.lock().q.pop_back() {
                 return Some((chunk, sub.peer));
             }
@@ -356,6 +388,12 @@ impl Sprayer {
     }
 
     fn return_to_send(&self, chunk: Box<Chunk>, addr: SocketAddr) {
+        for sub in &self.0.force_subscribe {
+            if sub.peer == addr {
+                sub.send_queue.lock().q.push_back(chunk);
+                return;
+            }
+        }
         let m = self.0.m.read();
         for sub in &m.subscribers {
             if sub.peer == addr {
@@ -450,7 +488,7 @@ impl Sprayer {
         if self.0.log_peer_stats {
             info!("Sprayer links:");
         }
-        for sub in &m.subscribers {
+        for sub in m.subscribers.iter().chain(self.0.force_subscribe.iter()) {
             let packets_sent_ever = { sub.send_queue.lock().next_num };
             match ps.get_mut(&sub.peer) {
                 Some(p) => {

@@ -555,6 +555,7 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         subscribe_to: cfg.subscribe_to.clone(),
         log_peer_stats: true,
         mss: if let Some(mss) = cfg.mss { mss } else { 1472 },
+        spray_at: Vec::new(),
     })?;
 
     let (submit_send, submit_recv) = crossbeam_channel::bounded(cfg.input_queue_len);
