@@ -606,6 +606,7 @@ impl SprayWorker {
         let now = util::now_ms() as usize;
         if now > self.time_of_last_log + 1000 {
             self.log_credits = LOG_CREDITS;
+            self.time_of_last_log = now;
         }
         if self.log_credits > 0 {
             self.log_credits -= 1;
