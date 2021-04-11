@@ -36,6 +36,7 @@ const RECV_BUF_SZ: usize = 512 * 1024 * 1024;
 const MSG_PREFIX: usize = 8;
 const PKT_LENGTH: usize = 1024 + MSG_PREFIX;
 const CHUNK_LEN: usize = ANN_PER_CHUNK * PKT_LENGTH;
+const LOG_CREDITS: usize = 16;
 
 #[derive(Clone)]
 pub struct Chunk {
@@ -193,6 +194,7 @@ struct SprayerS {
     force_subscribe: Vec<Subscriber>,
     workers: usize,
     gso_ok: bool,
+    is_mcast: bool,
     last_computed_stats: AtomicUsize,
     peer_counters: Mutex<HashMap<SocketAddr, PeerCounters>>,
     peer_stats: Mutex<Vec<PeerStats>>,
@@ -324,6 +326,7 @@ impl Sprayer {
             passwd: cfg.passwd.clone(),
             socket,
             gso_ok: gso_err.is_none(),
+            is_mcast: mcast.is_some(),
             workers: cfg.workers,
             handler: RwLock::new(None),
             last_computed_stats: AtomicUsize::new(0),
@@ -371,7 +374,8 @@ impl Sprayer {
                 Box::new(SprayWorker {
                     g,
                     rchunk,
-                    time_of_last_log: AtomicUsize::new(0),
+                    time_of_last_log: 0,
+                    log_credits: LOG_CREDITS,
                     tid,
                 })
                 .run();
@@ -592,16 +596,20 @@ impl Sprayer {
 struct SprayWorker {
     g: Sprayer,
     rchunk: Box<Chunk>,
-    time_of_last_log: AtomicUsize,
+    time_of_last_log: usize,
+    log_credits: usize,
     tid: usize,
 }
 
 impl SprayWorker {
-    fn log(&self, f: &dyn Fn()) -> bool {
+    fn log(&mut self, f: &dyn Fn()) -> bool {
         let now = util::now_ms() as usize;
-        if now > self.time_of_last_log.load(atomic::Ordering::Relaxed) + 1000 {
+        if now > self.time_of_last_log + 1000 {
+            self.log_credits = LOG_CREDITS;
+        }
+        if self.log_credits > 0 {
+            self.log_credits -= 1;
             f();
-            self.time_of_last_log.store(now, atomic::Ordering::Relaxed);
             true
         } else {
             false
@@ -686,7 +694,7 @@ impl SprayWorker {
     }
 
     fn try_send(&mut self) -> bool {
-        if self.tid == 0 {
+        if self.tid == 0 && !self.g.0.is_mcast {
             if let Some((e, to)) = self.g.send_subs() {
                 self.log(&|| info!("Error sending subscription to {}: {}", to, e));
             }
@@ -709,7 +717,7 @@ impl SprayWorker {
         did_something
     }
 
-    fn maybe_subscribe(&self, msg: &[u8], from: SocketAddr) {
+    fn maybe_subscribe(&mut self, msg: &[u8], from: SocketAddr) {
         let msg = if let Ok(x) = serde_json::from_slice::<SprayerReq>(msg) {
             x
         } else {
@@ -849,6 +857,9 @@ impl SprayWorker {
         info!("Launched sprayer thread");
         let mut overflow = 0;
         loop {
+            if overflow > 0 && self.log(&|| info!("Send overflow of {} anns", overflow)) {
+                overflow = 0;
+            }
             self.recv();
             let sent_something = self.try_send();
             if self.g.0.log_peer_stats {
@@ -868,9 +879,6 @@ impl SprayWorker {
                 .map(|v| &v[MSG_PREFIX..])
                 .collect::<Vec<_>>();
             overflow += self.g.push_anns(&bufs);
-            if overflow > 0 && self.log(&|| info!("Send overflow of {} anns", overflow)) {
-                overflow = 0;
-            }
             let handler = self.g.0.handler.read();
             match &*handler {
                 Some(h) => h.on_anns(&bufs),
