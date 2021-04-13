@@ -696,8 +696,15 @@ impl SprayWorker {
 
     fn try_send(&mut self) -> bool {
         if self.tid == 0 && !self.g.0.is_mcast {
-            if let Some((e, to)) = self.g.send_subs() {
-                self.log(&|| info!("Error sending subscription to {}: {}", to, e));
+            // Busyloop until we manage to send the subscriptions.
+            loop {
+                if let Some((e, to)) = self.g.send_subs() {
+                    if e.kind() == std::io::ErrorKind::WouldBlock {
+                        continue;
+                    }
+                    self.log(&|| info!("Error sending subscription to {}: {}", to, e));
+                }
+                break;
             }
         }
         let mut did_something = false;
