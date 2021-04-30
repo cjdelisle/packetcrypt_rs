@@ -2,7 +2,7 @@
 use anyhow::{bail, Result};
 use crossbeam_channel::{Receiver as ReceiverCB, Sender as SenderCB, TryRecvError};
 use crossbeam_queue::ArrayQueue;
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use packetcrypt_pool::paymakerclient::{self, PaymakerClient};
 use packetcrypt_pool::poolcfg::AnnHandlerCfg;
 use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
@@ -13,6 +13,7 @@ use parking_lot::Mutex as MutexB; // blocking
 use regex::Regex;
 use std::cmp::{max, min};
 use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::convert::TryInto;
 use std::net::SocketAddr;
@@ -33,23 +34,19 @@ const WRITE_EVERY_MS: u64 = 30_000;
 const POOL_UPDATE_QUEUE_LEN: usize = 20;
 const RECV_WAIT_MS: u64 = 10;
 
-fn mk_dedups(w: &mut Worker) {
-    w.dedups.clear();
+fn mk_dedups(w: &mut Worker) -> HashMap<u64, usize> {
+    let mut out = HashMap::new();
     for (i, ann_opt) in (0..).zip(w.anns.iter()) {
         let h = hash::compress32(&ann_opt.as_ref().unwrap().bytes[..]);
-        w.dedups.push(DedupEntry {
-            hash: u64::from_le_bytes(h[..8].try_into().unwrap()),
-            ann_num: i,
-        });
+        out.insert(u64::from_le_bytes(h[..8].try_into().unwrap()), i);
     }
+    out
 }
 
 #[derive(Debug)]
 struct Output {
     config: Config,
-    time_of_last_write: u64,
-    out: VecDeque<PacketCryptAnn>,
-    dedup_tbl: VecDeque<u64>,
+    dedup_tbl: HashSet<u64>,
 }
 
 pub struct Global {
@@ -83,7 +80,6 @@ struct Worker {
     random: u8,
     payto_regex: Regex,
     anns: Vec<Option<PacketCryptAnn>>,
-    dedups: Vec<DedupEntry>,
     vctx: ValidateCtx,
 }
 
@@ -132,9 +128,10 @@ fn validate_anns(
     res: &mut AnnsEvent,
     pnr: &AnnPostMeta,
     conf: &Config,
+    dedups: &HashMap<u64, usize>,
 ) -> Result<()> {
     res.target = 0;
-    for (ann_opt, dedup) in w.anns.iter().zip(w.dedups.iter()) {
+    for (ann_opt, (dedup_hash, _dedup_index)) in w.anns.iter().zip(dedups.iter()) {
         let ann = if let Some(x) = ann_opt {
             x
         } else {
@@ -157,13 +154,13 @@ fn validate_anns(
             );
         } else if conf.min_work < ann.work_bits() {
             bail!("not enough work");
-        } else if dedup.hash == 0 || dedup.hash == u64::MAX {
+        } else if *dedup_hash == 0 || *dedup_hash == u64::MAX {
             bail!("zero or fff hash");
-        } else if !hash_num_ok(pnr, ann, dedup.hash, conf) {
+        } else if !hash_num_ok(pnr, ann, *dedup_hash, conf) {
             bail!("submit elsewhere");
         } else if conf.ann_version != ann.version() {
             bail!("unsupported ann version");
-        } else if (dedup.hash as u8 ^ w.random) < w.global.skip_check_chance {
+        } else if (*dedup_hash as u8 ^ w.random) < w.global.skip_check_chance {
             // fallthrough
         } else {
             let mut pbh = conf.parent_block_hash;
@@ -201,53 +198,11 @@ fn get_output(g: &Arc<Global>, parent_block_height: i32) -> &MutexB<Output> {
     &g.outputs[(parent_block_height as usize) % NUM_BLOCKS_TRACKING]
 }
 
-fn enqueue_write(w: &mut Worker, output: &mut Output) -> Vec<PacketCryptAnn> {
-    output.time_of_last_write = util::now_ms();
-    let len = min(OUT_ANN_CAP, output.out.len());
-    if len == 0 {
-        debug!("Nothing to write");
-        return Vec::new();
-    }
-    output.out.drain(..len).collect::<Vec<_>>()
-}
-
 fn optr<T>(o: Option<T>) -> Result<T> {
     match o {
         Some(t) => Ok(t),
         None => bail!("Option was none"),
     }
-}
-
-fn perform_dedup(w: &mut Worker, output: &mut Output, res: &mut AnnsEvent) -> Result<()> {
-    //debug!("Perform dedup {} {}", w.dedups.len(), output.dedup_tbl.len());
-    if output.dedup_tbl.front() == None {
-        output.dedup_tbl.push_back(u64::MAX);
-    } else if output.dedup_tbl.back() != Some(&u64::MAX) {
-        bail!("Corrupt dedup table");
-    }
-    for dd in w.dedups.iter() {
-        if dd.hash == 0 {
-            // collision with zero, or it was marked invalid earlier
-            continue;
-        }
-        let mut h = *output.dedup_tbl.front().unwrap();
-        while h < dd.hash {
-            output.dedup_tbl.rotate_left(1);
-            h = *output.dedup_tbl.front().unwrap();
-        }
-        if h > dd.hash {
-            output.dedup_tbl.push_back(dd.hash);
-            output.out.push_back(optr(w.anns[dd.ann_num].take())?);
-            res.accepted += 1;
-        //debug!("Pushing ann");
-        } else if h == dd.hash {
-            res.dup += 1;
-        }
-    }
-    while output.dedup_tbl.back() != Some(&u64::MAX) {
-        output.dedup_tbl.rotate_left(1);
-    }
-    Ok(())
 }
 
 fn process_batch(
@@ -256,15 +211,14 @@ fn process_batch(
     pnr: &AnnPostMeta,
     conf: &Config,
 ) -> Result<()> {
-    mk_dedups(w);
-    validate_anns(w, res, pnr, conf)?;
-    w.dedups.sort_by(|a, b| a.hash.cmp(&b.hash));
-    res.dup += self_dedup(&mut w.dedups);
+    let dedups = mk_dedups(w);
+    validate_anns(w, res, pnr, conf, &dedups)?;
+    res.dup = (dedups.len() - w.anns.len()) as u32;
     let now = util::now_ms();
 
     let g = w.global.clone();
     let output_mtx = get_output(&g, conf.parent_block_height);
-    let mut all_anns = Vec::new();
+    let mut dedup_set: HashSet<u64> = dedups.keys().cloned().collect();
     {
         let mut output = output_mtx.lock();
         //if let Some(out) = output.
@@ -272,18 +226,28 @@ fn process_batch(
             // we were too late
             bail!("block number out of range");
         }
-        perform_dedup(w, &mut *output, res)?;
-        while output.out.len() >= OUT_ANN_CAP || output.time_of_last_write + WRITE_EVERY_MS < now {
-            all_anns.push(enqueue_write(w, &mut *output));
+        let v: HashSet<u64> = output.dedup_tbl.intersection(&dedup_set).cloned().collect();
+        for dup in v {
+            res.dup += 1;
+            dedup_set.remove(&dup);
         }
     }
-    for anns in all_anns {
-        if !anns.is_empty() {
-            w.global
-                .sprayer
-                .push_anns(&anns.iter().map(|ann| &ann.bytes[..]).collect::<Vec<_>>()[..]);
-        }
-    }
+    let good_anns = dedup_set
+        .iter()
+        .filter_map(|h| dedups.get(h))
+        .filter_map(|i| w.anns[*i].take())
+        .collect::<Vec<_>>();
+
+    // output.dedup_tbl.push_back(dd.hash);
+    // output.out.push_back(optr(w.anns[dd.ann_num].take())?);
+    res.accepted += dedup_set.len() as u32;
+
+    w.global.sprayer.push_anns(
+        &good_anns
+            .iter()
+            .map(|ann| &ann.bytes[..])
+            .collect::<Vec<_>>()[..],
+    );
 
     Ok(())
 }
@@ -301,11 +265,7 @@ fn process_update(w: &mut Worker, conf: &MasterConf, bi: BlockInfo) {
             return;
         }
         let out = &mut *output;
-        while !out.out.is_empty() {
-            enqueue_write(w, out);
-        }
         out.dedup_tbl.clear();
-        out.time_of_last_write = util::now_ms();
         debug!("New work: height: {}", bi.header.height);
     } else if bi.header.hash != output.config.parent_block_hash {
         info!(
@@ -313,9 +273,7 @@ fn process_update(w: &mut Worker, conf: &MasterConf, bi: BlockInfo) {
             hex::encode(bi.header.hash),
             hex::encode(output.config.parent_block_hash)
         );
-        output.out.clear();
         output.dedup_tbl.clear();
-        output.time_of_last_write = util::now_ms();
     }
     output.config.handler_num = if let Some(x) = conf
         .submit_ann_urls
@@ -459,7 +417,6 @@ fn worker_loop(g: Arc<Global>, thread_num: usize) {
         random: util::rand_u32() as u8,
         payto_regex: Regex::new(r"^[a-zA-Z0-9]+$").unwrap(),
         anns: Vec::new(),
-        dedups: Vec::new(),
         vctx: ValidateCtx::default(),
     };
     let mut vec = VecDeque::new();
@@ -526,9 +483,7 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         .map(|_| {
             MutexB::new(Output {
                 config: Config::default(),
-                time_of_last_write: now,
-                out: VecDeque::new(),
-                dedup_tbl: VecDeque::new(),
+                dedup_tbl: HashSet::new(),
             })
         })
         .collect::<Vec<_>>()
