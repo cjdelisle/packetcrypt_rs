@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use anyhow::{bail, Result};
-use bytes::BufMut;
 use crossbeam_channel::{Receiver as ReceiverCB, Sender as SenderCB, TryRecvError};
 use crossbeam_queue::ArrayQueue;
 use log::{debug, error, info, trace};
@@ -13,7 +12,6 @@ use packetcrypt_util::{hash, util};
 use parking_lot::Mutex as MutexB; // blocking
 use regex::Regex;
 use std::cmp::{max, min};
-use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::convert::TryInto;
@@ -54,12 +52,6 @@ struct Output {
     dedup_tbl: VecDeque<u64>,
 }
 
-struct AnnTable {
-    files: HashMap<String, bytes::Bytes>,
-    filenames: VecDeque<String>,
-    top_file: usize,
-}
-
 pub struct Global {
     outputs: [MutexB<Output>; NUM_BLOCKS_TRACKING],
 
@@ -73,12 +65,7 @@ pub struct Global {
     pc_update_send: SenderCB<PoolUpdate>,
     pc_update_recv: ReceiverCB<PoolUpdate>,
 
-    // Next file number
-    fileno: AtomicUsize,
-
     pmc: PaymakerClient,
-
-    ann_tbl: std::sync::RwLock<AnnTable>,
 
     sockaddr: std::net::SocketAddr,
 
@@ -214,40 +201,14 @@ fn get_output(g: &Arc<Global>, parent_block_height: i32) -> &MutexB<Output> {
     &g.outputs[(parent_block_height as usize) % NUM_BLOCKS_TRACKING]
 }
 
-fn enqueue_write(w: &mut Worker, output: &mut Output) {
+fn enqueue_write(w: &mut Worker, output: &mut Output) -> Vec<PacketCryptAnn> {
     output.time_of_last_write = util::now_ms();
     let len = min(OUT_ANN_CAP, output.out.len());
     if len == 0 {
         debug!("Nothing to write");
-        return;
+        return Vec::new();
     }
-    w.global.sprayer.push_anns(
-        &output
-            .out
-            .iter()
-            .map(|ann| &ann.bytes[..])
-            .collect::<Vec<_>>()[..],
-    );
-    let mut anns = bytes::BytesMut::with_capacity(len);
-    for a in output.out.drain(..len) {
-        anns.put(a.bytes);
-    }
-    trace!("enqueue_write() with {} anns", anns.len());
-    let top_file = w.global.fileno.fetch_add(1, atomic::Ordering::Relaxed);
-    let f = format!(
-        "anns_{}_{}_{}.bin",
-        output.config.parent_block_height, output.config.handler_num, top_file,
-    );
-    let mut tbl = w.global.ann_tbl.write().unwrap();
-    tbl.files.insert(f.clone(), anns.freeze());
-    tbl.filenames.push_back(f);
-    tbl.top_file = top_file;
-
-    // Keep the number of files down
-    while tbl.filenames.len() > w.global.cfg.files_to_keep {
-        let f = tbl.filenames.pop_front().unwrap();
-        tbl.files.remove(&f);
-    }
+    output.out.drain(..len).collect::<Vec<_>>()
 }
 
 fn optr<T>(o: Option<T>) -> Result<T> {
@@ -303,6 +264,7 @@ fn process_batch(
 
     let g = w.global.clone();
     let output_mtx = get_output(&g, conf.parent_block_height);
+    let mut all_anns = Vec::new();
     {
         let mut output = output_mtx.lock();
         //if let Some(out) = output.
@@ -312,7 +274,14 @@ fn process_batch(
         }
         perform_dedup(w, &mut *output, res)?;
         while output.out.len() >= OUT_ANN_CAP || output.time_of_last_write + WRITE_EVERY_MS < now {
-            enqueue_write(w, &mut *output);
+            all_anns.push(enqueue_write(w, &mut *output));
+        }
+    }
+    for anns in all_anns {
+        if !anns.is_empty() {
+            w.global
+                .sprayer
+                .push_anns(&anns.iter().map(|ann| &ann.bytes[..]).collect::<Vec<_>>()[..]);
         }
     }
 
@@ -586,15 +555,9 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         pc: pc.clone(),
         pc_update_recv,
         pc_update_send,
-        fileno: AtomicUsize::new(0),
         pmc: pmc.clone(),
         sockaddr: bind_pub,
         skip_check_chance: 255 * cfg.skip_check_chance as u8,
-        ann_tbl: std::sync::RwLock::new(AnnTable {
-            files: HashMap::new(),
-            filenames: VecDeque::new(),
-            top_file: 0,
-        }),
         cfg,
         sprayer,
         overloads: AtomicUsize::new(0),
@@ -603,40 +566,6 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
     });
 
     Ok(global)
-}
-
-async fn handle_get(
-    ah: AnnHandler,
-    filename: String,
-    passwd: Option<String>,
-) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
-    let tbl = ah.ann_tbl.read().unwrap();
-    if filename == "index.json" {
-        return Ok(Box::new(warp::reply::json(
-            &packetcrypt_util::protocol::AnnIndex {
-                highest_ann_file: tbl.top_file as i64,
-                files: tbl.filenames.iter().cloned().collect(),
-            },
-        )));
-    }
-    if let Some(pass) = passwd {
-        if ah.cfg.block_miner_passwd != pass {
-            return Ok(Box::new(warp::reply::with_status(
-                warp::reply::json(&"x-pc-passwd incorrect".to_owned()),
-                warp::http::StatusCode::UNAUTHORIZED,
-            )));
-        }
-    } else {
-        return Ok(Box::new(warp::reply::with_status(
-            warp::reply::json(&"x-pc-passwd missing".to_owned()),
-            warp::http::StatusCode::UNAUTHORIZED,
-        )));
-    }
-    if let Some(f) = tbl.files.get(&filename) {
-        Ok(Box::new(warp::http::Response::builder().body(f.clone())))
-    } else {
-        Err(warp::reject::not_found())
-    }
 }
 
 async fn handle_submit(
@@ -705,15 +634,6 @@ pub async fn start(ah: &AnnHandler) {
         .and(warp::header::<String>("x-pc-payto"))
         .and_then(handle_submit);
 
-    let anns = warp::get()
-        .and((|ah: AnnHandler| warp::any().map(move || ah.clone()))(
-            ah.clone(),
-        ))
-        .and(warp::path("anns"))
-        .and(warp::path::param())
-        .and(warp::header::optional::<String>("x-pc-passwd"))
-        .and_then(handle_get);
-
     // Pipe new work updates through to a crossbeam channel
     util::tokio_bcast_to_crossbeam(
         "poolclient update",
@@ -722,7 +642,7 @@ pub async fn start(ah: &AnnHandler) {
     )
     .await;
 
-    packetcrypt_util::async_spawn!(ah, { warp::serve(sub.or(anns)).run(ah.sockaddr).await });
+    packetcrypt_util::async_spawn!(ah, { warp::serve(sub).run(ah.sockaddr).await });
 
     for i in 0..(ah.cfg.num_workers) {
         let g = ah.clone();
