@@ -205,16 +205,14 @@ fn process_batch(
         }
         output.dedup_tbl.extend(&dedup_set);
     }
+    res.accepted += dedup_set.len() as u32;
+
+    // done in 2 stages because borrow checker
     let good_anns = dedup_set
         .iter()
         .filter_map(|h| dedups.get(h))
         .filter_map(|i| w.anns[*i].take())
         .collect::<Vec<_>>();
-
-    // output.dedup_tbl.push_back(dd.hash);
-    // output.out.push_back(optr(w.anns[dd.ann_num].take())?);
-    res.accepted += dedup_set.len() as u32;
-
     w.global.sprayer.push_anns(
         &good_anns
             .iter()
