@@ -9,6 +9,7 @@ use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol::{AnnPostReply, AnnsEvent, BlockInfo, MasterConf};
 use packetcrypt_util::{hash, util};
+use parking_lot::Mutex as MutexB; // blocking
 use regex::Regex;
 use std::cmp::{max, min};
 use std::collections::HashMap;
@@ -18,7 +19,6 @@ use std::convert::TryInto;
 use std::net::SocketAddr;
 use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
-use std::sync::Mutex as MutexB; // blocking
 use tokio::sync::oneshot;
 use warp::Filter;
 
@@ -32,7 +32,7 @@ const NUM_BLOCKS_TRACKING: usize = 6;
 const OUT_ANN_CAP: usize = 1024;
 const WRITE_EVERY_MS: u64 = 30_000;
 const POOL_UPDATE_QUEUE_LEN: usize = 20;
-const RECV_WAIT_MS: u64 = 1000;
+const RECV_WAIT_MS: u64 = 10;
 
 fn mk_dedups(w: &mut Worker) {
     w.dedups.clear();
@@ -303,7 +303,7 @@ fn process_batch(
     let g = w.global.clone();
     let output_mtx = get_output(&g, conf.parent_block_height);
     {
-        let mut output = output_mtx.lock().unwrap();
+        let mut output = output_mtx.lock();
         //if let Some(out) = output.
         if output.config.parent_block_height != conf.parent_block_height {
             // we were too late
@@ -321,7 +321,7 @@ fn process_batch(
 fn process_update(w: &mut Worker, conf: &MasterConf, bi: BlockInfo) {
     let g = w.global.clone();
     // note: this conf.current_height is the next height to be made, so we subtract 1
-    let mut output = get_output(&g, bi.header.height).lock().unwrap();
+    let mut output = get_output(&g, bi.header.height).lock();
     if bi.header.height != output.config.parent_block_height {
         if bi.header.height < output.config.parent_block_height {
             info!(
@@ -408,10 +408,11 @@ struct AnnPost {
 }
 fn process_submit1(w: &mut Worker, sub: AnnPost) -> Result<AnnPostReply> {
     let (meta, mut bytes) = (sub.meta, sub.bytes);
-    let config = get_output(&w.global, meta.next_block_height - 1)
-        .lock()
-        .unwrap()
-        .config;
+    let config = {
+        get_output(&w.global, meta.next_block_height - 1)
+            .lock()
+            .config
+    };
     if config.parent_block_height != meta.next_block_height - 1 {
         if config.parent_block_height < 1 {
             bail!("server not ready");
@@ -497,7 +498,7 @@ fn worker_loop(g: Arc<Global>, thread_num: usize) {
         if thread_num == 0 {
             let llt = w.global.last_log_time.load(atomic::Ordering::Relaxed);
             let now = util::now_ms() / 1000;
-            if (now as usize) - llt > 10 {
+            if (now as usize) - llt > 5 {
                 let overloads = w.global.overloads.swap(0, atomic::Ordering::Relaxed);
                 let timeouts = w.global.timeouts.swap(0, atomic::Ordering::Relaxed);
                 info!("overloads: {} timeout: {} q: {}", overloads, timeouts, qlen);
@@ -523,7 +524,7 @@ fn worker_loop(g: Arc<Global>, thread_num: usize) {
             }
         }
         {
-            let mut apl = w.global.ann_posts.lock().unwrap();
+            let mut apl = w.global.ann_posts.lock();
             for _ in 0..32 {
                 match apl.pop_back() {
                     Some(p) => vec.push_back(p),
@@ -648,7 +649,7 @@ async fn handle_submit(
 ) -> Result<impl warp::Reply, Infallible> {
     let (reply, getreply) = oneshot::channel();
     let overflow = {
-        let mut apl = ah.ann_posts.lock().unwrap();
+        let mut apl = ah.ann_posts.lock();
         if apl.len() > ah.cfg.input_queue_len {
             true
         } else {

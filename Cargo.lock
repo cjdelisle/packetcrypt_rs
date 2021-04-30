@@ -988,6 +988,7 @@ dependencies = [
  "packetcrypt-sprayer",
  "packetcrypt-sys",
  "packetcrypt-util",
+ "parking_lot",
  "regex",
  "serde_json",
  "tokio",
