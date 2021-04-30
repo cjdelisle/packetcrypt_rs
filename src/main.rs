@@ -522,7 +522,7 @@ fn main() -> Result<()> {
     builder.enable_all();
 
     if matches.is_present("tokiothreads") {
-        builder.max_threads(get_usize!(matches, "tokiothreads"));
+        builder.core_threads(get_usize!(matches, "tokiothreads"));
     }
 
     builder.build().unwrap().block_on(async move {

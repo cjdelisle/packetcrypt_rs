@@ -525,7 +525,7 @@ fn worker_loop(g: Arc<Global>, thread_num: usize) {
         }
         {
             let mut apl = w.global.ann_posts.lock();
-            for _ in 0..32 {
+            for _ in 0..16 {
                 match apl.pop_back() {
                     Some(p) => vec.push_back(p),
                     None => break,
