@@ -12,7 +12,7 @@ PacketCrypt proof of work algorithm
 hex-literal = "0.3"
 
 [dependencies]
-tokio = { version = "0.2", features = ["macros","sync","fs","signal"], default-features = false }
+tokio = { version = "0.2", features = ["macros","sync","fs","signal","rt-threaded"], default-features = false }
 toml = "0.5"
 anyhow = "1.0"
 packetcrypt-sprayer = { version = "0.4", path = "packetcrypt-sprayer" }
