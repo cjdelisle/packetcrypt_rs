@@ -11,7 +11,7 @@ use packetcrypt_util::protocol::{AnnPostReply, AnnsEvent, BlockInfo, MasterConf}
 use packetcrypt_util::{hash, util};
 use parking_lot::Mutex as MutexB; // blocking
 use regex::Regex;
-use std::cmp::{max, min};
+use std::cmp::max;
 use std::collections::VecDeque;
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
@@ -22,15 +22,7 @@ use std::sync::Arc;
 use tokio::sync::oneshot;
 use warp::Filter;
 
-#[derive(Default, Clone, Copy)]
-struct DedupEntry {
-    hash: u64,
-    ann_num: usize,
-}
-
 const NUM_BLOCKS_TRACKING: usize = 6;
-const OUT_ANN_CAP: usize = 1024;
-const WRITE_EVERY_MS: u64 = 30_000;
 const POOL_UPDATE_QUEUE_LEN: usize = 20;
 const RECV_WAIT_MS: u64 = 10;
 
@@ -181,28 +173,8 @@ fn validate_anns(
     Ok(())
 }
 
-fn self_dedup(dedups: &mut Vec<DedupEntry>) -> u32 {
-    let mut dupes = 0;
-    let mut last_hash: u64 = 0;
-    for dd in dedups.iter_mut() {
-        if dd.hash == last_hash {
-            dd.hash = 0;
-            dupes += 1;
-        }
-        last_hash = dd.hash;
-    }
-    dupes
-}
-
 fn get_output(g: &Arc<Global>, parent_block_height: i32) -> &MutexB<Output> {
     &g.outputs[(parent_block_height as usize) % NUM_BLOCKS_TRACKING]
-}
-
-fn optr<T>(o: Option<T>) -> Result<T> {
-    match o {
-        Some(t) => Ok(t),
-        None => bail!("Option was none"),
-    }
 }
 
 fn process_batch(
@@ -214,7 +186,6 @@ fn process_batch(
     let dedups = mk_dedups(w);
     validate_anns(w, res, pnr, conf, &dedups)?;
     res.dup = (dedups.len() - w.anns.len()) as u32;
-    let now = util::now_ms();
 
     let g = w.global.clone();
     let output_mtx = get_output(&g, conf.parent_block_height);
@@ -231,6 +202,7 @@ fn process_batch(
             res.dup += 1;
             dedup_set.remove(&dup);
         }
+        output.dedup_tbl.extend(&dedup_set);
     }
     let good_anns = dedup_set
         .iter()
@@ -478,7 +450,6 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
             cfg.skip_check_chance
         );
     }
-    let now = util::now_ms();
     let outputs: Box<[_; NUM_BLOCKS_TRACKING]> = (0..NUM_BLOCKS_TRACKING)
         .map(|_| {
             MutexB::new(Output {
