@@ -836,9 +836,7 @@ impl SprayWorker {
                 &self.rchunk.bytes[self.rchunk.ecur + anns_len..self.rchunk.ecur + len],
             );
             self.maybe_subscribe(&x[0..stub_len], address);
-        }
-
-        if let Some(sub) = self.g.0.subscribed_to.get(&address) {
+        } else if let Some(sub) = self.g.0.subscribed_to.get(&address) {
             sub.packets_received
                 .fetch_add(count, atomic::Ordering::Relaxed);
             self.rchunk.ecur += len;

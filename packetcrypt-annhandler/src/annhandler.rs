@@ -505,26 +505,26 @@ fn worker_loop(g: Arc<Global>, thread_num: usize) {
                     .last_log_time
                     .store(now as usize, atomic::Ordering::Relaxed);
             }
-        }
-        loop {
-            match pc_update_recv.try_recv() {
-                Ok(upd) => {
-                    for bi in upd.update_blocks {
-                        process_update(&mut w, &upd.conf, bi);
+            loop {
+                match pc_update_recv.try_recv() {
+                    Ok(upd) => {
+                        for bi in upd.update_blocks {
+                            process_update(&mut w, &upd.conf, bi);
+                        }
+                        continue;
                     }
-                    continue;
-                }
-                Err(TryRecvError::Empty) => {
-                    break;
-                }
-                Err(TryRecvError::Disconnected) => {
-                    error!("pc_update_recv disconnected");
+                    Err(TryRecvError::Empty) => {
+                        break;
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        error!("pc_update_recv disconnected");
+                    }
                 }
             }
         }
         {
             let mut apl = w.global.ann_posts.lock().unwrap();
-            for _ in 0..10 {
+            for _ in 0..32 {
                 match apl.pop_back() {
                     Some(p) => vec.push_back(p),
                     None => break,
