@@ -16,7 +16,7 @@ use std::collections::VecDeque;
 use std::convert::Infallible;
 use std::convert::TryInto;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
 use std::sync::Mutex as MutexB; // blocking
 use tokio::sync::oneshot;
@@ -84,6 +84,10 @@ pub struct Global {
     skip_check_chance: u8,
 
     sprayer: packetcrypt_sprayer::Sprayer,
+
+    overloads: AtomicUsize,
+    timeouts: AtomicUsize,
+    last_log_time: AtomicUsize,
 }
 
 struct Worker {
@@ -228,10 +232,7 @@ fn enqueue_write(w: &mut Worker, output: &mut Output) {
         anns.put(a.bytes);
     }
     trace!("enqueue_write() with {} anns", anns.len());
-    let top_file = w
-        .global
-        .fileno
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let top_file = w.global.fileno.fetch_add(1, atomic::Ordering::Relaxed);
     let f = format!(
         "anns_{}_{}_{}.bin",
         output.config.parent_block_height, output.config.handler_num, top_file,
@@ -473,13 +474,14 @@ fn process_submit0(w: &mut Worker, mut sub: AnnPost) {
             }
         }) {
         Ok(_) => (),
-        Err(e) => {
-            info!("Error sending reply [{:?}]", e);
+        Err(_) => {
+            w.global.timeouts.fetch_add(1, atomic::Ordering::Relaxed);
+            //info!("Error sending reply [{:?}]", e);
         }
     }
 }
 
-fn worker_loop(g: Arc<Global>) {
+fn worker_loop(g: Arc<Global>, thread_num: usize) {
     let pc_update_recv = g.pc_update_recv.clone();
     let mut w: Worker = Worker {
         global: g,
@@ -490,7 +492,20 @@ fn worker_loop(g: Arc<Global>) {
         vctx: ValidateCtx::default(),
     };
     let mut vec = VecDeque::new();
+    let mut qlen = 0;
     loop {
+        if thread_num == 0 {
+            let llt = w.global.last_log_time.load(atomic::Ordering::Relaxed);
+            let now = util::now_ms() / 1000;
+            if (now as usize) - llt > 10 {
+                let overloads = w.global.overloads.swap(0, atomic::Ordering::Relaxed);
+                let timeouts = w.global.timeouts.swap(0, atomic::Ordering::Relaxed);
+                info!("overloads: {} timeout: {} q: {}", overloads, timeouts, qlen);
+                w.global
+                    .last_log_time
+                    .store(now as usize, atomic::Ordering::Relaxed);
+            }
+        }
         loop {
             match pc_update_recv.try_recv() {
                 Ok(upd) => {
@@ -515,6 +530,7 @@ fn worker_loop(g: Arc<Global>) {
                     None => break,
                 }
             }
+            qlen = apl.len();
         }
         if vec.is_empty() {
             std::thread::sleep(core::time::Duration::from_millis(RECV_WAIT_MS));
@@ -579,6 +595,9 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         }),
         cfg,
         sprayer,
+        overloads: AtomicUsize::new(0),
+        timeouts: AtomicUsize::new(0),
+        last_log_time: AtomicUsize::new(0),
     });
 
     Ok(global)
@@ -665,7 +684,7 @@ async fn handle_submit(
             ))
         }
         true => {
-            info!("server overloaded");
+            ah.overloads.fetch_add(1, atomic::Ordering::Relaxed);
             Ok(warp::reply::with_status(
                 warp::reply::json(&AnnPostReply {
                     error: vec!["overloaded".into()],
@@ -712,10 +731,10 @@ pub async fn start(ah: &AnnHandler) {
 
     packetcrypt_util::async_spawn!(ah, { warp::serve(sub.or(anns)).run(ah.sockaddr).await });
 
-    for _ in 0..(ah.cfg.num_workers) {
+    for i in 0..(ah.cfg.num_workers) {
         let g = ah.clone();
         std::thread::spawn(move || {
-            worker_loop(g);
+            worker_loop(g, i);
         });
     }
 
