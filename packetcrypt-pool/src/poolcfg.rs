@@ -15,6 +15,7 @@ pub struct AnnHandlerCfg {
     pub bind_pvt: String,
     pub spray_workers: u32,
     pub subscribe_to: Vec<String>,
+    pub mss: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]

@@ -132,8 +132,8 @@ async fn ann_main(
     util::sleep_forever().await
 }
 
-async fn sprayer_main(cfg: packetcrypt_util::sprayer::Config) -> Result<()> {
-    packetcrypt_util::sprayer::Sprayer::new(&cfg)?.start();
+async fn sprayer_main(cfg: packetcrypt_sprayer::Config) -> Result<()> {
+    packetcrypt_sprayer::Sprayer::new(&cfg)?.start();
     util::sleep_forever().await
 }
 
@@ -324,7 +324,8 @@ async fn main() -> Result<()> {
                         .short("s")
                         .long("subscribe")
                         .help("Sprayer interface to subscribe to")
-                        .takes_value(true),
+                        .takes_value(true)
+                        .min_values(1),
                 )
                 .arg(
                     Arg::with_name("sprayerthreads")
@@ -348,6 +349,20 @@ async fn main() -> Result<()> {
                         .help("Number of share-upload threads, be careful not to overload the block handlers")
                         .default_value("4")
                         .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("mss")
+                        .short("M")
+                        .long("maxsegmentsize")
+                        .help("Maximum packet size to send when using UDP sprayer, remember IP and UDP overhead")
+                        .default_value("1472")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("mcast")
+                    .long("mcast")
+                    .help("Connect to this multicast group")
+                    .takes_value(true),
                 ),
         )
         .subcommand(
@@ -379,9 +394,26 @@ async fn main() -> Result<()> {
                 )
                 .arg(
                     Arg::with_name("subscribe")
+                        .short("s")
+                        .long("subscribe")
                         .help("Sprayers so subscribe to")
                         .required(true)
                         .min_values(1),
+                )
+                .arg(
+                    Arg::with_name("sprayat")
+                        .short("S")
+                        .long("sprayat")
+                        .help("Always spray at these addresses")
+                        .min_values(1),
+                )
+                .arg(
+                    Arg::with_name("mss")
+                        .short("M")
+                        .long("maxsegmentsize")
+                        .help("Maximum packet size to send, remember IP and UDP overhead")
+                        .default_value("1472")
+                        .takes_value(true)
                 ),
         )
         .get_matches();
@@ -419,15 +451,24 @@ async fn main() -> Result<()> {
             if bind.is_empty() {
                 bail!("When sprayer is enabled, --bind is required");
             }
-            let subscribe = get_str!(blk, "subscribe").into();
+            let subscribe_to = get_strs!(blk, "subscribe");
             let workers = get_usize!(blk, "sprayerthreads");
-            Some(packetcrypt_util::sprayer::Config {
+            let mss = get_usize!(blk, "mss");
+            let mcast = if blk.is_present("mcast") {
+                get_str!(blk, "mcast")
+            } else {
+                ""
+            }
+            .to_owned();
+            Some(packetcrypt_sprayer::Config {
                 passwd,
                 bind,
                 workers,
-                subscribe_to: vec![subscribe],
-                always_send_all: false,
+                subscribe_to,
                 log_peer_stats: false,
+                mss,
+                spray_at: Vec::new(),
+                mcast,
             })
         } else {
             if blk.is_present("bind") {
@@ -449,13 +490,20 @@ async fn main() -> Result<()> {
         })
         .await?;
     } else if let Some(spray) = matches.subcommand_matches("sprayer") {
-        sprayer_main(packetcrypt_util::sprayer::Config {
+        let spray_at = if spray.is_present("sprayat") {
+            get_strs!(spray, "sprayat")
+        } else {
+            Vec::new()
+        };
+        sprayer_main(packetcrypt_sprayer::Config {
             passwd: get_str!(spray, "passwd").into(),
             bind: get_str!(spray, "bind").into(),
             workers: get_usize!(spray, "threads"),
             subscribe_to: get_strs!(spray, "subscribe"),
-            always_send_all: false,
             log_peer_stats: true,
+            mss: get_usize!(spray, "mss"),
+            spray_at,
+            mcast: "".to_owned(),
         })
         .await?;
     }
