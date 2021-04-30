@@ -21,3 +21,4 @@ packetcrypt-util = { version = "0.4", path = "../packetcrypt-util" }
 packetcrypt-pool = { version = "0.4", path = "../packetcrypt-pool" }
 packetcrypt-sprayer = { version = "0.4", path = "../packetcrypt-sprayer" }
 parking_lot = "0.11"
+crossbeam-queue = "0.3"

@@ -2,6 +2,7 @@
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use crossbeam_channel::{Receiver as ReceiverCB, Sender as SenderCB, TryRecvError};
+use crossbeam_queue::ArrayQueue;
 use log::{debug, error, info, trace};
 use packetcrypt_pool::paymakerclient::{self, PaymakerClient};
 use packetcrypt_pool::poolcfg::AnnHandlerCfg;
@@ -65,7 +66,7 @@ pub struct Global {
     cfg: AnnHandlerCfg,
 
     // Http posts
-    ann_posts: MutexB<VecDeque<AnnPost>>,
+    ann_posts: ArrayQueue<AnnPost>,
 
     // Work updates
     pc: PoolClient,
@@ -493,7 +494,6 @@ fn worker_loop(g: Arc<Global>, thread_num: usize) {
         vctx: ValidateCtx::default(),
     };
     let mut vec = VecDeque::new();
-    let mut qlen = 0;
     loop {
         if thread_num == 0 {
             let llt = w.global.last_log_time.load(atomic::Ordering::Relaxed);
@@ -501,7 +501,12 @@ fn worker_loop(g: Arc<Global>, thread_num: usize) {
             if (now as usize) - llt > 5 {
                 let overloads = w.global.overloads.swap(0, atomic::Ordering::Relaxed);
                 let timeouts = w.global.timeouts.swap(0, atomic::Ordering::Relaxed);
-                info!("overloads: {} timeout: {} q: {}", overloads, timeouts, qlen);
+                info!(
+                    "overloads: {} timeout: {} q: {}",
+                    overloads,
+                    timeouts,
+                    w.global.ann_posts.len()
+                );
                 w.global
                     .last_log_time
                     .store(now as usize, atomic::Ordering::Relaxed);
@@ -523,15 +528,11 @@ fn worker_loop(g: Arc<Global>, thread_num: usize) {
                 }
             }
         }
-        {
-            let mut apl = w.global.ann_posts.lock();
-            for _ in 0..16 {
-                match apl.pop_back() {
-                    Some(p) => vec.push_back(p),
-                    None => break,
-                }
+        for _ in 0..16 {
+            match w.global.ann_posts.pop() {
+                Some(p) => vec.push_back(p),
+                None => break,
             }
-            qlen = apl.len();
         }
         if vec.is_empty() {
             std::thread::sleep(core::time::Duration::from_millis(RECV_WAIT_MS));
@@ -580,7 +581,7 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
 
     let (pc_update_send, pc_update_recv) = crossbeam_channel::bounded(POOL_UPDATE_QUEUE_LEN);
     let global = Arc::new(Global {
-        ann_posts: MutexB::new(VecDeque::new()),
+        ann_posts: ArrayQueue::new(cfg.input_queue_len),
         outputs: *outputs,
         pc: pc.clone(),
         pc_update_recv,
@@ -648,26 +649,17 @@ async fn handle_submit(
     pay_to: String,
 ) -> Result<impl warp::Reply, Infallible> {
     let (reply, getreply) = oneshot::channel();
-    let overflow = {
-        let mut apl = ah.ann_posts.lock();
-        if apl.len() > ah.cfg.input_queue_len {
-            true
-        } else {
-            apl.push_back(AnnPost {
-                meta: AnnPostMeta {
-                    sver,
-                    next_block_height,
-                    pay_to,
-                    remote_addr,
-                },
-                bytes,
-                reply: Some(reply),
-            });
-            false
-        }
-    };
-    match overflow {
-        false => {
+    match ah.ann_posts.push(AnnPost {
+        meta: AnnPostMeta {
+            sver,
+            next_block_height,
+            pay_to,
+            remote_addr,
+        },
+        bytes,
+        reply: Some(reply),
+    }) {
+        Ok(_) => {
             let reply = getreply.await.unwrap();
             let ok = reply.error.is_empty();
             if let Some(res) = &reply.result {
@@ -684,7 +676,7 @@ async fn handle_submit(
                 },
             ))
         }
-        true => {
+        Err(_) => {
             ah.overloads.fetch_add(1, atomic::Ordering::Relaxed);
             Ok(warp::reply::with_status(
                 warp::reply::json(&AnnPostReply {
