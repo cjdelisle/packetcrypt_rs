@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use anyhow::{bail, Result};
 use bytes::BufMut;
-use crossbeam_channel::{
-    Receiver as ReceiverCB, RecvTimeoutError, Sender as SenderCB, TryRecvError,
-};
+use crossbeam_channel::{Receiver as ReceiverCB, Sender as SenderCB, TryRecvError};
 use log::{debug, error, info, trace};
 use packetcrypt_pool::paymakerclient::{self, PaymakerClient};
 use packetcrypt_pool::poolcfg::AnnHandlerCfg;
@@ -67,8 +65,7 @@ pub struct Global {
     cfg: AnnHandlerCfg,
 
     // Http posts
-    submit_send: SenderCB<AnnPost>,
-    submit_recv: ReceiverCB<AnnPost>,
+    ann_posts: MutexB<VecDeque<AnnPost>>,
 
     // Work updates
     pc: PoolClient,
@@ -484,7 +481,6 @@ fn process_submit0(w: &mut Worker, mut sub: AnnPost) {
 
 fn worker_loop(g: Arc<Global>) {
     let pc_update_recv = g.pc_update_recv.clone();
-    let submit_recv = g.submit_recv.clone();
     let mut w: Worker = Worker {
         global: g,
         random: util::rand_u32() as u8,
@@ -493,6 +489,7 @@ fn worker_loop(g: Arc<Global>) {
         dedups: Vec::new(),
         vctx: ValidateCtx::default(),
     };
+    let mut vec = VecDeque::new();
     loop {
         loop {
             match pc_update_recv.try_recv() {
@@ -510,15 +507,20 @@ fn worker_loop(g: Arc<Global>) {
                 }
             }
         }
-        match submit_recv.recv_timeout(core::time::Duration::from_millis(RECV_WAIT_MS)) {
-            Ok(sub) => {
-                process_submit0(&mut w, sub);
-                continue;
+        {
+            let mut apl = w.global.ann_posts.lock().unwrap();
+            for _ in 0..10 {
+                match apl.pop_back() {
+                    Some(p) => vec.push_back(p),
+                    None => break,
+                }
             }
-            Err(RecvTimeoutError::Timeout) => (),
-            Err(RecvTimeoutError::Disconnected) => {
-                error!("submit_recv disconnected");
-            }
+        }
+        if vec.is_empty() {
+            std::thread::sleep(core::time::Duration::from_millis(RECV_WAIT_MS));
+        }
+        for sub in vec.drain(..) {
+            process_submit0(&mut w, sub)
         }
     }
 }
@@ -559,12 +561,10 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         mcast: "".to_owned(),
     })?;
 
-    let (submit_send, submit_recv) = crossbeam_channel::bounded(cfg.input_queue_len);
     let (pc_update_send, pc_update_recv) = crossbeam_channel::bounded(POOL_UPDATE_QUEUE_LEN);
     let global = Arc::new(Global {
+        ann_posts: MutexB::new(VecDeque::new()),
         outputs: *outputs,
-        submit_send,
-        submit_recv,
         pc: pc.clone(),
         pc_update_recv,
         pc_update_send,
@@ -628,17 +628,26 @@ async fn handle_submit(
     pay_to: String,
 ) -> Result<impl warp::Reply, Infallible> {
     let (reply, getreply) = oneshot::channel();
-    match ah.submit_send.try_send(AnnPost {
-        meta: AnnPostMeta {
-            sver,
-            next_block_height,
-            pay_to,
-            remote_addr,
-        },
-        bytes,
-        reply: Some(reply),
-    }) {
-        Ok(_) => {
+    let overflow = {
+        let mut apl = ah.ann_posts.lock().unwrap();
+        if apl.len() > ah.cfg.input_queue_len {
+            true
+        } else {
+            apl.push_back(AnnPost {
+                meta: AnnPostMeta {
+                    sver,
+                    next_block_height,
+                    pay_to,
+                    remote_addr,
+                },
+                bytes,
+                reply: Some(reply),
+            });
+            false
+        }
+    };
+    match overflow {
+        false => {
             let reply = getreply.await.unwrap();
             let ok = reply.error.is_empty();
             if let Some(res) = &reply.result {
@@ -655,18 +664,11 @@ async fn handle_submit(
                 },
             ))
         }
-        Err(e) => {
-            let err: String = (if e.is_full() {
-                info!("server overloaded");
-                "overloaded"
-            } else {
-                error!("channel disconnected");
-                "disconnected"
-            })
-            .into();
+        true => {
+            info!("server overloaded");
             Ok(warp::reply::with_status(
                 warp::reply::json(&AnnPostReply {
-                    error: vec![err],
+                    error: vec!["overloaded".into()],
                     warn: vec![],
                     result: None,
                 }),
