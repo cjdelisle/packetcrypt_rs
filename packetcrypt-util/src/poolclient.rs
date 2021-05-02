@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::protocol::{BlockInfo, MasterConf};
 use crate::util;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -72,7 +72,10 @@ async fn discover_block(pcli: &PoolClient, height: i32, hash: &[u8; 32]) -> Opti
     loop {
         let text = match util::get_url_text(&url).await {
             Err(e) => {
-                info!("Failed to make request {:?} retry in 5 seconds", e);
+                warn!(
+                    "Failed to make request to {} because {:?} retry in 5 seconds",
+                    &url, e
+                );
                 util::sleep_ms(5000).await;
                 continue;
             }
@@ -122,7 +125,10 @@ async fn cfg_loop(pcli: &PoolClient) {
         let url = format!("{}/config.json", pcli.url);
         let text = match util::get_url_text(&url).await {
             Err(e) => {
-                info!("Failed to make request {:?} retry in 5 seconds", e);
+                warn!(
+                    "Failed to make request to {} because {:?} retry in 5 seconds",
+                    &url, e
+                );
                 util::sleep_ms(5000).await;
                 continue;
             }
