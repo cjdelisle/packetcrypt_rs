@@ -509,7 +509,7 @@ async fn stats_loop(am: &AnnMine) {
                 let rejected = p.rejected_anns.swap(0, Ordering::Relaxed);
                 let over = p.overload_anns.swap(0, Ordering::Relaxed);
                 accepted_rejected_over_anns.push(format!("{}/{}/{}", accepted, rejected, over));
-                let total = lost + rejected + accepted;
+                let total = lost + over + rejected + accepted;
                 rate.push(format!(
                     "{}%",
                     ((if total > 0 {
