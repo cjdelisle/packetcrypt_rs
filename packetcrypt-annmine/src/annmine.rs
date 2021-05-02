@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::annminer::{self, AnnResult};
-use anyhow::Result;
+use anyhow::{bail, Result};
 use core::time::Duration;
 use log::{debug, info, trace, warn};
 use packetcrypt_sys::PacketCryptAnn;
@@ -53,6 +53,7 @@ struct Pool {
     lost_anns: AtomicUsize,
     accepted_anns: AtomicUsize,
     rejected_anns: AtomicUsize,
+    overload_anns: AtomicUsize,
 }
 
 struct AnnMineM {
@@ -102,6 +103,7 @@ pub async fn new(cfg: AnnMineCfg) -> Result<AnnMine> {
                 lost_anns: AtomicUsize::new(0),
                 accepted_anns: AtomicUsize::new(0),
                 rejected_anns: AtomicUsize::new(0),
+                overload_anns: AtomicUsize::new(0),
             })
         })
         .collect::<Vec<_>>();
@@ -386,13 +388,15 @@ async fn upload_batch(
     mut batch: AnnBatch,
     url: &str,
     upload_n: usize,
-) -> Result<usize> {
+    p: &Arc<Pool>,
+) -> Result<()> {
     debug!(
         "[{}] uploading [{}] anns to [{}]",
         upload_n,
         batch.anns.len(),
         url
     );
+    let count = batch.anns.len();
     let v: Vec<Result<bytes::Bytes>> = batch
         .anns
         .drain(..)
@@ -417,25 +421,28 @@ async fn upload_batch(
     let reply = if let Ok(x) = serde_json::from_slice::<AnnPostReply>(&resbytes) {
         x
     } else {
-        warn!(
+        bail!(
             "[{}] handler [{}] replied [{}]: [{}] which cannot be parsed",
             upload_n,
             url,
             status,
             String::from_utf8_lossy(&resbytes[..])
         );
-        return Ok(0);
     };
     let result = if let Some(x) = reply.result {
         x
     } else {
-        warn!(
+        if reply.error.iter().any(|x| x == "overloaded") {
+            //am.overload_anns
+            p.overload_anns.fetch_add(count, Ordering::Relaxed);
+            return Ok(());
+        }
+        bail!(
             "[{}] handler [{}] replied with no result [{}]",
             upload_n,
             url,
             String::from_utf8_lossy(&resbytes[..])
         );
-        return Ok(0);
     };
     debug!(
         "[{}] handler [{}] replied: OK [{}]{}",
@@ -459,7 +466,14 @@ async fn upload_batch(
             upload_n, url, reply.warn
         );
     }
-    Ok(result.accepted as usize)
+    //Ok(result.accepted as usize)
+    p.accepted_anns
+        .fetch_add(result.accepted as usize, Ordering::Relaxed);
+    let rejected = count - (result.accepted as usize);
+    if rejected > 0 {
+        p.rejected_anns.fetch_add(rejected, Ordering::Relaxed);
+    }
+    Ok(())
 }
 
 async fn stats_loop(am: &AnnMine) {
@@ -484,7 +498,7 @@ async fn stats_loop(am: &AnnMine) {
 
             let mut lost_anns = Vec::new();
             let mut inflight_anns = Vec::new();
-            let mut accepted_rejected_anns = Vec::new();
+            let mut accepted_rejected_over_anns = Vec::new();
             let mut rate = Vec::new();
             for p in &am.pools {
                 let lost = p.lost_anns.swap(0, Ordering::Relaxed);
@@ -493,7 +507,8 @@ async fn stats_loop(am: &AnnMine) {
                 inflight_anns.push(format!("{}", inflight));
                 let accepted = p.accepted_anns.swap(0, Ordering::Relaxed);
                 let rejected = p.rejected_anns.swap(0, Ordering::Relaxed);
-                accepted_rejected_anns.push(format!("{}/{}", accepted, rejected));
+                let over = p.overload_anns.swap(0, Ordering::Relaxed);
+                accepted_rejected_over_anns.push(format!("{}/{}/{}", accepted, rejected, over));
                 let total = lost + rejected + accepted;
                 rate.push(format!(
                     "{}%",
@@ -507,7 +522,7 @@ async fn stats_loop(am: &AnnMine) {
 
             if kbps > 0.0 {
                 info!(
-                    "{} {} overflow: {} uploading: {} accept/reject: {} - goodrate: {}",
+                    "{} {} overflow: {} uploading: {} accept/reject/overload: {} - goodrate: {}",
                     util::pad_to(10, format!("{}e/s", util::big_number(estimated_eps))),
                     util::pad_to(11, util::format_kbps(kbps)),
                     util::pad_to(5 * am.pools.len(), format!("[{}]", lost_anns.join(", "))),
@@ -517,7 +532,7 @@ async fn stats_loop(am: &AnnMine) {
                     ),
                     util::pad_to(
                         12 * am.pools.len(),
-                        format!("[{}]", accepted_rejected_anns.join(", "))
+                        format!("[{}]", accepted_rejected_over_anns.join(", "))
                     ),
                     format!("[{}]", rate.join(", "))
                 );
@@ -544,14 +559,8 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let count = batch.anns.len();
         p.inflight_anns.fetch_add(count, Ordering::Relaxed);
-        match upload_batch(am, &client, batch, &h.url, upload_n).await {
-            Ok(accepted) => {
-                p.accepted_anns.fetch_add(accepted, Ordering::Relaxed);
-                if count > accepted {
-                    let rejected = count - accepted;
-                    p.rejected_anns.fetch_add(rejected, Ordering::Relaxed);
-                }
-            }
+        match upload_batch(am, &client, batch, &h.url, upload_n, &p).await {
+            Ok(_) => (),
             Err(e) => {
                 warn!(
                     "[{}] Error uploading ann batch to {}: {}",
