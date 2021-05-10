@@ -440,7 +440,11 @@ fn worker_loop(g: Arc<Global>, thread_num: usize) {
 
 pub type AnnHandler = Arc<Global>;
 
-pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> Result<AnnHandler> {
+pub async fn new(
+    pc: &PoolClient,
+    pmc: &PaymakerClient,
+    mut cfg: AnnHandlerCfg,
+) -> Result<AnnHandler> {
     if cfg.skip_check_chance > 1.0 || cfg.skip_check_chance < 0.0 {
         bail!(
             "skip_check_chance must be a number between 0 and 1, got {}",
@@ -467,7 +471,7 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         subscribe_to: cfg.subscribe_to.clone(),
         log_peer_stats: true,
         mss: if let Some(mss) = cfg.mss { mss } else { 1472 },
-        spray_at: Vec::new(),
+        spray_at: cfg.spray_at.take().unwrap_or_else(|| Vec::new()),
         mcast: "".to_owned(),
     })?;
 

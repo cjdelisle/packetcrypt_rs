@@ -16,6 +16,7 @@ pub struct AnnHandlerCfg {
     pub spray_workers: u32,
     pub subscribe_to: Vec<String>,
     pub mss: Option<usize>,
+    pub spray_at: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
