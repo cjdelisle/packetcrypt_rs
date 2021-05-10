@@ -471,7 +471,7 @@ pub async fn new(
         subscribe_to: cfg.subscribe_to.clone(),
         log_peer_stats: true,
         mss: if let Some(mss) = cfg.mss { mss } else { 1472 },
-        spray_at: cfg.spray_at.take().unwrap_or_else(|| Vec::new()),
+        spray_at: cfg.spray_at.take().unwrap_or_else(Vec::new),
         mcast: "".to_owned(),
     })?;
 
