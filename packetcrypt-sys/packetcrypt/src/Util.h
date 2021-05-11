@@ -50,10 +50,10 @@ static inline uint32_t Util_annSoftNonceMax(uint32_t target) {
 
 //#define DEBUG
 #ifdef DEBUG
-#define Util_INVAL_IF(expr) assert(!(expr))
+#define Util_INVAL_IF(expr) assert(!(expr) && msg)
 #define Util_BUG_IF(expr) assert(!(expr))
 #else
-#define Util_INVAL_IF(expr) do { if (expr) { return -1; } } while (0)
+#define Util_INVAL_IF(expr, msg) do { if (expr) { printf("%s\n", msg); return -1; } } while (0)
 #define Util_BUG_IF(expr) do { \
     if (!(expr)) { break; } \
     fprintf(stderr, "BUG %s:%d (%s)\n", __FILE__, __LINE__, #expr); \

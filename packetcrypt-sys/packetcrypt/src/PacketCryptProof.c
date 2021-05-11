@@ -258,7 +258,7 @@ int PacketCryptProof_hashProof(
     #define READ(out) do { \
             uint32_t count = Buf_SIZEOF(out); \
             cpcpSize -= count; \
-            Util_INVAL_IF(cpcpSize < 0); \
+            Util_INVAL_IF(cpcpSize < 0, "cpcpSize < 0"); \
             memcpy((out), cpcp, count); \
             cpcp += count; \
         } while (0)
@@ -271,7 +271,7 @@ int PacketCryptProof_hashProof(
     totalAnns++;
 
     PcCompress_t* tbl = PcCompress_mkEntryTable(totalAnns, annIdxs);
-    Util_INVAL_IF(!tbl);
+    Util_INVAL_IF(!tbl, "PcCompress_mkEntryTable() null");
 
     // fill in announcement hashes
     for (int i = 0; i < PacketCrypt_NUM_ANNS; i++) {
@@ -292,7 +292,7 @@ int PacketCryptProof_hashProof(
             e->flags |= PcCompress_F_HAS_HASH;
         }
     }
-    Util_INVAL_IF(cpcpSize != 0);
+    Util_INVAL_IF(cpcpSize != 0, "cpcpSize != 0");
     #undef READ
 
     // Calculate the start and end for each of the announcements and their siblings
@@ -324,7 +324,7 @@ int PacketCryptProof_hashProof(
             e->e.end = sib->e.start;
             sib->e.end += sib->e.start;
         }
-        Util_INVAL_IF(e->e.end <= e->e.start);
+        Util_INVAL_IF(e->e.end <= e->e.start, "e->e.end <= e->e.start");
         e->flags |= PcCompress_F_HAS_START | PcCompress_F_HAS_RANGE;
         sib->flags |= PcCompress_F_HAS_START | PcCompress_F_HAS_RANGE;
     }
@@ -383,7 +383,7 @@ int PacketCryptProof_hashProof(
                 sib->flags |= PcCompress_F_HAS_START;
 
                 // No sum of ranges can be greater than UINT_MAX or less than 1
-                Util_INVAL_IF(sib->e.end <= sib->e.start);
+                Util_INVAL_IF(sib->e.end <= sib->e.start, "sib->e.end <= sib->e.start");
             }
             Entry_t buf[2];
             Buf_OBJCPY(&buf[eIsRight], &e->e);
@@ -391,7 +391,7 @@ int PacketCryptProof_hashProof(
 
             // the sum of ranges between two announcement hashes must equal
             // the difference between the hash values
-            Util_INVAL_IF(buf[1].start != buf[0].end);
+            Util_INVAL_IF(buf[1].start != buf[0].end, "buf[1].start != buf[0].end");
 
             Util_BUG_IF(buf[1].end <= buf[1].start && !IS_FFFF(&buf[1]));
             Util_BUG_IF(buf[0].end <= buf[0].start && !IS_FFFF(&buf[0]));
