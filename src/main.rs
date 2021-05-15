@@ -267,7 +267,8 @@ async fn async_main(matches: clap::ArgMatches<'_>) -> Result<()> {
     Ok(())
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let cpus_str = format!("{}", num_cpus::get());
     let matches = App::new("packetcrypt")
         .version("0.4.0")
@@ -510,13 +511,5 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
-    let mut builder = tokio::runtime::Builder::new();
-    builder.enable_all();
-    builder.build().unwrap().block_on(async move {
-        match async_main(matches).await {
-            Ok(_) => (),
-            Err(e) => println!("Error {}", e),
-        }
-    });
-    Ok(())
+    async_main(matches).await
 }
