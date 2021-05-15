@@ -281,12 +281,6 @@ fn main() -> Result<()> {
                 .multiple(true)
                 .help("Verbose logging"),
         )
-        .arg(
-            Arg::with_name("tokiothreads")
-                .long("tokiothreads")
-                .takes_value(true)
-                .help("Number of tokio worker threads")
-        )
         .subcommand(
             SubCommand::with_name("ah")
                 .about("Run announcement handler")
@@ -517,14 +511,7 @@ fn main() -> Result<()> {
         .get_matches();
 
     let mut builder = tokio::runtime::Builder::new();
-
-    builder.threaded_scheduler();
     builder.enable_all();
-
-    if matches.is_present("tokiothreads") {
-        builder.core_threads(get_usize!(matches, "tokiothreads"));
-    }
-
     builder.build().unwrap().block_on(async move {
         match async_main(matches).await {
             Ok(_) => (),
