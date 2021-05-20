@@ -223,6 +223,12 @@ pub struct Config {
     pub mcast: String,
 }
 
+#[cfg(windows)]
+fn raw_fd(_s: &UdpSocket) -> i32 {
+    panic!("sprayer is not supported in windows");
+}
+
+#[cfg(not(windows))]
 fn raw_fd(s: &UdpSocket) -> i32 {
     use std::os::unix::io::AsRawFd;
     s.as_raw_fd()

@@ -10,9 +10,27 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdbool.h>
-#include <netinet/in.h>
 #include <stdio.h>
+#ifdef _WIN32
+const char* UdpGso_supported() {
+    return "win32";
+}
+int UdpGro_enable(int _fd, int _pktSize) {
+    return -9999;
+}
+int UdpGro_recvmsg(int _fd, struct UdpGro_Sockaddr* _addrOut, uint8_t* _buf, int _length, int* _pktSize) {
+    return -9999;
+}
+int UdpGro_sendmsg(int _fd, const struct UdpGro_Sockaddr* _addr, const uint8_t* _data, int _length, int _pktSize) {
+    return -9999;
+}
+int UdpGro_setRecvBuf(int _fd, int _bufSz) {
+    return -9999;
+}
+#else
+#include <netinet/in.h>
 #include <netinet/udp.h>
+
 
 #ifndef __linux__
     #define NO_GO "not linux"
@@ -224,3 +242,5 @@ int UdpGro_setRecvBuf(int fd, int bufSz)
     }
     return 0;
 }
+
+#endif
