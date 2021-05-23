@@ -223,6 +223,12 @@ pub struct Config {
     pub mcast: String,
 }
 
+#[cfg(windows)]
+fn raw_fd(_s: &UdpSocket) -> i32 {
+    panic!("sprayer is not supported in windows");
+}
+
+#[cfg(not(windows))]
 fn raw_fd(s: &UdpSocket) -> i32 {
     use std::os::unix::io::AsRawFd;
     s.as_raw_fd()
@@ -836,9 +842,7 @@ impl SprayWorker {
                 &self.rchunk.bytes[self.rchunk.ecur + anns_len..self.rchunk.ecur + len],
             );
             self.maybe_subscribe(&x[0..stub_len], address);
-        }
-
-        if let Some(sub) = self.g.0.subscribed_to.get(&address) {
+        } else if let Some(sub) = self.g.0.subscribed_to.get(&address) {
             sub.packets_received
                 .fetch_add(count, atomic::Ordering::Relaxed);
             self.rchunk.ecur += len;

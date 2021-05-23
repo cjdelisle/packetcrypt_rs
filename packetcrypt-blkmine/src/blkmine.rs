@@ -666,8 +666,10 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
     bm.current_mining.lock().unwrap().replace(current_mining);
 
     // Validate self-test
-    // crash on failure
-    make_share(bm, br, true).unwrap();
+    match make_share(bm, br, true) {
+        Ok(_) => (),
+        Err(e) => warn!("Failed to validate PcP, maybe hardware issues? {}", e),
+    };
 }
 
 pub async fn new(ba: BlkArgs) -> Result<BlkMine> {

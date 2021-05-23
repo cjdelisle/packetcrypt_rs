@@ -172,10 +172,103 @@ macro_rules! get_num {
     }};
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+async fn async_main(matches: clap::ArgMatches<'_>) -> Result<()> {
     leak_detect().await?;
     exiter().await?;
+    util::setup_env(matches.occurrences_of("v")).await?;
+    if let Some(ann) = matches.subcommand_matches("ann") {
+        // ann miner
+        let pools = get_strs!(ann, "pools");
+        let payment_addr = get_str!(ann, "paymentaddr");
+        let threads = get_usize!(ann, "threads");
+        let uploaders = get_usize!(ann, "uploaders");
+        let upload_timeout = get_usize!(ann, "uploadtimeout");
+        let mine_old_anns = get_num!(ann, "mineold", i32);
+        ann_main(
+            pools,
+            threads,
+            payment_addr,
+            uploaders,
+            upload_timeout,
+            mine_old_anns,
+        )
+        .await?;
+    } else if let Some(ah) = matches.subcommand_matches("ah") {
+        // ann handler
+        let config = get_str!(ah, "config");
+        let handler = get_str!(ah, "handler");
+        ah_main(config, handler).await?;
+    } else if let Some(blk) = matches.subcommand_matches("blk") {
+        let spray_cfg = if blk.is_present("subscribe") {
+            let passwd: String = get_str!(blk, "handlerpass").into();
+            if passwd.is_empty() {
+                bail!("When sprayer is enabled, --handlerpass is required");
+            }
+            let bind: String = get_str!(blk, "bind").into();
+            if bind.is_empty() {
+                bail!("When sprayer is enabled, --bind is required");
+            }
+            let subscribe_to = get_strs!(blk, "subscribe");
+            let workers = get_usize!(blk, "sprayerthreads");
+            let mss = get_usize!(blk, "mss");
+            let mcast = if blk.is_present("mcast") {
+                get_str!(blk, "mcast")
+            } else {
+                ""
+            }
+            .to_owned();
+            Some(packetcrypt_sprayer::Config {
+                passwd,
+                bind,
+                workers,
+                subscribe_to,
+                log_peer_stats: false,
+                mss,
+                spray_at: Vec::new(),
+                mcast,
+            })
+        } else {
+            if blk.is_present("bind") {
+                bail!("--bind (bind UDP sprayer socket) is nonsensical without --subscribe");
+            }
+            None
+        };
+        blk_main(blkmine::BlkArgs {
+            max_mem: get_usize!(blk, "memorysizemb") * 1024 * 1024,
+            min_free_space: get_num!(blk, "minfree", f64),
+            payment_addr: get_str!(blk, "paymentaddr").into(),
+            threads: get_usize!(blk, "threads"),
+            downloader_count: get_usize!(blk, "downloaders"),
+            pool_master: get_str!(blk, "pool").into(),
+            upload_timeout: get_usize!(blk, "uploadtimeout"),
+            uploaders: get_usize!(blk, "uploaders"),
+            handler_pass: get_str!(blk, "handlerpass").into(),
+            spray_cfg,
+        })
+        .await?;
+    } else if let Some(spray) = matches.subcommand_matches("sprayer") {
+        let spray_at = if spray.is_present("sprayat") {
+            get_strs!(spray, "sprayat")
+        } else {
+            Vec::new()
+        };
+        sprayer_main(packetcrypt_sprayer::Config {
+            passwd: get_str!(spray, "passwd").into(),
+            bind: get_str!(spray, "bind").into(),
+            workers: get_usize!(spray, "threads"),
+            subscribe_to: get_strs!(spray, "subscribe"),
+            log_peer_stats: true,
+            mss: get_usize!(spray, "mss"),
+            spray_at,
+            mcast: "".to_owned(),
+        })
+        .await?;
+    }
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
     let cpus_str = format!("{}", num_cpus::get());
     let matches = App::new("packetcrypt")
         .version("0.4.0")
@@ -418,94 +511,5 @@ async fn main() -> Result<()> {
         )
         .get_matches();
 
-    util::setup_env(matches.occurrences_of("v")).await?;
-    if let Some(ann) = matches.subcommand_matches("ann") {
-        // ann miner
-        let pools = get_strs!(ann, "pools");
-        let payment_addr = get_str!(ann, "paymentaddr");
-        let threads = get_usize!(ann, "threads");
-        let uploaders = get_usize!(ann, "uploaders");
-        let upload_timeout = get_usize!(ann, "uploadtimeout");
-        let mine_old_anns = get_num!(ann, "mineold", i32);
-        ann_main(
-            pools,
-            threads,
-            payment_addr,
-            uploaders,
-            upload_timeout,
-            mine_old_anns,
-        )
-        .await?;
-    } else if let Some(ah) = matches.subcommand_matches("ah") {
-        // ann handler
-        let config = get_str!(ah, "config");
-        let handler = get_str!(ah, "handler");
-        ah_main(config, handler).await?;
-    } else if let Some(blk) = matches.subcommand_matches("blk") {
-        let spray_cfg = if blk.is_present("subscribe") {
-            let passwd: String = get_str!(blk, "handlerpass").into();
-            if passwd.is_empty() {
-                bail!("When sprayer is enabled, --handlerpass is required");
-            }
-            let bind: String = get_str!(blk, "bind").into();
-            if bind.is_empty() {
-                bail!("When sprayer is enabled, --bind is required");
-            }
-            let subscribe_to = get_strs!(blk, "subscribe");
-            let workers = get_usize!(blk, "sprayerthreads");
-            let mss = get_usize!(blk, "mss");
-            let mcast = if blk.is_present("mcast") {
-                get_str!(blk, "mcast")
-            } else {
-                ""
-            }
-            .to_owned();
-            Some(packetcrypt_sprayer::Config {
-                passwd,
-                bind,
-                workers,
-                subscribe_to,
-                log_peer_stats: false,
-                mss,
-                spray_at: Vec::new(),
-                mcast,
-            })
-        } else {
-            if blk.is_present("bind") {
-                bail!("--bind (bind UDP sprayer socket) is nonsensical without --subscribe");
-            }
-            None
-        };
-        blk_main(blkmine::BlkArgs {
-            max_mem: get_usize!(blk, "memorysizemb") * 1024 * 1024,
-            min_free_space: get_num!(blk, "minfree", f64),
-            payment_addr: get_str!(blk, "paymentaddr").into(),
-            threads: get_usize!(blk, "threads"),
-            downloader_count: get_usize!(blk, "downloaders"),
-            pool_master: get_str!(blk, "pool").into(),
-            upload_timeout: get_usize!(blk, "uploadtimeout"),
-            uploaders: get_usize!(blk, "uploaders"),
-            handler_pass: get_str!(blk, "handlerpass").into(),
-            spray_cfg,
-        })
-        .await?;
-    } else if let Some(spray) = matches.subcommand_matches("sprayer") {
-        let spray_at = if spray.is_present("sprayat") {
-            get_strs!(spray, "sprayat")
-        } else {
-            Vec::new()
-        };
-        sprayer_main(packetcrypt_sprayer::Config {
-            passwd: get_str!(spray, "passwd").into(),
-            bind: get_str!(spray, "bind").into(),
-            workers: get_usize!(spray, "threads"),
-            subscribe_to: get_strs!(spray, "subscribe"),
-            log_peer_stats: true,
-            mss: get_usize!(spray, "mss"),
-            spray_at,
-            mcast: "".to_owned(),
-        })
-        .await?;
-    }
-    Ok(())
+    async_main(matches).await
 }

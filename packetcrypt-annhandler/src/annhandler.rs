@@ -1,64 +1,44 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use anyhow::{bail, Result};
-use bytes::BufMut;
 use crossbeam_channel::{
     Receiver as ReceiverCB, RecvTimeoutError, Sender as SenderCB, TryRecvError,
 };
-use log::{debug, error, info, trace};
+use log::{debug, error, info};
 use packetcrypt_pool::paymakerclient::{self, PaymakerClient};
 use packetcrypt_pool::poolcfg::AnnHandlerCfg;
 use packetcrypt_sys::{check_ann, PacketCryptAnn, ValidateCtx};
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol::{AnnPostReply, AnnsEvent, BlockInfo, MasterConf};
 use packetcrypt_util::{hash, util};
+use parking_lot::Mutex as MutexB; // blocking
 use regex::Regex;
-use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::collections::VecDeque;
+use std::cmp::max;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::convert::TryInto;
 use std::net::SocketAddr;
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{self, AtomicUsize};
 use std::sync::Arc;
-use std::sync::Mutex as MutexB; // blocking
 use tokio::sync::oneshot;
 use warp::Filter;
 
-#[derive(Default, Clone, Copy)]
-struct DedupEntry {
-    hash: u64,
-    ann_num: usize,
-}
-
 const NUM_BLOCKS_TRACKING: usize = 6;
-const OUT_ANN_CAP: usize = 1024;
-const WRITE_EVERY_MS: u64 = 30_000;
 const POOL_UPDATE_QUEUE_LEN: usize = 20;
-const RECV_WAIT_MS: u64 = 1000;
+const RECV_WAIT_MS: u64 = 10;
 
-fn mk_dedups(w: &mut Worker) {
-    w.dedups.clear();
+fn mk_dedups(w: &mut Worker) -> HashMap<u64, usize> {
+    let mut out = HashMap::new();
     for (i, ann_opt) in (0..).zip(w.anns.iter()) {
         let h = hash::compress32(&ann_opt.as_ref().unwrap().bytes[..]);
-        w.dedups.push(DedupEntry {
-            hash: u64::from_le_bytes(h[..8].try_into().unwrap()),
-            ann_num: i,
-        });
+        out.insert(u64::from_le_bytes(h[..8].try_into().unwrap()), i);
     }
+    out
 }
 
 #[derive(Debug)]
 struct Output {
     config: Config,
-    time_of_last_write: u64,
-    out: VecDeque<PacketCryptAnn>,
-    dedup_tbl: VecDeque<u64>,
-}
-
-struct AnnTable {
-    files: HashMap<String, bytes::Bytes>,
-    filenames: VecDeque<String>,
-    top_file: usize,
+    dedup_tbl: HashSet<u64>,
 }
 
 pub struct Global {
@@ -75,18 +55,17 @@ pub struct Global {
     pc_update_send: SenderCB<PoolUpdate>,
     pc_update_recv: ReceiverCB<PoolUpdate>,
 
-    // Next file number
-    fileno: AtomicUsize,
-
     pmc: PaymakerClient,
-
-    ann_tbl: std::sync::RwLock<AnnTable>,
 
     sockaddr: std::net::SocketAddr,
 
     skip_check_chance: u8,
 
     sprayer: packetcrypt_sprayer::Sprayer,
+
+    overloads: AtomicUsize,
+    timeouts: AtomicUsize,
+    last_log_time: AtomicUsize,
 }
 
 struct Worker {
@@ -94,7 +73,6 @@ struct Worker {
     random: u8,
     payto_regex: Regex,
     anns: Vec<Option<PacketCryptAnn>>,
-    dedups: Vec<DedupEntry>,
     vctx: ValidateCtx,
 }
 
@@ -143,9 +121,10 @@ fn validate_anns(
     res: &mut AnnsEvent,
     pnr: &AnnPostMeta,
     conf: &Config,
+    dedups: &HashMap<u64, usize>,
 ) -> Result<()> {
     res.target = 0;
-    for (ann_opt, dedup) in w.anns.iter().zip(w.dedups.iter()) {
+    for (ann_opt, (dedup_hash, _dedup_index)) in w.anns.iter().zip(dedups.iter()) {
         let ann = if let Some(x) = ann_opt {
             x
         } else {
@@ -168,13 +147,13 @@ fn validate_anns(
             );
         } else if conf.min_work < ann.work_bits() {
             bail!("not enough work");
-        } else if dedup.hash == 0 || dedup.hash == u64::MAX {
+        } else if *dedup_hash == 0 || *dedup_hash == u64::MAX {
             bail!("zero or fff hash");
-        } else if !hash_num_ok(pnr, ann, dedup.hash, conf) {
+        } else if !hash_num_ok(pnr, ann, *dedup_hash, conf) {
             bail!("submit elsewhere");
         } else if conf.ann_version != ann.version() {
             bail!("unsupported ann version");
-        } else if (dedup.hash as u8 ^ w.random) < w.global.skip_check_chance {
+        } else if (*dedup_hash as u8 ^ w.random) < w.global.skip_check_chance {
             // fallthrough
         } else {
             let mut pbh = conf.parent_block_hash;
@@ -195,99 +174,8 @@ fn validate_anns(
     Ok(())
 }
 
-fn self_dedup(dedups: &mut Vec<DedupEntry>) -> u32 {
-    let mut dupes = 0;
-    let mut last_hash: u64 = 0;
-    for dd in dedups.iter_mut() {
-        if dd.hash == last_hash {
-            dd.hash = 0;
-            dupes += 1;
-        }
-        last_hash = dd.hash;
-    }
-    dupes
-}
-
 fn get_output(g: &Arc<Global>, parent_block_height: i32) -> &MutexB<Output> {
     &g.outputs[(parent_block_height as usize) % NUM_BLOCKS_TRACKING]
-}
-
-fn enqueue_write(w: &mut Worker, output: &mut Output) {
-    output.time_of_last_write = util::now_ms();
-    let len = min(OUT_ANN_CAP, output.out.len());
-    if len == 0 {
-        debug!("Nothing to write");
-        return;
-    }
-    w.global.sprayer.push_anns(
-        &output
-            .out
-            .iter()
-            .map(|ann| &ann.bytes[..])
-            .collect::<Vec<_>>()[..],
-    );
-    let mut anns = bytes::BytesMut::with_capacity(len);
-    for a in output.out.drain(..len) {
-        anns.put(a.bytes);
-    }
-    trace!("enqueue_write() with {} anns", anns.len());
-    let top_file = w
-        .global
-        .fileno
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let f = format!(
-        "anns_{}_{}_{}.bin",
-        output.config.parent_block_height, output.config.handler_num, top_file,
-    );
-    let mut tbl = w.global.ann_tbl.write().unwrap();
-    tbl.files.insert(f.clone(), anns.freeze());
-    tbl.filenames.push_back(f);
-    tbl.top_file = top_file;
-
-    // Keep the number of files down
-    while tbl.filenames.len() > w.global.cfg.files_to_keep {
-        let f = tbl.filenames.pop_front().unwrap();
-        tbl.files.remove(&f);
-    }
-}
-
-fn optr<T>(o: Option<T>) -> Result<T> {
-    match o {
-        Some(t) => Ok(t),
-        None => bail!("Option was none"),
-    }
-}
-
-fn perform_dedup(w: &mut Worker, output: &mut Output, res: &mut AnnsEvent) -> Result<()> {
-    //debug!("Perform dedup {} {}", w.dedups.len(), output.dedup_tbl.len());
-    if output.dedup_tbl.front() == None {
-        output.dedup_tbl.push_back(u64::MAX);
-    } else if output.dedup_tbl.back() != Some(&u64::MAX) {
-        bail!("Corrupt dedup table");
-    }
-    for dd in w.dedups.iter() {
-        if dd.hash == 0 {
-            // collision with zero, or it was marked invalid earlier
-            continue;
-        }
-        let mut h = *output.dedup_tbl.front().unwrap();
-        while h < dd.hash {
-            output.dedup_tbl.rotate_left(1);
-            h = *output.dedup_tbl.front().unwrap();
-        }
-        if h > dd.hash {
-            output.dedup_tbl.push_back(dd.hash);
-            output.out.push_back(optr(w.anns[dd.ann_num].take())?);
-            res.accepted += 1;
-        //debug!("Pushing ann");
-        } else if h == dd.hash {
-            res.dup += 1;
-        }
-    }
-    while output.dedup_tbl.back() != Some(&u64::MAX) {
-        output.dedup_tbl.rotate_left(1);
-    }
-    Ok(())
 }
 
 fn process_batch(
@@ -296,26 +184,41 @@ fn process_batch(
     pnr: &AnnPostMeta,
     conf: &Config,
 ) -> Result<()> {
-    mk_dedups(w);
-    validate_anns(w, res, pnr, conf)?;
-    w.dedups.sort_by(|a, b| a.hash.cmp(&b.hash));
-    res.dup += self_dedup(&mut w.dedups);
-    let now = util::now_ms();
+    let dedups = mk_dedups(w);
+    validate_anns(w, res, pnr, conf, &dedups)?;
+    res.dup = (dedups.len() - w.anns.len()) as u32;
 
     let g = w.global.clone();
     let output_mtx = get_output(&g, conf.parent_block_height);
+    let mut dedup_set: HashSet<u64> = dedups.keys().cloned().collect();
     {
-        let mut output = output_mtx.lock().unwrap();
+        let mut output = output_mtx.lock();
         //if let Some(out) = output.
         if output.config.parent_block_height != conf.parent_block_height {
             // we were too late
             bail!("block number out of range");
         }
-        perform_dedup(w, &mut *output, res)?;
-        while output.out.len() >= OUT_ANN_CAP || output.time_of_last_write + WRITE_EVERY_MS < now {
-            enqueue_write(w, &mut *output);
+        let v: HashSet<u64> = output.dedup_tbl.intersection(&dedup_set).cloned().collect();
+        for dup in v {
+            res.dup += 1;
+            dedup_set.remove(&dup);
         }
+        output.dedup_tbl.extend(&dedup_set);
     }
+    res.accepted += dedup_set.len() as u32;
+
+    // done in 2 stages because borrow checker
+    let good_anns = dedup_set
+        .iter()
+        .filter_map(|h| dedups.get(h))
+        .filter_map(|i| w.anns[*i].take())
+        .collect::<Vec<_>>();
+    w.global.sprayer.push_anns(
+        &good_anns
+            .iter()
+            .map(|ann| &ann.bytes[..])
+            .collect::<Vec<_>>()[..],
+    );
 
     Ok(())
 }
@@ -323,7 +226,7 @@ fn process_batch(
 fn process_update(w: &mut Worker, conf: &MasterConf, bi: BlockInfo) {
     let g = w.global.clone();
     // note: this conf.current_height is the next height to be made, so we subtract 1
-    let mut output = get_output(&g, bi.header.height).lock().unwrap();
+    let mut output = get_output(&g, bi.header.height).lock();
     if bi.header.height != output.config.parent_block_height {
         if bi.header.height < output.config.parent_block_height {
             info!(
@@ -333,11 +236,7 @@ fn process_update(w: &mut Worker, conf: &MasterConf, bi: BlockInfo) {
             return;
         }
         let out = &mut *output;
-        while !out.out.is_empty() {
-            enqueue_write(w, out);
-        }
         out.dedup_tbl.clear();
-        out.time_of_last_write = util::now_ms();
         debug!("New work: height: {}", bi.header.height);
     } else if bi.header.hash != output.config.parent_block_hash {
         info!(
@@ -345,9 +244,7 @@ fn process_update(w: &mut Worker, conf: &MasterConf, bi: BlockInfo) {
             hex::encode(bi.header.hash),
             hex::encode(output.config.parent_block_hash)
         );
-        output.out.clear();
         output.dedup_tbl.clear();
-        output.time_of_last_write = util::now_ms();
     }
     output.config.handler_num = if let Some(x) = conf
         .submit_ann_urls
@@ -410,10 +307,11 @@ struct AnnPost {
 }
 fn process_submit1(w: &mut Worker, sub: AnnPost) -> Result<AnnPostReply> {
     let (meta, mut bytes) = (sub.meta, sub.bytes);
-    let config = get_output(&w.global, meta.next_block_height - 1)
-        .lock()
-        .unwrap()
-        .config;
+    let config = {
+        get_output(&w.global, meta.next_block_height - 1)
+            .lock()
+            .config
+    };
     if config.parent_block_height != meta.next_block_height - 1 {
         if config.parent_block_height < 1 {
             bail!("server not ready");
@@ -476,13 +374,14 @@ fn process_submit0(w: &mut Worker, mut sub: AnnPost) {
             }
         }) {
         Ok(_) => (),
-        Err(e) => {
-            info!("Error sending reply [{:?}]", e);
+        Err(_) => {
+            w.global.timeouts.fetch_add(1, atomic::Ordering::Relaxed);
+            //info!("Error sending reply [{:?}]", e);
         }
     }
 }
 
-fn worker_loop(g: Arc<Global>) {
+fn worker_loop(g: Arc<Global>, thread_num: usize) {
     let pc_update_recv = g.pc_update_recv.clone();
     let submit_recv = g.submit_recv.clone();
     let mut w: Worker = Worker {
@@ -490,23 +389,39 @@ fn worker_loop(g: Arc<Global>) {
         random: util::rand_u32() as u8,
         payto_regex: Regex::new(r"^[a-zA-Z0-9]+$").unwrap(),
         anns: Vec::new(),
-        dedups: Vec::new(),
         vctx: ValidateCtx::default(),
     };
     loop {
-        loop {
-            match pc_update_recv.try_recv() {
-                Ok(upd) => {
-                    for bi in upd.update_blocks {
-                        process_update(&mut w, &upd.conf, bi);
+        if thread_num == 0 {
+            let llt = w.global.last_log_time.load(atomic::Ordering::Relaxed);
+            let now = util::now_ms() / 1000;
+            if (now as usize) - llt > 5 {
+                let overloads = w.global.overloads.swap(0, atomic::Ordering::Relaxed);
+                let timeouts = w.global.timeouts.swap(0, atomic::Ordering::Relaxed);
+                info!(
+                    "overloads: {} timeout: {} q: {}",
+                    overloads,
+                    timeouts,
+                    w.global.submit_recv.len()
+                );
+                w.global
+                    .last_log_time
+                    .store(now as usize, atomic::Ordering::Relaxed);
+            }
+            loop {
+                match pc_update_recv.try_recv() {
+                    Ok(upd) => {
+                        for bi in upd.update_blocks {
+                            process_update(&mut w, &upd.conf, bi);
+                        }
+                        continue;
                     }
-                    continue;
-                }
-                Err(TryRecvError::Empty) => {
-                    break;
-                }
-                Err(TryRecvError::Disconnected) => {
-                    error!("pc_update_recv disconnected");
+                    Err(TryRecvError::Empty) => {
+                        break;
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        error!("pc_update_recv disconnected");
+                    }
                 }
             }
         }
@@ -525,21 +440,22 @@ fn worker_loop(g: Arc<Global>) {
 
 pub type AnnHandler = Arc<Global>;
 
-pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> Result<AnnHandler> {
+pub async fn new(
+    pc: &PoolClient,
+    pmc: &PaymakerClient,
+    mut cfg: AnnHandlerCfg,
+) -> Result<AnnHandler> {
     if cfg.skip_check_chance > 1.0 || cfg.skip_check_chance < 0.0 {
         bail!(
             "skip_check_chance must be a number between 0 and 1, got {}",
             cfg.skip_check_chance
         );
     }
-    let now = util::now_ms();
     let outputs: Box<[_; NUM_BLOCKS_TRACKING]> = (0..NUM_BLOCKS_TRACKING)
         .map(|_| {
             MutexB::new(Output {
                 config: Config::default(),
-                time_of_last_write: now,
-                out: VecDeque::new(),
-                dedup_tbl: VecDeque::new(),
+                dedup_tbl: HashSet::new(),
             })
         })
         .collect::<Vec<_>>()
@@ -555,7 +471,7 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         subscribe_to: cfg.subscribe_to.clone(),
         log_peer_stats: true,
         mss: if let Some(mss) = cfg.mss { mss } else { 1472 },
-        spray_at: Vec::new(),
+        spray_at: cfg.spray_at.take().unwrap_or_else(Vec::new),
         mcast: "".to_owned(),
     })?;
 
@@ -568,54 +484,17 @@ pub async fn new(pc: &PoolClient, pmc: &PaymakerClient, cfg: AnnHandlerCfg) -> R
         pc: pc.clone(),
         pc_update_recv,
         pc_update_send,
-        fileno: AtomicUsize::new(0),
         pmc: pmc.clone(),
         sockaddr: bind_pub,
         skip_check_chance: 255 * cfg.skip_check_chance as u8,
-        ann_tbl: std::sync::RwLock::new(AnnTable {
-            files: HashMap::new(),
-            filenames: VecDeque::new(),
-            top_file: 0,
-        }),
         cfg,
         sprayer,
+        overloads: AtomicUsize::new(0),
+        timeouts: AtomicUsize::new(0),
+        last_log_time: AtomicUsize::new(0),
     });
 
     Ok(global)
-}
-
-async fn handle_get(
-    ah: AnnHandler,
-    filename: String,
-    passwd: Option<String>,
-) -> Result<Box<dyn warp::Reply>, warp::Rejection> {
-    let tbl = ah.ann_tbl.read().unwrap();
-    if filename == "index.json" {
-        return Ok(Box::new(warp::reply::json(
-            &packetcrypt_util::protocol::AnnIndex {
-                highest_ann_file: tbl.top_file as i64,
-                files: tbl.filenames.iter().cloned().collect(),
-            },
-        )));
-    }
-    if let Some(pass) = passwd {
-        if ah.cfg.block_miner_passwd != pass {
-            return Ok(Box::new(warp::reply::with_status(
-                warp::reply::json(&"x-pc-passwd incorrect".to_owned()),
-                warp::http::StatusCode::UNAUTHORIZED,
-            )));
-        }
-    } else {
-        return Ok(Box::new(warp::reply::with_status(
-            warp::reply::json(&"x-pc-passwd missing".to_owned()),
-            warp::http::StatusCode::UNAUTHORIZED,
-        )));
-    }
-    if let Some(f) = tbl.files.get(&filename) {
-        Ok(Box::new(warp::http::Response::builder().body(f.clone())))
-    } else {
-        Err(warp::reject::not_found())
-    }
 }
 
 async fn handle_submit(
@@ -657,7 +536,7 @@ async fn handle_submit(
         }
         Err(e) => {
             let err: String = (if e.is_full() {
-                info!("server overloaded");
+                ah.overloads.fetch_add(1, atomic::Ordering::Relaxed);
                 "overloaded"
             } else {
                 error!("channel disconnected");
@@ -691,15 +570,6 @@ pub async fn start(ah: &AnnHandler) {
         .and(warp::header::<String>("x-pc-payto"))
         .and_then(handle_submit);
 
-    let anns = warp::get()
-        .and((|ah: AnnHandler| warp::any().map(move || ah.clone()))(
-            ah.clone(),
-        ))
-        .and(warp::path("anns"))
-        .and(warp::path::param())
-        .and(warp::header::optional::<String>("x-pc-passwd"))
-        .and_then(handle_get);
-
     // Pipe new work updates through to a crossbeam channel
     util::tokio_bcast_to_crossbeam(
         "poolclient update",
@@ -708,12 +578,12 @@ pub async fn start(ah: &AnnHandler) {
     )
     .await;
 
-    packetcrypt_util::async_spawn!(ah, { warp::serve(sub.or(anns)).run(ah.sockaddr).await });
+    packetcrypt_util::async_spawn!(ah, { warp::serve(sub).run(ah.sockaddr).await });
 
-    for _ in 0..(ah.cfg.num_workers) {
+    for i in 0..(ah.cfg.num_workers) {
         let g = ah.clone();
         std::thread::spawn(move || {
-            worker_loop(g);
+            worker_loop(g, i);
         });
     }
 
