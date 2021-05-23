@@ -175,6 +175,7 @@ macro_rules! get_num {
 async fn async_main(matches: clap::ArgMatches<'_>) -> Result<()> {
     leak_detect().await?;
     exiter().await?;
+    packetcrypt_sys::init();
     util::setup_env(matches.occurrences_of("v")).await?;
     if let Some(ann) = matches.subcommand_matches("ann") {
         // ann miner
