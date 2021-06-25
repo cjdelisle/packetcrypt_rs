@@ -118,7 +118,10 @@ fn main() {
         .file("packetcrypt/src/Work.c")
         .file("packetcrypt/src/UdpGso.c")
         .out_dir(dst.join("lib"))
-        .opt_level(3)
+        .flag("-march=native")
+        .flag("-mtune=native")
+        .flag("-O2")
+        .use_plt(false)
         .compile("libpacketcrypt.a");
 
     let src = env::current_dir().unwrap().join("packetcrypt");
