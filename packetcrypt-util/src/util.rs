@@ -16,7 +16,7 @@ use tokio::stream::StreamExt;
 use tokio::sync::broadcast::Receiver;
 
 pub fn format_kbps(mut kbps: f64) -> String {
-    for letter in "KMGPEZY".chars() {
+    for letter in "KMGTPEZY".chars() {
         if kbps < 1000.0 {
             return format!("{}{}b/s", ((kbps * 100.0) as u32) as f64 / 100.0, letter);
         }
