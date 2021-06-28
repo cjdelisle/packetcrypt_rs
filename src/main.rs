@@ -316,7 +316,7 @@ async fn main() -> Result<()> {
                         .short("U")
                         .long("uploaders")
                         .help("Max concurrent uploads (per pool handler)")
-                        .default_value("5")
+                        .default_value("10")
                         .takes_value(true),
                 )
                 .arg(
