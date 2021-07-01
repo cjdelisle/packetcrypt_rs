@@ -271,7 +271,7 @@ async fn async_main(matches: clap::ArgMatches<'_>) -> Result<()> {
 async fn main() -> Result<()> {
     let cpus_str = format!("{}", num_cpus::get());
     let matches = App::new("packetcrypt")
-        .version("0.4.0")
+        .version("0.4.1")
         .author("Caleb James DeLisle <cjd@cjdns.fr>")
         .about("Bandwidth hard proof of work algorithm")
         .setting(clap::AppSettings::ArgRequiredElseHelp)
@@ -316,7 +316,7 @@ async fn main() -> Result<()> {
                         .short("U")
                         .long("uploaders")
                         .help("Max concurrent uploads (per pool handler)")
-                        .default_value("5")
+                        .default_value("10")
                         .takes_value(true),
                 )
                 .arg(

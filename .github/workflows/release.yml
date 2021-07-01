@@ -1,0 +1,155 @@
+on:
+  push:
+    tags:
+      - packetcrypt-v*.*.*
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Set env
+        run: echo "RELEASE_NAME=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Create a release
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: false
+          automatic_release_tag: ${{ env.RELEASE_NAME }}
+
+  linux:
+    needs: release
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Set env
+        run: echo "RELEASE_NAME=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Install packages
+        run: sudo apt-get install bash build-essential curl jq gcc git make musl-tools
+
+      - name: Set up Ruby 2.6
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6
+
+      - uses: actions/checkout@v2
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: complete
+          toolchain: stable
+          target: x86_64-unknown-linux-musl
+
+      - name: Set up rust cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Build binaries
+        run: /bin/bash -c "source $GITHUB_WORKSPACE/contrib/github-actions/build-linux-binary.sh"
+        env:
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
+
+      - uses: actions/upload-artifact@main
+        with:
+          path: |
+            ${{ github.workspace }}/${{ env.RELEASE_NAME }}
+
+      - name: Publish release
+        run: /bin/bash -c "source $GITHUB_WORKSPACE/contrib/github-actions/release-linux-binary.sh"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
+
+  macos:
+    needs: release
+
+    runs-on: macos-latest
+
+    steps:
+
+      - name: Set env
+        run: echo "RELEASE_NAME=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Install packages
+        run: brew install jq bash curl brew-gem curl
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: complete
+          toolchain: stable
+
+      - name: Set up rust cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Set up Ruby 2.6
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6
+
+      - name: Install fpm
+        run: gem install --no-document fpm
+
+      - uses: actions/checkout@v2
+
+      - name: Build binaries
+        run: /bin/bash -c "source $GITHUB_WORKSPACE/contrib/github-actions/build-macos-package.sh"
+        env:
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
+
+      - uses: actions/upload-artifact@main
+        with:
+          path: |
+            ${{ github.workspace }}/${{ env.RELEASE_NAME }}-mac.pkg
+
+      - name: Publish release
+        run: /bin/bash -c "source $GITHUB_WORKSPACE/contrib/github-actions/release-macos-package.sh"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
+
+  windows:
+    needs: release
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Set env
+        run: echo "RELEASE_NAME=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Install packages
+        run: sudo apt-get install bash build-essential curl jq gcc gcc-mingw-w64-x86-64 git make zip
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: complete
+          toolchain: stable
+          target: x86_64-pc-windows-gnu
+
+      - name: Set up rust cache
+        uses: Swatinem/rust-cache@v1
+
+      - uses: actions/checkout@v2
+
+      - name: Build binaries
+        run: /bin/bash -c "source $GITHUB_WORKSPACE/contrib/github-actions/build-windows-package.sh"
+        env:
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
+
+      - uses: actions/upload-artifact@main
+        with:
+          path: |
+            ${{ github.workspace }}/${{ env.RELEASE_NAME }}-win.zip
+
+      - name: Publish release
+        run: /bin/bash -c "source $GITHUB_WORKSPACE/contrib/github-actions/release-windows-package.sh"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
