@@ -1,20 +1,19 @@
-#!/bin/bash
 
 function publish() {
-  local binary
-  binary="${1}"
+  local archive
+  archive="${1}"
 
   local extension
   extension="${2}"
 
-  if [ ! -e "${binary}" ];
+  if [ ! -e "${archive}" ];
   then
-      echo 'Invalid binary ('"${binary}"')'
+      echo 'Invalid archive ('"${archive}"')'
       return 1
   fi
 
   local checksum
-  checksum="$(sha256sum "${binary}" | cut -d ' ' -f 1)"
+  checksum="$(sha256sum "${archive}" | cut -d ' ' -f 1)"
 
   local base_url
   base_url='https://api.github.com/repos/'"${GITHUB_REPOSITORY}"
@@ -39,18 +38,17 @@ function publish() {
 
   curl \
     -X POST \
-    --data-binary @${binary} \
+    --data-binary @${archive} \
     -H 'Content-Type: application/octet-stream' \
     -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-    "${upload_url}?name=${release_name}-linux${extension}"
+    "${upload_url}?name=${release_name}-windows${extension}"
 
   curl \
     -X POST \
     --data "$checksum" \
     -H 'Content-Type: text/plain' \
     -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-    "${upload_url}?name=${release_name}-linux${extension}.sha256sum"
+    "${upload_url}?name=${release_name}-windows${extension}.sha256sum"
 }
 
-publish "${GITHUB_WORKSPACE}"'/'"${RELEASE_NAME}"'-linux-x86_64.rpm' '.rpm'
-publish "${GITHUB_WORKSPACE}"'/'"${RELEASE_NAME}"'-linux-amd64.deb' '.deb'
+publish "${GITHUB_WORKSPACE}"'/'"${RELEASE_NAME}"'-win.zip' '.zip'
