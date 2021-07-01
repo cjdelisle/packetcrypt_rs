@@ -1,0 +1,119 @@
+on:
+  push:
+    tags:
+      - packetcrypt-v*.*.*
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Set env
+        run: echo "RELEASE_NAME=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Create a release
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: false
+          automatic_release_tag: ${{ env.RELEASE_NAME }}
+
+  linux:
+    needs: release
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Set env
+        run: echo "RELEASE_NAME=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Install packages
+        run: sudo apt-get install bash build-essential curl jq gcc git rpm rubygems
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: complete
+          toolchain: stable
+
+      - name: Set up rust cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Set up Ruby 2.6
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6
+
+      - name: Install fpm
+        run: gem install --no-document fpm
+
+      - uses: actions/checkout@v2
+
+      - name: Build binaries
+        run: /bin/bash -c "source $GITHUB_WORKSPACE/contrib/github-actions/build-linux-packages.sh"
+        env:
+          PKT_FAIL_DIRTY: 1
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
+
+      - uses: actions/upload-artifact@main
+        with:
+          path: |
+            ${{ github.workspace }}/${{ env.RELEASE_NAME }}-linux-x86_64.rpm
+            ${{ github.workspace }}/${{ env.RELEASE_NAME }}-linux-amd64.deb
+
+      - name: Publish release
+        run: /bin/bash -c "source $GITHUB_WORKSPACE/contrib/github-actions/release-linux-packages.sh"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
+
+  macos:
+    needs: release
+
+    runs-on: macos-latest
+
+    steps:
+
+      - name: Set env
+        run: echo "RELEASE_NAME=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+
+      - name: Install packages
+        run: brew install jq bash curl brew-gem curl
+
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: complete
+          toolchain: stable
+
+      - name: Set up rust cache
+        uses: Swatinem/rust-cache@v1
+
+      - name: Set up Ruby 2.6
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.6
+
+      - name: Install fpm
+        run: gem install --no-document fpm
+
+      - uses: actions/checkout@v2
+
+      - name: Build binaries
+        run: /bin/bash -c "source $GITHUB_WORKSPACE/contrib/github-actions/build-macos-package.sh"
+        env:
+          PKT_FAIL_DIRTY: 1
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
+
+      - uses: actions/upload-artifact@main
+        with:
+          path: |
+            ${{ github.workspace }}/${{ env.RELEASE_NAME }}-mac.pkg
+
+      - name: Publish release
+        run: /bin/bash -c "source $GITHUB_WORKSPACE/contrib/github-actions/release-macos-package.sh"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NAME: ${{ env.RELEASE_NAME }}
