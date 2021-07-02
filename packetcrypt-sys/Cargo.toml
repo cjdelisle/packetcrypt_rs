@@ -34,3 +34,4 @@ rand = "0.7"
 [features]
 generate-bindings = ["bindgen"]
 difficulty-test = ["pkg-config"]
+portable = []
