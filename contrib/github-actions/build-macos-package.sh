@@ -2,7 +2,7 @@
 
 function build() {
   cd "${GITHUB_WORKSPACE}" || exit
-  cargo build --release --features jemalloc
+  cargo build --release --features portable
 
   mkdir "${GITHUB_WORKSPACE}/bin"
   cp "${GITHUB_WORKSPACE}/target/release/packetcrypt" "${GITHUB_WORKSPACE}/bin"
