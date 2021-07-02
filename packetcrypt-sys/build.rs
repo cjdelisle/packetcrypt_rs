@@ -122,8 +122,6 @@ fn main() {
         .file("packetcrypt/src/Work.c")
         .file("packetcrypt/src/UdpGso.c")
         .out_dir(dst.join("lib"))
-        .flag_if_supported("-march=native")
-        .flag_if_supported("-mtune=native")
         .flag("-O2")
         .compile("libpacketcrypt.a");
 
