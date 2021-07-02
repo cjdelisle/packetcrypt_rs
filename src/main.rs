@@ -267,11 +267,18 @@ async fn async_main(matches: clap::ArgMatches<'_>) -> Result<()> {
     Ok(())
 }
 
+// const fn version() -> &'static str {
+//     let v = git_version::git_version!();
+//     if v == 
+//     git_version::git_version!(args = ["--tags"]);
+//     &"hi"
+// }
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cpus_str = format!("{}", num_cpus::get());
     let matches = App::new("packetcrypt")
-        .version(git_version::git_version!())
+        .version(git_version::git_version!(args = ["--tags", "--dirty=-dirty"]))
         .author("Caleb James DeLisle <cjd@cjdns.fr>")
         .about("Bandwidth hard proof of work algorithm")
         .setting(clap::AppSettings::ArgRequiredElseHelp)
