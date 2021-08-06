@@ -43,6 +43,7 @@ pub unsafe extern "C" fn on_ann_found(vctx: *mut c_void, ann: *mut u8) {
 }
 
 pub fn new(miner_id: u32, workers: usize) -> (AnnMiner, UnboundedReceiver<AnnResult>) {
+    packetcrypt_sys::init();
     let (send_ann, recv_ann) = tokio::sync::mpsc::unbounded_channel();
     let mut cbc = Box::new(CallbackCtx { send_ann });
     let ptr = (&mut *cbc as *mut CallbackCtx) as *mut c_void;

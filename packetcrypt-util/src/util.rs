@@ -16,7 +16,7 @@ use tokio::stream::StreamExt;
 use tokio::sync::broadcast::Receiver;
 
 pub fn format_kbps(mut kbps: f64) -> String {
-    for letter in "KMGPYZ".chars() {
+    for letter in "KMGTPEZY".chars() {
         if kbps < 1000.0 {
             return format!("{}{}b/s", ((kbps * 100.0) as u32) as f64 / 100.0, letter);
         }
@@ -295,7 +295,7 @@ pub fn rand_u32() -> u32 {
 
 pub fn big_number(h: f64) -> String {
     let mut h2 = h;
-    for t in ["", "K", "M", "G", "T", "P", "E", "Y", "Z"].iter() {
+    for t in ["", "K", "M", "G", "T", "P", "E", "Z", "Y"].iter() {
         if h2 < 10000.0 {
             return format!("{} {}", h2 as u32, t);
         }

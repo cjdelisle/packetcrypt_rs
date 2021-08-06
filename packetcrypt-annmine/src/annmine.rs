@@ -16,7 +16,7 @@ use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver};
 
 const RECENT_WORK_BUF: usize = 8;
 const MAX_ANN_BATCH_SIZE: usize = 1024;
-const MAX_MS_BETWEEN_POSTS: u64 = 30_000;
+const MAX_MS_BETWEEN_POSTS: u64 = 10_000;
 
 struct AnnBatch {
     parent_block_height: i32,
@@ -81,7 +81,7 @@ pub struct AnnMineCfg {
     pub mine_old_anns: i32,
 }
 
-const UPLOAD_CHANNEL_LEN: usize = 200;
+const UPLOAD_CHANNEL_LEN: usize = 100;
 
 const PREFETCH_HISTORY_DEPTH: i32 = 6;
 
@@ -98,7 +98,7 @@ pub async fn new(cfg: AnnMineCfg) -> Result<AnnMine> {
                     recent_work: [None; RECENT_WORK_BUF],
                     handlers: Vec::new(),
                 }),
-                pcli: poolclient::new(&x, PREFETCH_HISTORY_DEPTH, 30),
+                pcli: poolclient::new(&x, PREFETCH_HISTORY_DEPTH, 5),
                 inflight_anns: AtomicUsize::new(0),
                 lost_anns: AtomicUsize::new(0),
                 accepted_anns: AtomicUsize::new(0),
