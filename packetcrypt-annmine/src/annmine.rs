@@ -548,29 +548,35 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
         .build()
         .unwrap();
     loop {
-        let batch = if let Some(x) = h.recv_upload.lock().await.recv().await {
-            x
-        } else {
-            info!("Uploader for {} shutting down", h.url);
-            return;
-        };
-        let upload_n = am
-            .upload_num
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let count = batch.anns.len();
-        p.inflight_anns.fetch_add(count, Ordering::Relaxed);
-        match upload_batch(am, &client, batch, &h.url, upload_n, &p).await {
-            Ok(_) => (),
-            Err(e) => {
-                warn!(
-                    "[{}] Error uploading ann batch to {}: {}",
-                    upload_n, h.url, e
-                );
-                p.lost_anns.fetch_add(count, Ordering::Relaxed);
+        match h.recv_upload.lock().await.try_recv() {
+            Ok(batch) => {
+                let upload_n = am
+                    .upload_num
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let count = batch.anns.len();
+                p.inflight_anns.fetch_add(count, Ordering::Relaxed);
+                match upload_batch(am, &client, batch, &h.url, upload_n, &p).await {
+                    Ok(_) => (),
+                    Err(e) => {
+                        warn!(
+                            "[{}] Error uploading ann batch to {}: {}",
+                            upload_n, h.url, e
+                        );
+                        p.lost_anns.fetch_add(count, Ordering::Relaxed);
+                    }
+                };
+                p.inflight_anns.fetch_sub(count, Ordering::Relaxed);
+            },
+            Err(tokio::sync::mpsc::error::TryRecvError::Closed) => {
+                break;
+            },
+            Err(_e) => {
+                util::sleep_ms(10).await;                
+                continue;
             }
-        };
-        p.inflight_anns.fetch_sub(count, Ordering::Relaxed);
+        }
     }
+    debug!("Uploader for {} shutting down", h.url);
 }
 
 pub async fn start(am: &AnnMine) -> Result<()> {
