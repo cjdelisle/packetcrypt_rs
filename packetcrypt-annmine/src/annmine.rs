@@ -570,11 +570,9 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
             Err(tokio::sync::mpsc::error::TryRecvError::Closed) => {
                 break;
             },
-            Err(_e) => {
-                util::sleep_ms(10).await;                
-                continue;
-            }
+            Err(_e) => (),
         }
+        util::sleep_ms(10).await;
     }
     debug!("Uploader for {} shutting down", h.url);
 }
