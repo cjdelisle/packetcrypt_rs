@@ -548,8 +548,18 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
         .build()
         .unwrap();
     loop {
+        let mut batch : Option<AnnBatch> = None;
         match h.recv_upload.lock().await.try_recv() {
-            Ok(batch) => {
+            Ok(x) => {
+                batch = Some(x);
+            },
+            Err(tokio::sync::mpsc::error::TryRecvError::Closed) => {
+                break;
+            },
+            Err(_e) => (),
+        }
+        match batch {
+            Some(batch) => {
                 let upload_n = am
                     .upload_num
                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -566,14 +576,11 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
                     }
                 };
                 p.inflight_anns.fetch_sub(count, Ordering::Relaxed);
-                continue;
-            },
-            Err(tokio::sync::mpsc::error::TryRecvError::Closed) => {
-                break;
-            },
-            Err(_e) => (),
+            }
+            None => {
+                util::sleep_ms(10).await;
+            }
         }
-        util::sleep_ms(10).await;
     }
     debug!("Uploader for {} shutting down", h.url);
 }
