@@ -548,6 +548,7 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
         .build()
         .unwrap();
     loop {
+        let mut sleep = false;
         match h.recv_upload.lock().await.try_recv() {
             Ok(batch) => {
                 let upload_n = am
@@ -570,9 +571,13 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
             Err(tokio::sync::mpsc::error::TryRecvError::Closed) => {
                 break;
             },
-            Err(_e) => (),
+            Err(_e) => {
+                sleep = true;
+            }
         }
-        util::sleep_ms(10).await;
+        if sleep {
+            util::sleep_ms(10).await;
+        }
     }
     debug!("Uploader for {} shutting down", h.url);
 }
