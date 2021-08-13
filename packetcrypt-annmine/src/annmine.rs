@@ -548,7 +548,7 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
         .build()
         .unwrap();
     loop {
-        let mut batch = Option<AnnBatch>;
+        let mut batch : Option<AnnBatch> = None;
         match h.recv_upload.lock().await.try_recv() {
             Ok(x) => {
                 batch = Some(x);
