@@ -566,6 +566,7 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
                     }
                 };
                 p.inflight_anns.fetch_sub(count, Ordering::Relaxed);
+                continue;
             },
             Err(tokio::sync::mpsc::error::TryRecvError::Closed) => {
                 break;
