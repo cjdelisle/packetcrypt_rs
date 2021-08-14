@@ -268,7 +268,7 @@ async fn async_main(matches: clap::ArgMatches<'_>) -> Result<()> {
 }
 
 fn version() -> &'static str {
-    let out = git_version::git_version!(args = ["--tags", "--dirty=-dirty"]);
+    let out = git_version::git_version!(args = ["--tags", "--dirty=-dirty", "--broken"], fallback="out-of-tree");
     if let Some(v) = out.strip_prefix("packetcrypt-v") {
         &v
     } else {
