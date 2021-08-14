@@ -98,7 +98,7 @@ pub async fn new(cfg: AnnMineCfg) -> Result<AnnMine> {
                     recent_work: [None; RECENT_WORK_BUF],
                     handlers: Vec::new(),
                 }),
-                pcli: poolclient::new(&x, PREFETCH_HISTORY_DEPTH, 5),
+                pcli: poolclient::new(x, PREFETCH_HISTORY_DEPTH, 5),
                 inflight_anns: AtomicUsize::new(0),
                 lost_anns: AtomicUsize::new(0),
                 accepted_anns: AtomicUsize::new(0),
@@ -548,29 +548,41 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
         .build()
         .unwrap();
     loop {
-        let batch = if let Some(x) = h.recv_upload.lock().await.recv().await {
-            x
-        } else {
-            info!("Uploader for {} shutting down", h.url);
-            return;
-        };
-        let upload_n = am
-            .upload_num
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let count = batch.anns.len();
-        p.inflight_anns.fetch_add(count, Ordering::Relaxed);
-        match upload_batch(am, &client, batch, &h.url, upload_n, &p).await {
-            Ok(_) => (),
-            Err(e) => {
-                warn!(
-                    "[{}] Error uploading ann batch to {}: {}",
-                    upload_n, h.url, e
-                );
-                p.lost_anns.fetch_add(count, Ordering::Relaxed);
+        let mut batch : Option<AnnBatch> = None;
+        match h.recv_upload.lock().await.try_recv() {
+            Ok(x) => {
+                batch = Some(x);
+            },
+            Err(tokio::sync::mpsc::error::TryRecvError::Closed) => {
+                break;
+            },
+            Err(_e) => (),
+        }
+        match batch {
+            Some(batch) => {
+                let upload_n = am
+                    .upload_num
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let count = batch.anns.len();
+                p.inflight_anns.fetch_add(count, Ordering::Relaxed);
+                match upload_batch(am, &client, batch, &h.url, upload_n, &p).await {
+                    Ok(_) => (),
+                    Err(e) => {
+                        warn!(
+                            "[{}] Error uploading ann batch to {}: {}",
+                            upload_n, h.url, e
+                        );
+                        p.lost_anns.fetch_add(count, Ordering::Relaxed);
+                    }
+                };
+                p.inflight_anns.fetch_sub(count, Ordering::Relaxed);
             }
-        };
-        p.inflight_anns.fetch_sub(count, Ordering::Relaxed);
+            None => {
+                util::sleep_ms(10).await;
+            }
+        }
     }
+    debug!("Uploader for {} shutting down", h.url);
 }
 
 pub async fn start(am: &AnnMine) -> Result<()> {
