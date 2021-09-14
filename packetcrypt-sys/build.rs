@@ -125,19 +125,12 @@ fn main() {
         .file("packetcrypt/src/Work.c")
         .file("packetcrypt/src/ProofTree.c")
         .file("packetcrypt/src/BlockMine.c")
-        .file("packetcrypt/src/Work.c")
         .file("packetcrypt/src/UdpGso.c")
         .out_dir(dst.join("lib"))
         .flag("-O2")
         .compile("libpacketcrypt.a");
 
-    let src = env::current_dir().unwrap().join("packetcrypt");
     println!("cargo:root={}", dst.display());
     println!("cargo:include={}", dst.join("include").display());
-    for f in src.join("src").iter() {
-        println!("cargo:rerun-if-changed={}", f.to_string_lossy());
-    }
-    for f in src.join("include").join("packetcrypt").iter() {
-        println!("cargo:rerun-if-changed={}", f.to_string_lossy());
-    }
+    println!("cargo:rerun-if-changed={}", env::current_dir().unwrap().to_string_lossy());
 }
