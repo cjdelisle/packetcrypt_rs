@@ -73,7 +73,7 @@ typedef struct BlockMine_pvt_s {
     if (ptr != MAP_FAILED) { return ptr; } \
 } while (0)
 
-#ifdef _WIN64
+#if defined(_WIN64) || defined(_WIN32)
 #define MAP_FAILED NULL
 static void* mapBuf(uint64_t maxmem) {
     return malloc(maxmem);
