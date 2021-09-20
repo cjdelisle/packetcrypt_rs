@@ -171,7 +171,7 @@ int UdpGro_sendmsg(int fd, const struct UdpGro_Sockaddr* addr, const uint8_t* da
     } else {
         struct sockaddr_in* in = (struct sockaddr_in*) &in6;
         in->sin_family = AF_INET;
-        Buf_OBJCPY_LDST(&in->sin_addr, addr->addr);
+        memcpy(&in->sin_addr, addr->addr, sizeof(struct in_addr));
         in->sin_port = htons(addr->port);
         h.msg_name = in;
         h.msg_namelen = sizeof *in;
