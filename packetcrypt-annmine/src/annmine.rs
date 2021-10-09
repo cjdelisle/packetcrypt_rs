@@ -9,9 +9,11 @@ use packetcrypt_util::protocol::{AnnPostReply, BlockInfo};
 use packetcrypt_util::util;
 use std::cmp::max;
 use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::collections::VecDeque;
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver};
 
 const RECENT_WORK_BUF: usize = 8;
@@ -27,8 +29,8 @@ struct AnnBatch {
 struct Handler {
     tip: Mutex<AnnBatch>,
     url: Arc<String>,
-    recv_upload: tokio::sync::Mutex<Receiver<AnnBatch>>,
-    send_upload: Sender<AnnBatch>,
+    queue: Arc<Mutex<VecDeque<AnnBatch>>>,
+    shutdown: AtomicBool,
 }
 
 const STATS_SECONDS_TO_KEEP: usize = 10;
@@ -173,16 +175,16 @@ fn update_work_cycle(am: &AnnMine, p: &Arc<Pool>, update: PoolUpdate) -> Vec<Arc
         }
         changes = true;
         info!("Adding handler {}", url);
-        let (send_upload, recv_upload) = mpsc::channel(UPLOAD_CHANNEL_LEN);
+        let queue = Arc::new(Mutex::new(VecDeque::new()));
         let h = Arc::new(Handler {
-            recv_upload: tokio::sync::Mutex::new(recv_upload),
+            queue: queue,
             tip: Mutex::new(AnnBatch {
                 create_time: util::now_ms(),
                 parent_block_height: job.header.height,
                 anns: Vec::new(),
             }),
             url: Arc::new(url.clone()),
-            send_upload,
+            shutdown: AtomicBool::new(false),
         });
         for _ in 0..am.cfg.uploaders {
             let p1 = Arc::clone(p);
@@ -256,7 +258,7 @@ async fn update_work_loop(am: &AnnMine, p: Arc<Pool>) {
             continue;
         };
         for to_shutdown in update_work_cycle(am, &p, update) {
-            to_shutdown.recv_upload.lock().await.close();
+            to_shutdown.shutdown.store(true, Ordering::Relaxed);
         }
     }
 }
@@ -265,7 +267,6 @@ fn submit_anns(
     p: &Pool,
     h: &Arc<Handler>,
     to_submit: &mut AnnBatch,
-    send_upload: &mut Sender<AnnBatch>,
     next_parent_block_height: i32,
 ) {
     let mut tip = AnnBatch {
@@ -274,17 +275,19 @@ fn submit_anns(
         anns: Vec::new(),
     };
     std::mem::swap(to_submit, &mut tip);
-    trace!("Submit [{}] to [{}]", tip.anns.len(), h.url);
-    match send_upload.try_send(tip) {
-        Ok(_) => (),
-        Err(tokio::sync::mpsc::error::TrySendError::Full(tip)) => {
-            debug!("Failed to submit {} anns to {}", tip.anns.len(), h.url);
-            p.lost_anns.fetch_add(tip.anns.len(), Ordering::Relaxed);
-        }
-        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
-            warn!("Failed to submit anns to {}, channel closed", h.url);
+    if tip.anns.len() == 0 {
+        return;
+    }
+    let mut queue = h.queue.lock().unwrap();
+    trace!("Queue {} anns at {} for {}, {} batches currently queued", tip.anns.len(), tip.parent_block_height, h.url, queue.len());
+    if queue.len() >= UPLOAD_CHANNEL_LEN {
+        let front = queue.pop_front();
+        if let Some(lost_batch) = front {
+            p.lost_anns.fetch_add(lost_batch.anns.len(), Ordering::Relaxed);
+            debug!("Dropping {} anns @ {} for {}", lost_batch.anns.len(), lost_batch.parent_block_height, h.url);
         }
     }
+    queue.push_back(tip);
 }
 
 fn submit_to_pool(p: &Pool, ann_struct: &AnnResult, now: u64) {
@@ -318,7 +321,6 @@ fn submit_to_pool(p: &Pool, ann_struct: &AnnResult, now: u64) {
                 p,
                 &handler,
                 &mut *tip,
-                &mut handler.send_upload.clone(),
                 parent_block_height,
             );
         }
@@ -331,7 +333,6 @@ fn submit_to_pool(p: &Pool, ann_struct: &AnnResult, now: u64) {
             p,
             &handler,
             &mut *tip,
-            &mut handler.send_upload.clone(),
             parent_block_height,
         );
     }
@@ -548,16 +549,13 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
         .build()
         .unwrap();
     loop {
-        let mut batch : Option<AnnBatch> = None;
-        match h.recv_upload.lock().await.try_recv() {
-            Ok(x) => {
-                batch = Some(x);
-            },
-            Err(tokio::sync::mpsc::error::TryRecvError::Closed) => {
-                break;
-            },
-            Err(_e) => (),
+        if h.shutdown.load(Ordering::Relaxed) {
+            break;
         }
+        let batch = {
+            let mut queue = h.queue.lock().unwrap();
+            queue.pop_back()
+        };
         match batch {
             Some(batch) => {
                 let upload_n = am
