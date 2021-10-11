@@ -102,6 +102,12 @@ fn main() {
         cfg.use_plt(false);
     }
 
+    if !cfg!(feature = "portable") {
+        cfg.flag_if_supported("-march=native");
+        cfg.flag_if_supported("-mtune=native");
+        println!("cargo:warning=march=native is enabled, this build is non-portable");
+    }
+
     cfg.include("packetcrypt/include")
         .include("packetcrypt/src")
         .flag("-Wno-implicit-function-declaration")
@@ -122,8 +128,6 @@ fn main() {
         .file("packetcrypt/src/Work.c")
         .file("packetcrypt/src/UdpGso.c")
         .out_dir(dst.join("lib"))
-        .flag_if_supported("-march=native")
-        .flag_if_supported("-mtune=native")
         .flag("-O2")
         .compile("libpacketcrypt.a");
 

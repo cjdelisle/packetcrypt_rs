@@ -267,11 +267,20 @@ async fn async_main(matches: clap::ArgMatches<'_>) -> Result<()> {
     Ok(())
 }
 
+fn version() -> &'static str {
+    let out = git_version::git_version!(args = ["--tags", "--dirty=-dirty"]);
+    if let Some(v) = out.strip_prefix("packetcrypt-v") {
+        &v
+    } else {
+        &out
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cpus_str = format!("{}", num_cpus::get());
     let matches = App::new("packetcrypt")
-        .version("0.4.1")
+        .version(version())
         .author("Caleb James DeLisle <cjd@cjdns.fr>")
         .about("Bandwidth hard proof of work algorithm")
         .setting(clap::AppSettings::ArgRequiredElseHelp)
