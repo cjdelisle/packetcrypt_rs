@@ -382,6 +382,21 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
             indexes.push(ai.index);
             height_work = Some(ai.hw);
         }
+        if let Some(hw) = height_work {
+            trace!(
+                "Batch of {} anns {} @ {}",
+                indexes.len(),
+                hw.block_height,
+                packetcrypt_sys::difficulty::tar_to_diff(hw.work)
+            );
+            on_anns(
+                self,
+                AnnChunk {
+                    anns,
+                    indexes: &indexes[..],
+                },
+            );
+        }
     }
 }
 

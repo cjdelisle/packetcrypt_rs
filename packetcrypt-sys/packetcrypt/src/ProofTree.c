@@ -37,7 +37,7 @@ void ProofTree_prepare2(ProofTree_t* pt, uint64_t totalAnns)
 }
 
 ProofTree_Proof_t* ProofTree_mkProof(ProofTree_t* pt, const uint64_t annNumbers[4]) {
-    ProofTree_Proof_t* out = malloc(sizeof(ProofTree_Proof_t*));
+    ProofTree_Proof_t* out = malloc(sizeof(ProofTree_Proof_t));
     assert(out);
     int size = 0;
     out->data = PacketCryptProof_mkProof(&size, &pt->tree, annNumbers);
