@@ -137,6 +137,19 @@ async fn sprayer_main(cfg: packetcrypt_sprayer::Config) -> Result<()> {
     util::sleep_forever().await
 }
 
+/// Benchmark hashes per second in block mining.
+async fn bench_blk(max_mem: u64, threads: u32) -> Result<()> {
+    const REPEAT: u32 = 10;
+    const SAMPLING_MS: u64 = 5000;
+    let bencher = packetcrypt_blkmine::bench::Bencher::new(REPEAT, SAMPLING_MS);
+    bencher.bench_blk(max_mem, threads).await
+}
+
+/// Benchmarks the tree construction.
+async fn bench_tree() -> Result<()> {
+    todo!()
+}
+
 macro_rules! get_strs {
     ($m:ident, $s:expr) => {
         if let Some(x) = $m.values_of($s) {
@@ -264,6 +277,14 @@ async fn async_main(matches: clap::ArgMatches<'_>) -> Result<()> {
             mcast: "".to_owned(),
         })
         .await?;
+    } else if let Some(bench) = matches.subcommand_matches("bench") {
+        if let Some(blk) = bench.subcommand_matches("blk") {
+            let max_mem = get_num!(blk, "memorysizemb", u64) * 1024 * 1024;
+            let threads = get_num!(blk, "threads", u32);
+            bench_blk(max_mem, threads).await?;
+        } else if let Some(_) = bench.subcommand_matches("tree") {
+            bench_tree().await?;
+        }
     }
     Ok(())
 }
@@ -521,6 +542,35 @@ async fn main() -> Result<()> {
                         .default_value("1472")
                         .takes_value(true)
                 ),
+        )
+        .subcommand(
+            SubCommand::with_name("bench")
+                .about("Benchmark the performance of block mining operations")
+                .setting(clap::AppSettings::ArgRequiredElseHelp)
+                .subcommand(
+                    SubCommand::with_name("blk")
+                    .about("Benchmark the hashes per second of a block mining")
+                    .arg(
+                        Arg::with_name("memorysizemb")
+                            .short("m")
+                            .long("memorysizemb")
+                            .help("Size of memory work buffer in MB")
+                            .default_value("4096")
+                            .takes_value(true),
+                    )
+                    .arg(
+                        Arg::with_name("threads")
+                            .short("t")
+                            .long("threads")
+                            .help("Number of threads to mine with")
+                            .default_value(&cpus_str)
+                            .takes_value(true),
+                    )
+                )
+                .subcommand(
+                    SubCommand::with_name("tree")
+                        .about("Benchmark the time to construct a typical tree")
+                )
         )
         .get_matches();
 
