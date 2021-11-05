@@ -1,5 +1,6 @@
 use crate::blkminer::BlkMiner;
 use anyhow::Result;
+use packetcrypt_util::util;
 use rand::Rng;
 use sodiumoxide::crypto::stream::chacha20;
 use std::fmt::{Display, Formatter};
@@ -110,6 +111,6 @@ impl Div<u32> for BenchBlk {
 
 impl Display for BenchBlk {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:.2} hashes/sec", self.hashes_per_second)
+        write!(f, "{}e/s", util::big_number(self.hashes_per_second))
     }
 }
