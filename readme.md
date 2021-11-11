@@ -43,9 +43,9 @@ cargo clean
 Step 3: Edit Cargo.toml and add the following at the bottom
 
 [profile.release]
-lto = "fat"
-codegen-units = 1
-panic = "abort
+    lto = "fat"
+    codegen-units = 1
+    panic = "abort
 
 Step 4: Copy and run the following command
 
