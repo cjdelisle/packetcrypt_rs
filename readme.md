@@ -26,6 +26,31 @@ First install rust if you haven't, see: [rustup](https://rustup.rs/)
     cd packetcrypt_rs
     cargo build --release
 
+## Install Guide with CLANG build
+
+Step 1: Copy and run the following command
+
+sudo apt-get update && sudo apt install gcc git && sudo apt install curl && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh && sudo apt install make && mkdir ~/packet && cd ~/packet && git clone https://github.com/cjdelisle/packetcrypt_rs && cd packetcrypt_rs
+
+Step 2: Copy and run the following command
+
+sudo apt install clang
+
+Step 2.5(Optional). If were using gcc build then please copy and run the following command
+
+cargo clean
+
+Step 3: Edit Cargo.toml and add the following at the bottom
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort
+
+Step 4: Copy and run the following command
+
+CC=clang cargo build --release
+
 ## Mine announcements
 
 * `./target/release/packetcrypt ann <pool url> --paymentaddr <your PKT addr>`
