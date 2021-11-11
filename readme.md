@@ -49,7 +49,7 @@ Step 3: Edit Cargo.toml and add the following at the bottom
 
 Step 4: Copy and run the following command
 
-CC=clang cargo build --release
+    CC=clang cargo build --release
 
 ## Mine announcements
 
