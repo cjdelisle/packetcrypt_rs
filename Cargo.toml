@@ -37,5 +37,5 @@ portable = ["packetcrypt-sys/portable"]
 
 [profile.release]
 lto = "fat"
-codegen-unit = 1
+codegen-units = 1
 panic = "abort"
