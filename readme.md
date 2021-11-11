@@ -36,7 +36,7 @@ Step 2: Copy and run the following command
 
     sudo apt install clang
 
-Step 2.5(Optional). If were using gcc build then please copy and run the following command
+Step 2.5(Optional). If you were using a gcc build then please copy and run the following command
 
     cargo clean
 
@@ -45,7 +45,7 @@ Step 3: Edit Cargo.toml and add the following at the bottom
     [profile.release]
     lto = "fat"
     codegen-units = 1
-    panic = "abort
+    panic = "abort"
 
 Step 4: Copy and run the following command
 
