@@ -36,9 +36,11 @@ pub struct AnnBuf<const ANNBUF_SZ: usize> {
     bm: Arc<BlkMiner>,
     base_offset: usize,
 
-    /// allows atomic add to allocate space for additional anns.
+    /// The index of the next push.
+    /// Allows atomic adds to allocate space for additional anns.
     next_ann_index: AtomicUsize,
-    /// gives interior mutability, so this struct can be shared among threads.
+    /// The calculated hashes.
+    /// Gives interior mutability, so this struct can be shared among threads.
     hashes: UnsafeCell<[Hash; ANNBUF_SZ]>,
 
     locked: bool,
