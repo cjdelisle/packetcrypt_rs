@@ -1,0 +1,134 @@
+use crate::ann_buf::{AnnBuf, Hash};
+use crate::prooftree;
+use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
+use rayon::prelude::*;
+use std::mem;
+use std::sync::{Arc, Mutex, RwLock};
+
+const ANNBUF_SZ: usize = 32 * 1024;
+type AnnBufSz = AnnBuf<ANNBUF_SZ>;
+
+struct HashTree {
+    origin: Arc<Mutex<prooftree::ProofTree>>,
+    root_hash: Option<Hash>,
+}
+
+impl HashTree {
+    fn invalidate(&mut self) {
+        if self.root_hash.is_none() {
+            return;
+        }
+
+        let mut pf = self.origin.lock().unwrap();
+        if pf.root_hash.as_ref() == self.root_hash.as_deref() {
+            pf.reset();
+        }
+        self.root_hash = None
+    }
+}
+
+struct AnnClassMut {
+    /// The buffers with the hashes.
+    bufs: Vec<Box<AnnBufSz>>,
+    topbuf: Box<AnnBufSz>,
+
+    /// Hash trees which contain announcements in this class.
+    /// A hash tree will only care to include either all anns in a class or none
+    /// so this is not needed per-AnnBuf.
+    dependent_trees: Vec<HashTree>,
+
+    /// Are we currently mining?
+    mining: bool,
+}
+
+/// AnnClass is a "classification" or grouping of announcements which are similar in their
+/// properties (same work done on the ann, same block height when mined).
+pub struct AnnClass {
+    m: RwLock<AnnClassMut>,
+
+    /// The hash of the current block.
+    block_hash: Hash,
+
+    // The type of anns in this class.
+    block_height: u32,
+    min_ann_work: u32,
+}
+
+impl AnnClass {
+    pub fn new(first_buf: Box<AnnBufSz>) -> Self {
+        AnnClass {
+            m: RwLock::new(AnnClassMut {
+                bufs: vec![],
+                topbuf: first_buf,
+                dependent_trees: vec![],
+                mining: false,
+            }),
+            block_hash: Default::default(),
+            block_height: 0,
+            min_ann_work: 0,
+        }
+    }
+
+    pub fn push_anns(&self, anns: &[&[u8]]) -> usize {
+        self.m.read().unwrap().topbuf.push_anns(anns)
+    }
+
+    pub fn add_buf(&self, newbuf: Box<AnnBufSz>) {
+        // don't be holding the write mutex while we lock topbuf.
+        let mut oldtop = {
+            let mut m = self.m.write().unwrap();
+            mem::replace(&mut m.topbuf, newbuf)
+        };
+        // lock the previous top buffer, this will take some time.
+        oldtop.lock();
+        self.m.write().unwrap().bufs.push(oldtop);
+    }
+
+    pub fn steal_buf(&self) -> Option<Box<AnnBufSz>> {
+        let mut m = self.m.write().unwrap();
+        if m.bufs.is_empty() || m.mining {
+            return None;
+        }
+
+        m.dependent_trees.iter_mut().for_each(|t| t.invalidate());
+        m.dependent_trees.clear();
+        m.bufs.pop()
+    }
+
+    pub fn destroy(self) -> Box<AnnBufSz> {
+        {
+            let m = self.m.write().unwrap();
+            assert!(m.bufs.is_empty() && !m.mining);
+        }
+        self.m.into_inner().unwrap().topbuf
+    }
+
+    pub fn read_ann_data(&self, mut out: &mut [prooftree::AnnData]) -> usize {
+        let m = self.m.read().unwrap();
+        let mut v = Vec::with_capacity(m.bufs.len());
+        // split the out buffer into sub-buffers each of which has enough space to hold
+        // enough AnnData for each entry in one buf.
+        let (mut last, mut all) = (0, 0);
+        for b in &m.bufs {
+            let (data, excess) = out.split_at_mut(last);
+            v.push((b, data));
+            out = excess;
+            last = b.next_ann_index();
+            all += last;
+        }
+        // now that they're split, copy the hashes over in parallel.
+        v.into_par_iter().for_each(|(buf, out)| {
+            buf.read_ann_data(out);
+        });
+        all
+    }
+
+    /// This gets the effective "value" of these anns, result is a compact int
+    /// lower numbers = higher value. Announcements degrade in value with age.
+    pub fn ann_effective_work(&self, next_block_height: u32) -> u32 {
+        if self.block_height + 3 < next_block_height {
+            return self.min_ann_work;
+        }
+        pc_degrade_announcement_target(self.min_ann_work, next_block_height - self.block_height)
+    }
+}

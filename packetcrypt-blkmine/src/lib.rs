@@ -1,4 +1,5 @@
 mod ann_buf;
+mod ann_class;
 mod blkminer;
 mod downloader;
 mod prooftree;
