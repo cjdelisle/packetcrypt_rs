@@ -3,12 +3,12 @@ use rayon::prelude::*;
 use sodiumoxide::crypto::generichash;
 use std::cell::UnsafeCell;
 use std::convert::TryInto;
-use std::ops::Index;
+use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 #[derive(Default, Copy, Clone)]
-struct Hash([u8; 32]);
+pub struct Hash([u8; 32]);
 
 impl Hash {
     fn compute(&mut self, ann: &[u8]) {
@@ -32,7 +32,7 @@ impl Deref for Hash {
 /// The purpose of AnnBuf is to be able to store and account for announcements in memory
 /// and efficiently generate sorted lists on demand.
 /// Every AnnBuf has a base address (in the big memory storage area).
-struct AnnBuf<const ANNBUF_SZ: usize> {
+pub struct AnnBuf<const ANNBUF_SZ: usize> {
     bm: Arc<BlkMiner>,
     base_offset: usize,
 
