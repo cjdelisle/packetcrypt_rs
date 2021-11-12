@@ -21,6 +21,14 @@ impl Hash {
     }
 }
 
+impl Deref for Hash {
+    type Target = [u8; 32];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 /// The purpose of AnnBuf is to be able to store and account for announcements in memory
 /// and efficiently generate sorted lists on demand.
 /// Every AnnBuf has a base address (in the big memory storage area).
