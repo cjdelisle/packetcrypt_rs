@@ -90,7 +90,7 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
     pub fn lock(&mut self) {
         assert!(!self.locked);
 
-        let last = self.next_ann_index.load(Ordering::Relaxed);
+        let last = self.next_ann_index();
         for i in 0..last {
             self.index_table[i] = i as u16;
         }
@@ -113,12 +113,16 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
     /// for building the final proof tree.
     pub fn read_ann_data(&self, out: &mut [prooftree::AnnData]) {
         assert!(self.locked);
-        let last = self.next_ann_index.load(Ordering::Relaxed);
+        let last = self.next_ann_index();
         let hashes = unsafe { &*self.hashes.get() };
         for (i, &idx) in self.index_table[0..last].iter().enumerate() {
             out[i].hash = hashes[idx as usize].0;
             out[i].mloc = (self.base_offset + idx as usize) as u32;
             out[i].index = 0; // used internally for other purposes
         }
+    }
+
+    pub fn next_ann_index(&self) -> usize {
+        self.next_ann_index.load(Ordering::Relaxed)
     }
 }
