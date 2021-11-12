@@ -20,7 +20,7 @@ pub struct ProofTree {
     raw: *mut ProofTree_t,
     capacity: u32,
     size: u32,
-    root_hash: Option<[u8; 32]>,
+    pub root_hash: Option<[u8; 32]>,
 }
 unsafe impl Send for ProofTree {}
 unsafe impl Sync for ProofTree {}
