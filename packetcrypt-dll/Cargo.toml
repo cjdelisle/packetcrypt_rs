@@ -19,3 +19,6 @@ packetcrypt-sys = { version = "0.4", path = "../packetcrypt-sys" }
 # Rust wants to use DWARF unwinding but mingw32 i686 only supports sjlj
 [target.i686-pc-windows-gnu]
 panic = "abort"
+
+[features]
+portable = ["packetcrypt-sys/portable"]
