@@ -96,15 +96,18 @@ impl AnnClass {
         self.m.write().unwrap().bufs.push(oldtop);
     }
 
-    pub fn steal_buf(&self) -> Option<Box<AnnBufSz>> {
+    pub fn steal_buf(&self) -> Result<Option<Box<AnnBufSz>>, ()> {
         let mut m = self.m.write().unwrap();
-        if m.bufs.is_empty() || m.mining {
-            return None;
+        if m.mining {
+            return Err(());
+        }
+        if m.bufs.is_empty() {
+            return Ok(None);
         }
 
         m.dependent_trees.iter_mut().for_each(|t| t.invalidate());
         m.dependent_trees.clear();
-        m.bufs.pop()
+        Ok(m.bufs.pop())
     }
 
     pub fn destroy(self) -> Box<AnnBufSz> {
