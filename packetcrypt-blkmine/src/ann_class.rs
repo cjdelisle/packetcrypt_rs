@@ -6,8 +6,8 @@ use rayon::prelude::*;
 use std::mem;
 use std::sync::{Arc, Mutex, RwLock};
 
-const ANNBUF_SZ: usize = 32 * 1024;
-type AnnBufSz = AnnBuf<ANNBUF_SZ>;
+pub const ANNBUF_SZ: usize = 32 * 1024;
+pub type AnnBufSz = AnnBuf<ANNBUF_SZ>;
 
 struct HashTree {
     origin: Arc<Mutex<prooftree::ProofTree>>,
