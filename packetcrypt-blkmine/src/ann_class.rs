@@ -1,4 +1,5 @@
 use crate::ann_buf::{AnnBuf, Hash};
+use crate::blkmine::HeightWork;
 use crate::prooftree;
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
@@ -55,17 +56,28 @@ pub struct AnnClass {
 }
 
 impl AnnClass {
-    pub fn new(first_buf: Box<AnnBufSz>) -> Self {
+    pub fn with_topbuf(topbuf: Box<AnnBufSz>, hw: &HeightWork) -> Self {
+        Self::new(topbuf, vec![], hw)
+    }
+
+    pub fn with_bufs(bufs: impl Iterator<Item = Box<AnnBufSz>>, hw: &HeightWork) -> Self {
+        // we want topbuf to be the last slice, since it will be the last one to be stolen.
+        let mut bufs = bufs.collect::<Vec<_>>();
+        let topbuf = bufs.pop().unwrap();
+        Self::new(topbuf, bufs, hw)
+    }
+
+    fn new(topbuf: Box<AnnBufSz>, bufs: Vec<Box<AnnBufSz>>, hw: &HeightWork) -> Self {
         AnnClass {
             m: RwLock::new(AnnClassMut {
-                bufs: vec![],
-                topbuf: first_buf,
+                bufs,
+                topbuf,
                 dependent_trees: vec![],
                 mining: false,
             }),
             block_hash: Default::default(),
-            block_height: 0,
-            min_ann_work: 0,
+            block_height: hw.block_height as u32,
+            min_ann_work: hw.work,
         }
     }
 
