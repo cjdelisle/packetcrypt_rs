@@ -138,7 +138,7 @@ impl AnnClass {
         all
     }
 
-    /// This gets the effective "value" of these anns, result is a compact int
+    /// Get the effective "value" of these anns, result is a compact int
     /// lower numbers = higher value. Announcements degrade in value with age.
     pub fn ann_effective_work(&self, next_block_height: u32) -> u32 {
         if self.block_height + 3 < next_block_height {
