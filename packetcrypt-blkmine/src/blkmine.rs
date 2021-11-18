@@ -266,15 +266,17 @@ fn mk_ann_info(anns: &impl GetAnn, mut free: Vec<FreeInfo>) -> Vec<AnnInfo> {
     }
 }
 
-#[derive(PartialEq, Eq)]
-struct HeightWork {
-    block_height: i32,
-    work: u32,
+#[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
+pub struct HeightWork {
+    pub block_height: i32,
+    pub work: u32,
 }
-struct AnnChunk<'a> {
-    anns: &'a [&'a [u8]],
-    indexes: &'a [u32],
+
+pub struct AnnChunk<'a> {
+    pub anns: &'a [&'a [u8]],
+    pub indexes: &'a [u32],
 }
+
 impl<'a> GetAnn for AnnChunk<'a> {
     fn get_ann(&self, num: usize) -> &[u8] {
         self.anns[self.indexes[num] as usize]
