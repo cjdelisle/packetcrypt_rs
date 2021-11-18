@@ -69,8 +69,8 @@ impl AnnClass {
         }
     }
 
-    pub fn push_anns(&self, anns: &[&[u8]]) -> usize {
-        self.m.read().unwrap().topbuf.push_anns(anns)
+    pub fn push_anns(&self, anns: &[&[u8]], indexes: &[u32]) -> usize {
+        self.m.read().unwrap().topbuf.push_anns(anns, indexes)
     }
 
     pub fn add_buf(&self, newbuf: Box<AnnBufSz>) {

@@ -1,4 +1,5 @@
-use crate::{blkminer::BlkMiner, prooftree};
+use crate::blkminer::BlkMiner;
+use crate::prooftree;
 use rayon::prelude::*;
 use sodiumoxide::crypto::generichash;
 use std::cell::UnsafeCell;
@@ -64,26 +65,28 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
 
     /// Push a slice of announcements into this buffer.
     /// Returns the number of actually inserted anns.
-    pub fn push_anns(&self, mut anns: &[&[u8]]) -> usize {
+    pub fn push_anns(&self, anns: &[&[u8]], mut indexes: &[u32]) -> usize {
         // atomically advance the next_ann_index to "claim" the space.
-        let ann_index = self.next_ann_index.fetch_add(anns.len(), Ordering::Relaxed);
+        let ann_index = self
+            .next_ann_index
+            .fetch_add(indexes.len(), Ordering::Relaxed);
         if ann_index >= ANNBUF_SZ {
             self.next_ann_index.store(ANNBUF_SZ, Ordering::Relaxed);
             return 0;
         }
 
         // verify if a partial push is necessary.
-        if ann_index + anns.len() > ANNBUF_SZ {
-            anns = &anns[..ANNBUF_SZ - ann_index];
+        if ann_index + indexes.len() > ANNBUF_SZ {
+            indexes = &indexes[..ANNBUF_SZ - ann_index];
             self.next_ann_index.store(ANNBUF_SZ, Ordering::Relaxed);
         }
 
         let hashes = self.hashes.get();
         let mut temp = Hash::default();
-        for (i, &ann) in (ann_index..).zip(anns.iter()) {
+        for (i, ann) in (ann_index..).zip(indexes.iter().map(|&ci| anns[ci as usize])) {
             temp.compute(ann);
             unsafe {
-                // SAFETY: the starting index comes from an atomic, and we won't write out of anns.len() range.
+                // SAFETY: the starting index comes from an atomic, and we won't write out of indexes.len() range.
                 (*hashes)[i] = temp;
             }
 
@@ -91,7 +94,7 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
             self.bm.put_ann((self.base_offset + i) as u32, ann);
         }
 
-        anns.len()
+        indexes.len()
     }
 
     /// Locks this AnnBuf once it is full, which sorts the index table by ann hash.
