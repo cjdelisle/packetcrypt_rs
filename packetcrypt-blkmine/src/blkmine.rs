@@ -598,15 +598,17 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 
 fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
     bm.block_miner.stop();
-    let (index_table, real_target, current_mining) = {
+    let (index_table, real_target, current_mining);
+    {
         let (tree, tree_num) = get_tree(bm, false);
         let mut tree_l = tree.lock().unwrap();
-        let (reload, mut data) = {
+        let (reload, mut data);
+        {
             let mut active_l = bm.active_infos.lock().unwrap();
-            let reload = reload_anns(bm, next_work, &mut active_l);
+            reload = reload_anns(bm, next_work, &mut active_l);
             debug!("Inserting in tree");
             tree_l.reset();
-            let data = active_l
+            data = active_l
                 .par_iter()
                 .map(|ai| {
                     //debug!("active_l has {} hashes", ai.hashes.len());
@@ -629,33 +631,28 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
                 debug!("Not mining, no anns ready");
                 return;
             }
-            (reload, data)
         };
         debug!("Computing tree");
-        let index_table = tree_l.compute(&mut data).unwrap();
+        index_table = tree_l.compute(&mut data).unwrap();
         debug!("Computing block header");
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
-        let real_target = pc_get_effective_target(
+        real_target = pc_get_effective_target(
             next_work.share_target,
             reload.ann_min_work,
             index_table.len() as u64,
         );
         let count = index_table.len() as u32;
-        (
-            index_table,
-            real_target,
-            CurrentMining {
-                count,
-                ann_min_work: reload.ann_min_work,
-                using_tree: tree_num,
-                mining_height: next_work.height,
-                time_started_ms: util::now_ms(),
-                coinbase_commit,
-                block_header,
-                shares: 0,
-            },
-        )
+        current_mining = CurrentMining {
+            count,
+            ann_min_work: reload.ann_min_work,
+            using_tree: tree_num,
+            mining_height: next_work.height,
+            time_started_ms: util::now_ms(),
+            coinbase_commit,
+            block_header,
+            shares: 0,
+        };
     };
 
     // Self-test
