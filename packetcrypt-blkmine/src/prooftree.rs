@@ -10,6 +10,7 @@ pub struct AnnData {
     pub mloc: u32,
     pub index: u32,
 }
+
 impl AnnData {
     fn hash_pfx(&self) -> u64 {
         u64::from_le_bytes(self.hash[0..8].try_into().unwrap())
@@ -22,8 +23,10 @@ pub struct ProofTree {
     size: u32,
     pub root_hash: Option<[u8; 32]>,
 }
+
 unsafe impl Send for ProofTree {}
 unsafe impl Sync for ProofTree {}
+
 impl Drop for ProofTree {
     fn drop(&mut self) {
         unsafe {
@@ -50,10 +53,12 @@ impl ProofTree {
             root_hash: None,
         }
     }
+
     pub fn reset(&mut self) {
         self.size = 0;
         self.root_hash = None;
     }
+
     pub fn compute(&mut self, data: &mut [AnnData]) -> Result<Vec<u32>, &'static str> {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
@@ -61,6 +66,7 @@ impl ProofTree {
         if data.is_empty() {
             return Err("no anns, cannot compute tree");
         }
+
         if data.len() > self.capacity as usize {
             return Err("too many anns");
         }
@@ -134,6 +140,7 @@ impl ProofTree {
         self.size = out.len() as u32;
         Ok(out)
     }
+
     pub fn get_commit(&self, ann_min_work: u32) -> Result<bytes::BytesMut, &'static str> {
         let hash = if let Some(h) = self.root_hash.as_ref() {
             h
@@ -147,6 +154,7 @@ impl ProofTree {
         out.put_u64_le(self.size as u64);
         Ok(out)
     }
+
     pub fn mk_proof(&mut self, ann_nums: &[u64; 4]) -> Result<bytes::BytesMut, &'static str> {
         if self.root_hash.is_none() {
             return Err("Not in computed state, call compute() first");
