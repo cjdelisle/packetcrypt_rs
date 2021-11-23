@@ -66,6 +66,8 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
     /// Push a slice of announcements into this buffer.
     /// Returns the number of actually inserted anns.
     pub fn push_anns(&self, anns: &[&[u8]], mut indexes: &[u32]) -> usize {
+        assert!(!self.locked);
+
         // atomically advance the next_ann_index to "claim" the space.
         let ann_index = self
             .next_ann_index
