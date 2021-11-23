@@ -144,7 +144,7 @@ impl AnnStore {
 }
 
 fn steal_non_mining_buf(m: &mut AnnStoreMut, next_block_height: u32) -> Box<AnnBufSz> {
-    let mut mining = vec![];
+    let mut mining = Vec::new();
     loop {
         // find the worst AnnClass to steal a buf from.
         let (&key, worst) = m
