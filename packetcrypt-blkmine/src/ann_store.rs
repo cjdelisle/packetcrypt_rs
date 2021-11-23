@@ -3,8 +3,18 @@ use crate::ann_buf::Hash;
 use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
 use crate::blkmine::{AnnChunk, HeightWork};
 use crate::blkminer::BlkMiner;
+use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
+use rayon::prelude::*;
+use std::cmp::max;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, RwLock};
+
+#[derive(Debug)]
+pub struct ClassInfo {
+    pub hw: HeightWork,
+    pub ann_count: usize,
+    pub ann_effective_work: u32,
+}
 
 struct AnnStoreMut {
     classes: BTreeMap<HeightWork, Box<AnnClass>>,
@@ -72,6 +82,31 @@ impl AnnStore {
                 assert!(m.classes.insert(hw, new_class).is_none());
             }
         }
+    }
+
+    /// Return the classes that does have announcements at the moment, already ranked according to
+    /// their effective ann work.
+    /// Also it is sure to exclude the 0xffffffff effective work announcements.
+    pub fn ready_classes(&self, next_height: i32) -> Vec<ClassInfo> {
+        let m = self.m.read().unwrap();
+        let mut ready = m
+            .classes
+            .par_iter()
+            .map(|(&hw, ac)| {
+                let age = max(0, next_height - hw.block_height) as u32;
+                let aew = pc_degrade_announcement_target(hw.work, age);
+                (hw, ac, aew)
+            })
+            .filter(|(_hw, _ac, aew)| *aew != 0xffffffff)
+            .map(|(hw, ac, aew)| ClassInfo {
+                hw,
+                ann_count: ac.ready_anns(),
+                ann_effective_work: aew,
+            })
+            .collect::<Vec<_>>();
+
+        ready.sort_unstable_by_key(|ci| ci.ann_effective_work);
+        ready
     }
 }
 

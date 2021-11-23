@@ -270,7 +270,7 @@ fn mk_ann_info(anns: &impl GetAnn, mut free: Vec<FreeInfo>) -> Vec<AnnInfo> {
     }
 }
 
-#[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone)]
+#[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone, Debug)]
 pub struct HeightWork {
     pub block_height: i32,
     pub work: u32,
