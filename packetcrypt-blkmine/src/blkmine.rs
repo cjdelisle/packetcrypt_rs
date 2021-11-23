@@ -12,6 +12,7 @@ use packetcrypt_util::protocol;
 use packetcrypt_util::{hash, util};
 use rayon::prelude::*;
 use std::cmp::max;
+use std::iter;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -473,6 +474,42 @@ impl downloader::OnAnns for BlkMine {
             num_frees,
             num_infos
         );
+    }
+}
+
+struct ReloadedClasses {
+    ann_min_work: u32,
+    best_set: Vec<HeightWork>,
+}
+
+/// Get all ready classes, already ranked by effective ann work, compute effective work target for each
+/// sub-set, and find the sub-set for which this resulting effective target is the highest.
+fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> ReloadedClasses {
+    let ready = bm.ann_store.ready_classes(next_work.height);
+
+    // computes the cummulative counts of the classes.
+    let counts = ready.iter().scan(0u64, |acc, ci| {
+        *acc += ci.ann_count as u64;
+        Some(*acc)
+    });
+
+    // computes the effective work target, and find the sub-set of classes for which it is the highest.
+    let (best, _) = ready
+        .iter()
+        .zip(counts)
+        .max_by_key(|&(ci, count)| {
+            pc_get_effective_target(next_work.share_target, ci.ann_effective_work, count)
+        })
+        .unwrap();
+
+    ReloadedClasses {
+        ann_min_work: best.ann_effective_work,
+        best_set: ready
+            .iter()
+            .take_while(|&ci| ci.hw != best.hw)
+            .chain(iter::once(best))
+            .map(|ci| ci.hw)
+            .collect(),
     }
 }
 
