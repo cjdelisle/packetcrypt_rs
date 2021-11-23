@@ -119,6 +119,11 @@ impl AnnClass {
     }
 
     pub fn read_ann_data(&self, mut out: &mut [prooftree::AnnData]) -> usize {
+    pub fn ready_anns(&self) -> usize {
+        let m = self.m.read().unwrap();
+        m.bufs.iter().map(|b| b.next_ann_index()).sum()
+    }
+
         let m = self.m.read().unwrap();
         let mut v = Vec::with_capacity(m.bufs.len());
         // split the out buffer into sub-buffers each of which has enough space to hold
