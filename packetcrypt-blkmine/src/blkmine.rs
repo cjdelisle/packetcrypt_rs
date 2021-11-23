@@ -637,6 +637,76 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
     bh
 }
 
+fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
+    bm.block_miner.stop();
+
+    let reload = reload_classes(bm, next_work);
+    if reload.best_set.is_empty() {
+        debug!("Not mining, no anns ready");
+        return;
+    }
+
+    let (index_table, real_target, current_mining);
+    {
+        debug!("Computing tree");
+        let (tree, tree_num) = get_tree(bm, false);
+        let mut tree_l = tree.lock().unwrap();
+        tree_l.reset();
+        index_table = bm
+            .ann_store
+            .compute_tree(&reload.best_set, &mut tree_l)
+            .unwrap();
+
+        debug!("Computing block header");
+        let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
+        let block_header = compute_block_header(next_work, &coinbase_commit[..]);
+
+        let count = index_table.len();
+        real_target =
+            pc_get_effective_target(next_work.share_target, reload.ann_min_work, count as u64);
+        current_mining = CurrentMining {
+            count: count as u32,
+            ann_min_work: reload.ann_min_work,
+            using_tree: tree_num,
+            mining_height: next_work.height,
+            time_started_ms: util::now_ms(),
+            coinbase_commit,
+            block_header,
+            shares: 0,
+        };
+    };
+
+    // Self-test
+    let br = bm
+        .block_miner
+        .fake_mine(&current_mining.block_header[..], &index_table[..]);
+
+    debug!("Start mining...");
+    bm.block_miner.mine(
+        &current_mining.block_header[..],
+        &index_table[..],
+        real_target,
+        0,
+    );
+    trace!(
+        "Mining with header {}",
+        hex::encode(&current_mining.block_header)
+    );
+    debug!(
+        "Mining {} with {} @ {}",
+        next_work.height,
+        index_table.len(),
+        packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
+    );
+    bm.current_mining.lock().unwrap().replace(current_mining);
+
+    // Validate self-test
+    match make_share(bm, br, true) {
+        Ok(_) => (),
+        Err(e) => warn!("Failed to validate PcP, maybe hardware issues? {}", e),
+    };
+}
+
 fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
     bm.block_miner.stop();
     let (index_table, real_target, current_mining);
