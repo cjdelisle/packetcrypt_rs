@@ -126,7 +126,7 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
 
     /// Read out the data from the buf into an array of prooftree::AnnData, which will be used
     /// for building the final proof tree.
-    pub fn read_ann_data(&self, out: &mut [prooftree::AnnData]) {
+    pub fn read_ready_anns(&self, out: &mut [prooftree::AnnData]) {
         assert!(self.locked);
         let last = self.next_ann_index();
         let hashes = unsafe { &*self.hashes.get() };

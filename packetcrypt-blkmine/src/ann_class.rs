@@ -118,29 +118,26 @@ impl AnnClass {
         self.m.into_inner().unwrap().topbuf
     }
 
-    pub fn read_ann_data(&self, mut out: &mut [prooftree::AnnData]) -> usize {
     pub fn ready_anns(&self) -> usize {
         let m = self.m.read().unwrap();
         m.bufs.iter().map(|b| b.next_ann_index()).sum()
     }
 
+    pub fn read_ready_anns(&self, mut out: &mut [prooftree::AnnData]) {
         let m = self.m.read().unwrap();
-        let mut v = Vec::with_capacity(m.bufs.len());
         // split the out buffer into sub-buffers each of which has enough space to hold
         // enough AnnData for each entry in one buf.
-        let (mut last, mut all) = (0, 0);
+        let mut v = Vec::with_capacity(m.bufs.len());
         for b in &m.bufs {
-            let (data, excess) = out.split_at_mut(last);
+            let this = b.next_ann_index();
+            let (data, excess) = out.split_at_mut(this);
             v.push((b, data));
             out = excess;
-            last = b.next_ann_index();
-            all += last;
         }
         // now that they're split, copy the hashes over in parallel.
         v.into_par_iter().for_each(|(buf, out)| {
-            buf.read_ann_data(out);
+            buf.read_ready_anns(out);
         });
-        all
     }
 
     /// Get the effective "value" of these anns, result is a compact int
