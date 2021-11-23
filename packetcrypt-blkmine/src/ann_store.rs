@@ -3,6 +3,7 @@ use crate::ann_buf::Hash;
 use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
 use crate::blkmine::{AnnChunk, HeightWork};
 use crate::blkminer::BlkMiner;
+use crate::prooftree::ProofTree;
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::cmp::max;
@@ -107,6 +108,38 @@ impl AnnStore {
 
         ready.sort_unstable_by_key(|ci| ci.ann_effective_work);
         ready
+    }
+
+    pub fn compute_tree(
+        &self,
+        set: &[HeightWork],
+        pt: &mut ProofTree,
+    ) -> Result<Vec<u32>, &'static str> {
+        let m = self.m.read().unwrap(); // keep a read lock, so no push is made.
+        let mut set = set
+            .into_par_iter() // parallel, since locks must be acquired for all classes.
+            .map(|hw| {
+                let c = &m.classes[hw]; // will panic if a wrong hw is passed.
+                (c, c.ready_anns(), None) // count again, since they may have changed.
+            })
+            .collect::<Vec<_>>();
+        let total_anns = set.iter().map(|(_, r, _)| r).sum();
+        let mut buffer = Vec::with_capacity(total_anns);
+
+        // split the out buffer into sub-buffers for each class.
+        let mut out = &mut buffer[..];
+        for (_, this, dst) in &mut set {
+            let (data, excess) = out.split_at_mut(*this);
+            *dst = Some(data);
+            out = excess;
+        }
+        // now that they're split, copy the hashes over in parallel.
+        set.into_par_iter().for_each(|(c, _, dst)| {
+            c.read_ready_anns(dst.unwrap());
+        });
+
+        // compute the tree.
+        pt.compute(&mut buffer)
     }
 }
 
