@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
+use crate::ann_store::AnnStore;
 use crate::blkminer::{BlkMiner, BlkResult, OnShare};
 use crate::downloader;
 use crate::prooftree::{self, ProofTree};
@@ -79,7 +80,10 @@ struct CurrentWork {
 
 pub struct BlkMineS {
     // Memory location where the actual announcements are stored
-    block_miner: BlkMiner,
+    block_miner: Arc<BlkMiner>,
+
+    // The new specialized announcement store
+    ann_store: AnnStore,
 
     // Free space and discards from last mining lock
     inactive_infos: Mutex<Vec<AnnInfo>>,
@@ -688,7 +692,7 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
 
 pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
     let pcli = poolclient::new(&ba.pool_master, 1, 1);
-    let block_miner = BlkMiner::new(ba.max_mem as u64, ba.threads as u32)?;
+    let block_miner = Arc::new(BlkMiner::new(ba.max_mem as u64, ba.threads as u32)?);
     let max_anns = block_miner.max_anns;
     let spray = if let Some(sc) = &ba.spray_cfg {
         Some(packetcrypt_sprayer::Sprayer::new(sc)?)
@@ -697,7 +701,8 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
     };
     let (send, recv) = tokio::sync::mpsc::unbounded_channel();
     let bm = BlkMine(Arc::new(BlkMineS {
-        block_miner,
+        block_miner: Arc::clone(&block_miner),
+        ann_store: AnnStore::new(block_miner),
         inactive_infos: Mutex::new(vec![AnnInfo {
             parent_block_height: 0,
             ann_min_work: 0,

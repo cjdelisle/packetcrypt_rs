@@ -11,7 +11,7 @@ struct AnnStoreMut {
     recent_blocks: HashMap<i32, Hash>,
 }
 
-struct AnnStore {
+pub struct AnnStore {
     m: RwLock<AnnStoreMut>,
     bm: Arc<BlkMiner>,
 }
