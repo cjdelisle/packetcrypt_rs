@@ -13,7 +13,6 @@ struct AnnStoreMut {
 
 pub struct AnnStore {
     m: RwLock<AnnStoreMut>,
-    bm: Arc<BlkMiner>,
 }
 
 impl AnnStore {
@@ -37,7 +36,6 @@ impl AnnStore {
                 classes,
                 recent_blocks: HashMap::new(),
             }),
-            bm,
         }
     }
 
