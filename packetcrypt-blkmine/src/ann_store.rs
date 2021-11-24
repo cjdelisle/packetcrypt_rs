@@ -65,6 +65,7 @@ impl AnnStore {
             let m = self.m.read().unwrap();
             if let Some(class) = m.classes.get(&hw) {
                 let n = class.push_anns(ac.anns, indexes);
+                println!("*** AnnStore::push_anns: {:?} anns just pushed={}", hw, n);
                 total += n;
                 if n == indexes.len() {
                     println!(
