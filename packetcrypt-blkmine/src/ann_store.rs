@@ -51,11 +51,13 @@ impl AnnStore {
     }
 
     pub fn block(&self, height: i32, hash: [u8; 32]) {
+        println!("*** AnnStore::block: height={}", height);
         let mut m = self.m.write().unwrap();
         m.recent_blocks.insert(height, hash.into());
     }
 
     pub fn push_anns(&self, hw: HeightWork, ac: &AnnChunk) -> usize {
+        println!("*** AnnStore::push_anns: {:?}", hw);
         // attempt to push the whole chunk, stealing bufs as necessary.
         let (mut indexes, mut next_block_height, mut total) = (ac.indexes, None, 0);
         loop {
@@ -65,6 +67,7 @@ impl AnnStore {
                 let n = class.push_anns(ac.anns, indexes);
                 total += n;
                 if n == indexes.len() {
+                    println!("***    AnnStore::push_anns: anns accepted={}", total);
                     return total;
                 }
                 indexes = &indexes[n..];
@@ -73,6 +76,7 @@ impl AnnStore {
             if let None = next_block_height {
                 if m.recent_blocks.is_empty() {
                     // fake accept it all, without writing anything.
+                    println!("***    AnnStore::push_anns: fake accept, recent_blocks empty...");
                     assert!(total == 0);
                     return ac.indexes.len();
                 }
@@ -91,6 +95,10 @@ impl AnnStore {
                 if n > 0 {
                     total += n;
                     if n == indexes.len() {
+                        println!(
+                            "***    AnnStore::push_anns: anns accepted on NEW class={}",
+                            total
+                        );
                         return total;
                     }
                     indexes = &indexes[n..];
@@ -114,6 +122,7 @@ impl AnnStore {
     /// their effective ann work.
     /// Also it is sure to exclude the 0xffffffff effective work announcements.
     pub fn ready_classes(&self, next_height: i32) -> Vec<ClassInfo> {
+        println!("*** AnnStore::ready_classes: next_height={}", next_height);
         let m = self.m.read().unwrap();
         let mut ready = m
             .classes
@@ -141,6 +150,7 @@ impl AnnStore {
         set: &[HeightWork],
         pt: &mut ProofTree,
     ) -> Result<Vec<u32>, &'static str> {
+        println!("*** AnnStore::compute_tree: set={:?}", set);
         let m = self.m.read().unwrap(); // keep a read lock, so no push is made.
         let mut set = set
             .into_par_iter() // parallel, since locks must be acquired for all classes.
@@ -170,6 +180,10 @@ impl AnnStore {
 }
 
 fn steal_non_mining_buf(m: &mut AnnStoreMut, next_block_height: u32) -> Box<AnnBufSz> {
+    println!(
+        "*** AnnStore::steal_non_mining_buf: next_block_height={}",
+        next_block_height
+    );
     let mut mining = Vec::new();
     loop {
         // find the worst AnnClass to steal a buf from.
