@@ -22,6 +22,12 @@ impl Hash {
     }
 }
 
+impl From<[u8; 32]> for Hash {
+    fn from(hash: [u8; 32]) -> Self {
+        Self(hash)
+    }
+}
+
 impl Deref for Hash {
     type Target = [u8; 32];
 

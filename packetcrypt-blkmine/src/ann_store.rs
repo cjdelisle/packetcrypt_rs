@@ -50,9 +50,9 @@ impl AnnStore {
         }
     }
 
-    pub fn block(&self, height: i32, hash: Hash) {
+    pub fn block(&self, height: i32, hash: [u8; 32]) {
         let mut m = self.m.write().unwrap();
-        m.recent_blocks.insert(height, hash);
+        m.recent_blocks.insert(height, hash.into());
     }
 
     pub fn push_anns(&self, hw: HeightWork, ac: AnnChunk) {
