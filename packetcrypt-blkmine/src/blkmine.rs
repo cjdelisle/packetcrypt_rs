@@ -292,7 +292,7 @@ impl<'a> GetAnn for AnnChunk<'a> {
 }
 
 fn on_anns2(bm: &BlkMine, hw: HeightWork, ac: AnnChunk) {
-    println!("*** on_anns2: {:?}", hw);
+    // println!("*** on_anns2: {:?}", hw);
     let total = bm.ann_store.push_anns(hw, &ac);
 
     // Stats

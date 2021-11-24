@@ -57,7 +57,7 @@ impl AnnStore {
     }
 
     pub fn push_anns(&self, hw: HeightWork, ac: &AnnChunk) -> usize {
-        println!("*** AnnStore::push_anns: {:?} entry", hw);
+        // println!("*** AnnStore::push_anns: {:?} entry", hw);
         // attempt to push the whole chunk, stealing bufs as necessary.
         let (mut indexes, mut next_block_height, mut total) = (ac.indexes, None, 0);
         loop {
