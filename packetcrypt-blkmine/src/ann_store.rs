@@ -132,6 +132,7 @@ impl AnnStore {
             .collect::<Vec<_>>();
 
         ready.sort_unstable_by_key(|ci| ci.ann_effective_work);
+        println!("ready_classes: {:?}", &ready);
         ready
     }
 
@@ -150,6 +151,7 @@ impl AnnStore {
             .collect::<Vec<_>>();
         let total_anns = set.iter().map(|(_, r, _)| r).sum();
         let mut buffer = vec![AnnData::default(); total_anns];
+        println!("compute tree: total={}", total_anns);
 
         // split the out buffer into sub-buffers for each class.
         let mut out = &mut buffer[..];
@@ -164,6 +166,7 @@ impl AnnStore {
         });
 
         // compute the tree.
+        println!("compute tree: buffer={}", buffer.len());
         pt.compute(&mut buffer)
     }
 }
