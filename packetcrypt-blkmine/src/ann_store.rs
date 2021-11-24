@@ -3,7 +3,7 @@ use crate::ann_buf::Hash;
 use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
 use crate::blkmine::{AnnChunk, HeightWork};
 use crate::blkminer::BlkMiner;
-use crate::prooftree::ProofTree;
+use crate::prooftree::{AnnData, ProofTree};
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::cmp::max;
@@ -124,7 +124,7 @@ impl AnnStore {
             })
             .collect::<Vec<_>>();
         let total_anns = set.iter().map(|(_, r, _)| r).sum();
-        let mut buffer = Vec::with_capacity(total_anns);
+        let mut buffer = vec![AnnData::default(); total_anns];
 
         // split the out buffer into sub-buffers for each class.
         let mut out = &mut buffer[..];

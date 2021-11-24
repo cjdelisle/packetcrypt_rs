@@ -5,6 +5,7 @@ use packetcrypt_sys::*;
 use rayon::prelude::*;
 use std::convert::TryInto;
 
+#[derive(Default, Clone)]
 pub struct AnnData {
     pub hash: [u8; 32],
     pub mloc: u32,
