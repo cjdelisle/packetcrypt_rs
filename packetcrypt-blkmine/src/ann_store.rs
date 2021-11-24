@@ -196,6 +196,24 @@ impl AnnStore {
         // compute the tree.
         pt.compute(&mut buffer)
     }
+
+    pub fn stats(&self) -> String {
+        let m = self.m.read().unwrap();
+        m.classes
+            .iter()
+            .enumerate()
+            .map(|(i, (hw, c))| {
+                format!(
+                    "  class #{} [height={} work={}] -> anns={}",
+                    i,
+                    hw.block_height,
+                    hw.work,
+                    c.ready_anns()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 fn steal_non_mining_buf(m: &mut AnnStoreMut, next_block_height: u32) -> Box<AnnBufSz> {

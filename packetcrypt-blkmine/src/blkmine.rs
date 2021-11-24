@@ -990,6 +990,7 @@ async fn stats_loop(bm: &BlkMine) {
                 let diff = packetcrypt_sys::difficulty::tar_to_diff(cm.ann_min_work);
                 let anns = util::pad_to(20, format!("anns: {} @ {}", cm.count, diff));
                 info!("{}{}{}{}", shr, hr, anns, dlst);
+                info!("AnnStore:\n{}", bm.ann_store.stats());
                 // Restart mining after 45s w/o a block
                 util::now_ms() - cm.time_started_ms > 45_000
             }
