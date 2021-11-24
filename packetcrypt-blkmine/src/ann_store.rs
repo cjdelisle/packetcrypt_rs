@@ -113,10 +113,6 @@ impl AnnStore {
             }
             // Ok, we won, we're the first thread to get the write, now lets
             // steal a buf and swap it over here.
-            println!(
-                "*** AnnStore::steal_non_mining_buf: {:?} next_block_height={:?}",
-                hw, next_block_height
-            );
             let buf = steal_non_mining_buf(&mut m, next_block_height.unwrap());
             if let Some(class) = m.classes.get(&hw) {
                 class.add_buf(buf);

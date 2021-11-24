@@ -112,6 +112,10 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
         assert!(!self.locked);
 
         let last = self.next_ann_index();
+        println!(
+            "*** AnnBuf::lock: base_offset={} size={}",
+            self.base_offset, last
+        );
         for i in 0..last {
             self.index_table[i] = i as u16;
         }
