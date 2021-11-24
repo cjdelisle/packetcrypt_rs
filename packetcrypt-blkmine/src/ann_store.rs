@@ -72,6 +72,11 @@ impl AnnStore {
             }
 
             if let None = next_block_height {
+                if m.recent_blocks.is_empty() {
+                    // fake accept it all, without writing anything.
+                    assert!(total == 0);
+                    return ac.indexes.len();
+                }
                 next_block_height = Some(1 + *m.recent_blocks.keys().max().unwrap() as u32);
             }
 
