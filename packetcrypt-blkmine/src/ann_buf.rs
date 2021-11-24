@@ -130,7 +130,7 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
 
     /// Clear the buf for another usage.
     pub fn reset(&mut self) {
-        println!("*** AnnBuf::reset: anns={}", self.next_ann_index());
+        // println!("*** AnnBuf::reset: anns={}", self.next_ann_index());
         self.next_ann_index.store(0, Ordering::Relaxed);
         self.locked = false;
     }
