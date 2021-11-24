@@ -55,13 +55,12 @@ impl AnnStore {
         m.recent_blocks.insert(height, hash.into());
     }
 
-        let mut m = self.m.write().unwrap();
-
     pub fn push_anns(&self, hw: HeightWork, ac: &AnnChunk) -> usize {
         // attempt to push the whole chunk, stealing bufs as necessary.
         let (mut indexes, mut next_block_height, mut total) = (ac.indexes, None, 0);
         loop {
             // lookup the class matching this HeightWork, if any.
+            let m = self.m.read().unwrap();
             if let Some(class) = m.classes.get(&hw) {
                 let n = class.push_anns(ac.anns, indexes);
                 total += n;
@@ -79,8 +78,27 @@ impl AnnStore {
                 }
                 next_block_height = Some(1 + *m.recent_blocks.keys().max().unwrap() as u32);
             }
+            drop(m);
+
+            // Right now, we're neither holding the write lock nor the read lock
+            // so another thread might be stealing and inserting a buf as we speak.
 
             // it didn't fit or there wasn't any suitable class.
+            let mut m = self.m.write().unwrap();
+            if let Some(class) = m.classes.get(&hw) {
+                // Check if another thread has done our work for us
+                let n = class.push_anns(ac.anns, indexes);
+                if n > 0 {
+                    total += n;
+                    if n == indexes.len() {
+                        return total;
+                    }
+                    indexes = &indexes[n..];
+                    continue;
+                }
+            }
+            // Ok, we won, we're the first thread to get the write, now lets
+            // steal a buf and swap it over here.
             let buf = steal_non_mining_buf(&mut m, next_block_height.unwrap());
             if let Some(class) = m.classes.get(&hw) {
                 class.add_buf(buf);
@@ -88,6 +106,7 @@ impl AnnStore {
                 let new_class = Box::new(AnnClass::with_topbuf(buf, &hw));
                 assert!(m.classes.insert(hw, new_class).is_none());
             }
+            drop(m);
         }
     }
 
