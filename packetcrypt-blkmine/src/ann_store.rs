@@ -65,18 +65,18 @@ impl AnnStore {
             let m = self.m.read().unwrap();
             if let Some(class) = m.classes.get(&hw) {
                 let n = class.push_anns(ac.anns, indexes);
-                println!(
-                    "*** AnnStore::push_anns: {:?} anns just pushed={}, #classes={}",
-                    hw,
-                    n,
-                    m.classes.len()
-                );
+                // println!(
+                //     "*** AnnStore::push_anns: {:?} anns just pushed={}, #classes={}",
+                //     hw,
+                //     n,
+                //     m.classes.len()
+                // );
                 total += n;
                 if n == indexes.len() {
-                    println!(
-                        "***    AnnStore::push_anns: {:?} anns accepted={}",
-                        hw, total
-                    );
+                    // println!(
+                    //     "***    AnnStore::push_anns: {:?} anns accepted={}",
+                    //     hw, total
+                    // );
                     return total;
                 }
                 indexes = &indexes[n..];
@@ -85,10 +85,10 @@ impl AnnStore {
             if let None = next_block_height {
                 if m.recent_blocks.is_empty() {
                     // fake accept it all, without writing anything.
-                    println!(
-                        "***    AnnStore::push_anns: {:?} fake accept (recent_blocks empty)",
-                        hw
-                    );
+                    // println!(
+                    //     "***    AnnStore::push_anns: {:?} fake accept (recent_blocks empty)",
+                    //     hw
+                    // );
                     assert!(total == 0);
                     return ac.indexes.len();
                 }
@@ -104,19 +104,19 @@ impl AnnStore {
             if let Some(class) = m.classes.get(&hw) {
                 // Check if another thread has done our work for us
                 let n = class.push_anns(ac.anns, indexes);
-                println!(
-                    "*** AnnStore::push_anns: {:?} WRITE anns just pushed={}, #classes={}",
-                    hw,
-                    n,
-                    m.classes.len()
-                );
+                // println!(
+                //     "*** AnnStore::push_anns: {:?} WRITE anns just pushed={}, #classes={}",
+                //     hw,
+                //     n,
+                //     m.classes.len()
+                // );
                 if n > 0 {
                     total += n;
                     if n == indexes.len() {
-                        println!(
-                            "***    AnnStore::push_anns: {:?} WRITE anns accepted={}",
-                            hw, total
-                        );
+                        // println!(
+                        //     "***    AnnStore::push_anns: {:?} WRITE anns accepted={}",
+                        //     hw, total
+                        // );
                         return total;
                     }
                     indexes = &indexes[n..];
