@@ -291,6 +291,21 @@ impl<'a> GetAnn for AnnChunk<'a> {
     }
 }
 
+fn on_anns2(bm: &BlkMine, hw: HeightWork, ac: AnnChunk) {
+    let total = bm.ann_store.push_anns(hw, &ac);
+
+    // Stats
+    let count = ac.ann_count();
+    if total != count {
+        trace!(
+            "Out of slab space, could only store {} out of {} anns",
+            total,
+            count
+        );
+    }
+    trace!("Loaded {} ANNS", total);
+}
+
 fn on_anns(bm: &BlkMine, ac: AnnChunk) {
     // Try to get unused space to place them
     let free = get_free(bm, ac.indexes.len() as u32);
@@ -358,14 +373,14 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
         let mut indexes: Vec<u32> = Vec::with_capacity(anns.len());
         let mut height_work: Option<HeightWork> = None;
         for ai in v {
-            let hw = match &height_work {
+            let hw = match height_work {
                 None => {
                     indexes.push(ai.index);
                     height_work = Some(ai.hw);
                     continue;
                 }
                 Some(hw) => {
-                    if hw == &ai.hw {
+                    if hw == ai.hw {
                         indexes.push(ai.index);
                         continue;
                     }
@@ -378,8 +393,9 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
                 hw.block_height,
                 packetcrypt_sys::difficulty::tar_to_diff(hw.work)
             );
-            on_anns(
+            on_anns2(
                 self,
+                hw,
                 AnnChunk {
                     anns,
                     indexes: &indexes[..],
@@ -396,8 +412,9 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
                 hw.block_height,
                 packetcrypt_sys::difficulty::tar_to_diff(hw.work)
             );
-            on_anns(
+            on_anns2(
                 self,
+                hw,
                 AnnChunk {
                     anns,
                     indexes: &indexes[..],
@@ -635,6 +652,8 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 
 fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
     bm.block_miner.stop();
+    bm.ann_store
+        .block(next_work.height - 1, next_work.header.hash_prev_block);
 
     let reload;
     if let Some(r) = reload_classes(bm, next_work) {
@@ -908,7 +927,7 @@ async fn update_work_cycle(bm: &BlkMine, chan: &mut tokio::sync::broadcast::Rece
         work: work.clone(),
         conf: update.conf.clone(),
     });
-    on_work(bm, &work);
+    on_work2(bm, &work);
 }
 
 async fn update_work_loop(bm: &BlkMine) {
@@ -990,7 +1009,7 @@ async fn stats_loop(bm: &BlkMine) {
                         break;
                     }
                 };
-                on_work(bm, &work);
+                on_work2(bm, &work);
                 debug!("Launched miner");
                 break;
             }
