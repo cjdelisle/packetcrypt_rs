@@ -484,7 +484,7 @@ struct ReloadedClasses {
 
 /// Get all ready classes, already ranked by effective ann work, compute effective work target for each
 /// sub-set, and find the sub-set for which this resulting effective target is the highest.
-fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> ReloadedClasses {
+fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> Option<ReloadedClasses> {
     let ready = bm.ann_store.ready_classes(next_work.height);
 
     // computes the cummulative counts of the classes.
@@ -494,15 +494,11 @@ fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> ReloadedClasses {
     });
 
     // computes the effective work target, and find the sub-set of classes for which it is the highest.
-    let (best, _) = ready
-        .iter()
-        .zip(counts)
-        .max_by_key(|&(ci, count)| {
-            pc_get_effective_target(next_work.share_target, ci.ann_effective_work, count)
-        })
-        .unwrap();
+    let (best, _) = ready.iter().zip(counts).max_by_key(|&(ci, count)| {
+        pc_get_effective_target(next_work.share_target, ci.ann_effective_work, count)
+    })?;
 
-    ReloadedClasses {
+    Some(ReloadedClasses {
         ann_min_work: best.ann_effective_work,
         best_set: ready
             .iter()
@@ -510,7 +506,7 @@ fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> ReloadedClasses {
             .chain(iter::once(best))
             .map(|ci| ci.hw)
             .collect(),
-    }
+    })
 }
 
 struct ReloadAnns {
@@ -640,8 +636,10 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
     bm.block_miner.stop();
 
-    let reload = reload_classes(bm, next_work);
-    if reload.best_set.is_empty() {
+    let reload;
+    if let Some(r) = reload_classes(bm, next_work) {
+        reload = r;
+    } else {
         debug!("Not mining, no anns ready");
         return;
     }
