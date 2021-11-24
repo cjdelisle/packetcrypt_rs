@@ -203,12 +203,10 @@ impl AnnStore {
             .iter()
             .enumerate()
             .map(|(i, (hw, c))| {
+                let (anns, bufs) = c.ready_anns_bufs();
                 format!(
-                    "  class #{} [height={} work={}] -> anns={}",
-                    i,
-                    hw.block_height,
-                    hw.work,
-                    c.ready_anns()
+                    "  class #{} [height={} work={}] -> anns={} bufs={}",
+                    i, hw.block_height, hw.work, anns, bufs
                 )
             })
             .collect::<Vec<_>>()

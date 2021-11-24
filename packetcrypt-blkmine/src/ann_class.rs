@@ -123,6 +123,12 @@ impl AnnClass {
         m.bufs.iter().map(|b| b.next_ann_index()).sum()
     }
 
+    pub fn ready_anns_bufs(&self) -> (usize, usize) {
+        let m = self.m.read().unwrap();
+        let anns = m.bufs.iter().map(|b| b.next_ann_index()).sum();
+        (anns, m.bufs.len())
+    }
+
     pub fn read_ready_anns(&self, mut out: &mut [prooftree::AnnData]) {
         let m = self.m.read().unwrap();
         // split the out buffer into sub-buffers each of which has enough space to hold
