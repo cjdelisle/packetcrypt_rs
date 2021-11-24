@@ -57,7 +57,7 @@ impl AnnStore {
     }
 
     pub fn push_anns(&self, hw: HeightWork, ac: &AnnChunk) -> usize {
-        println!("*** AnnStore::push_anns: {:?}", hw);
+        println!("*** AnnStore::push_anns: {:?} entry", hw);
         // attempt to push the whole chunk, stealing bufs as necessary.
         let (mut indexes, mut next_block_height, mut total) = (ac.indexes, None, 0);
         loop {
@@ -67,7 +67,10 @@ impl AnnStore {
                 let n = class.push_anns(ac.anns, indexes);
                 total += n;
                 if n == indexes.len() {
-                    println!("***    AnnStore::push_anns: anns accepted={}", total);
+                    println!(
+                        "***    AnnStore::push_anns: {:?} anns accepted={}",
+                        hw, total
+                    );
                     return total;
                 }
                 indexes = &indexes[n..];
@@ -76,7 +79,10 @@ impl AnnStore {
             if let None = next_block_height {
                 if m.recent_blocks.is_empty() {
                     // fake accept it all, without writing anything.
-                    println!("***    AnnStore::push_anns: fake accept, recent_blocks empty...");
+                    println!(
+                        "***    AnnStore::push_anns: {:?} fake accept (recent_blocks empty)",
+                        hw
+                    );
                     assert!(total == 0);
                     return ac.indexes.len();
                 }
@@ -96,8 +102,8 @@ impl AnnStore {
                     total += n;
                     if n == indexes.len() {
                         println!(
-                            "***    AnnStore::push_anns: anns accepted on NEW class={}",
-                            total
+                            "***    AnnStore::push_anns: {:?} anns accepted on NEW class={}",
+                            hw, total
                         );
                         return total;
                     }
@@ -107,6 +113,10 @@ impl AnnStore {
             }
             // Ok, we won, we're the first thread to get the write, now lets
             // steal a buf and swap it over here.
+            println!(
+                "*** AnnStore::steal_non_mining_buf: {:?} next_block_height={:?}",
+                hw, next_block_height
+            );
             let buf = steal_non_mining_buf(&mut m, next_block_height.unwrap());
             if let Some(class) = m.classes.get(&hw) {
                 class.add_buf(buf);
@@ -180,10 +190,6 @@ impl AnnStore {
 }
 
 fn steal_non_mining_buf(m: &mut AnnStoreMut, next_block_height: u32) -> Box<AnnBufSz> {
-    println!(
-        "*** AnnStore::steal_non_mining_buf: next_block_height={}",
-        next_block_height
-    );
     let mut mining = Vec::new();
     loop {
         // find the worst AnnClass to steal a buf from.
