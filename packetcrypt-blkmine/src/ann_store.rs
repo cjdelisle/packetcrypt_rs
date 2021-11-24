@@ -99,11 +99,12 @@ impl AnnStore {
             if let Some(class) = m.classes.get(&hw) {
                 // Check if another thread has done our work for us
                 let n = class.push_anns(ac.anns, indexes);
+                println!("*** AnnStore::push_anns: {:?} WRITE anns just pushed={}, #classes={}", hw, n, m.classes.len());
                 if n > 0 {
                     total += n;
                     if n == indexes.len() {
                         println!(
-                            "***    AnnStore::push_anns: {:?} anns accepted on NEW class={}",
+                        "***    AnnStore::push_anns: {:?} WRITE anns accepted={}",
                             hw, total
                         );
                         return total;
