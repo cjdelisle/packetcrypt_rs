@@ -55,17 +55,18 @@ impl AnnStore {
         m.recent_blocks.insert(height, hash.into());
     }
 
-    pub fn push_anns(&self, hw: HeightWork, ac: AnnChunk) {
         let mut m = self.m.write().unwrap();
 
+    pub fn push_anns(&self, hw: HeightWork, ac: &AnnChunk) -> usize {
         // attempt to push the whole chunk, stealing bufs as necessary.
-        let (mut indexes, mut next_block_height) = (ac.indexes, None);
+        let (mut indexes, mut next_block_height, mut total) = (ac.indexes, None, 0);
         loop {
             // lookup the class matching this HeightWork, if any.
             if let Some(class) = m.classes.get(&hw) {
                 let n = class.push_anns(ac.anns, indexes);
+                total += n;
                 if n == indexes.len() {
-                    return;
+                    return total;
                 }
                 indexes = &indexes[n..];
             }
