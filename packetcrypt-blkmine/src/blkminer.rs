@@ -5,6 +5,8 @@ use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_void};
 use std::pin::Pin;
 use std::sync::RwLock;
+use crate::ann_buf::Hash;
+use std::cell::UnsafeCell;
 
 #[derive(Default)]
 pub struct BlkResult {
@@ -41,6 +43,7 @@ pub struct BlkMiner {
     cbc: Pin<Box<CallbackCtx>>,
     miner: *mut BlockMine_t,
     pub max_anns: u32,
+    hashes: UnsafeCell<Vec<crate::ann_buf::Hash>>,
 }
 unsafe impl Send for BlkMiner {}
 unsafe impl Sync for BlkMiner {}
@@ -86,6 +89,7 @@ impl BlkMiner {
             cbc,
             miner,
             max_anns,
+            hashes: UnsafeCell::new(vec![Hash::default(); max_anns as usize]), // TODO: slow
         })
     }
     pub fn set_handler(&self, handler: impl OnShare) {
@@ -96,8 +100,12 @@ impl BlkMiner {
             packetcrypt_sys::BlockMine_getAnn(self.miner, index, ann_out.as_mut_ptr());
         }
     }
-    pub fn put_ann(&self, index: u32, ann: &[u8]) {
+    pub fn get_hash(&self, index: usize) -> &Hash {
+        unsafe { &(*self.hashes.get())[index] }
+    }
+    pub fn put_ann(&self, index: u32, ann: &[u8], hash: &Hash) {
         unsafe {
+            (*self.hashes.get())[index as usize] = *hash;
             packetcrypt_sys::BlockMine_updateAnn(self.miner, index, ann.as_ptr());
         }
     }

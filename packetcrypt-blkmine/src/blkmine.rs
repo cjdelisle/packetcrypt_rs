@@ -316,12 +316,12 @@ fn on_anns(bm: &BlkMine, ac: AnnChunk) {
 
     // place anns in the data buffer
     let mut ann_i = 0;
-    for r in &info {
-        for i in 0..r.ann_count {
-            bm.block_miner.put_ann(r.mloc + i, ac.get_ann(ann_i));
-            ann_i += 1;
-        }
-    }
+    // for r in &info { // delete this
+    //     for i in 0..r.ann_count {
+    //         bm.block_miner.put_ann(r.mloc + i, ac.get_ann(ann_i));
+    //         ann_i += 1;
+    //     }
+    // }
 
     // place the ann infos, this is what will make it possible to use the data
     let num_infos = info.len();
@@ -465,14 +465,14 @@ impl downloader::OnAnns for BlkMine {
         // place anns in the data buffer
         let mut ann_index = 0;
         let mut count_landed = 0;
-        for r in &info {
-            for i in 0..r.ann_count {
-                self.block_miner
-                    .put_ann(r.mloc + i, &anns[ann_index..(ann_index + 1024)]);
-                ann_index += 1024;
-                count_landed += 1;
-            }
-        }
+        // for r in &info { // All of this gets deleted anyway
+        //     for i in 0..r.ann_count {
+        //         self.block_miner
+        //             .put_ann(r.mloc + i, &anns[ann_index..(ann_index + 1024)]);
+        //         ann_index += 1024;
+        //         count_landed += 1;
+        //     }
+        // }
 
         // place the ann infos, this is what will make it possible to use the data
         let num_infos = info.len();
@@ -665,14 +665,13 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         return;
     }
 
-    let (index_table, real_target, current_mining);
+    let (tree, tree_num) = get_tree(bm, false);
+    let mut tree_l = tree.lock().unwrap();
+    let (real_target, current_mining);
     {
         debug!("Computing tree with {} classes", reload.best_set.len());
-        let (tree, tree_num) = get_tree(bm, false);
-        let mut tree_l = tree.lock().unwrap();
         tree_l.reset();
-        index_table = bm
-            .ann_store
+        bm.ann_store
             .compute_tree(&reload.best_set, &mut tree_l)
             .unwrap();
 
@@ -680,7 +679,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
 
-        let count = index_table.len();
+        let count = tree_l.index_table.len();
         real_target =
             pc_get_effective_target(next_work.share_target, reload.ann_min_work, count as u64);
         current_mining = CurrentMining {
@@ -698,12 +697,12 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
     // Self-test
     let br = bm
         .block_miner
-        .fake_mine(&current_mining.block_header[..], &index_table[..]);
+        .fake_mine(&current_mining.block_header[..], &tree_l.index_table[..]);
 
     debug!("Start mining...");
     bm.block_miner.mine(
         &current_mining.block_header[..],
-        &index_table[..],
+        &tree_l.index_table[..],
         real_target,
         0,
     );
@@ -714,7 +713,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
     debug!(
         "Mining {} with {} @ {}",
         next_work.height,
-        index_table.len(),
+        tree_l.index_table.len(),
         packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
     );
     bm.current_mining.lock().unwrap().replace(current_mining);
@@ -738,7 +737,7 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
     let (send, recv) = tokio::sync::mpsc::unbounded_channel();
     let bm = BlkMine(Arc::new(BlkMineS {
         block_miner: Arc::clone(&block_miner),
-        ann_store: AnnStore::new(block_miner),
+        ann_store: AnnStore::new(Arc::clone(&block_miner)),
         inactive_infos: Mutex::new(vec![AnnInfo {
             parent_block_height: 0,
             ann_min_work: 0,
@@ -750,8 +749,8 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
         new_infos: Mutex::new(Vec::new()),
         active_infos: Mutex::new(Vec::new()),
         trees: [
-            Mutex::new(ProofTree::new(max_anns)),
-            Mutex::new(ProofTree::new(max_anns)),
+            Mutex::new(ProofTree::new(max_anns, Arc::clone(&block_miner))),
+            Mutex::new(ProofTree::new(max_anns, Arc::clone(&block_miner))),
         ],
         downloaders: tokio::sync::Mutex::new(Vec::new()),
         current_mining: Mutex::new(None),
