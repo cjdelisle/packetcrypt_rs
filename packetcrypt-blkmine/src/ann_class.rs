@@ -5,6 +5,7 @@ use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::mem;
 use std::sync::{Arc, Mutex, RwLock};
+use log::{debug, info, trace, warn};
 
 pub const ANNBUF_SZ: usize = 32 * 1024;
 pub type AnnBufSz = AnnBuf<ANNBUF_SZ>;
@@ -31,7 +32,7 @@ impl HashTree {
 struct AnnClassMut {
     /// The buffers with the hashes.
     bufs: Vec<Box<AnnBufSz>>,
-    topbuf: Box<AnnBufSz>,
+    topbuf: Option<Box<AnnBufSz>>,
 
     /// Hash trees which contain announcements in this class.
     /// A hash tree will only care to include either all anns in a class or none
@@ -56,18 +57,14 @@ pub struct AnnClass {
 }
 
 impl AnnClass {
-    pub fn with_topbuf(topbuf: Box<AnnBufSz>, hw: &HeightWork) -> Self {
-        Self::new(topbuf, vec![], hw)
-    }
-
     pub fn with_bufs(bufs: impl Iterator<Item = Box<AnnBufSz>>, hw: &HeightWork) -> Self {
         // we want topbuf to be the last slice, since it will be the last one to be stolen.
         let mut bufs = bufs.collect::<Vec<_>>();
         let topbuf = bufs.pop().unwrap();
-        Self::new(topbuf, bufs, hw)
+        Self::new(Some(topbuf), bufs, hw)
     }
 
-    fn new(topbuf: Box<AnnBufSz>, bufs: Vec<Box<AnnBufSz>>, hw: &HeightWork) -> Self {
+    pub fn new(topbuf: Option<Box<AnnBufSz>>, bufs: Vec<Box<AnnBufSz>>, hw: &HeightWork) -> Self {
         AnnClass {
             m: RwLock::new(AnnClassMut {
                 bufs,
@@ -81,19 +78,59 @@ impl AnnClass {
         }
     }
 
-    pub fn push_anns(&self, anns: &[&[u8]], indexes: &[u32]) -> usize {
-        self.m.read().unwrap().topbuf.push_anns(anns, indexes)
-    }
-
-    pub fn add_buf(&self, newbuf: Box<AnnBufSz>) {
-        // don't be holding the write mutex while we lock topbuf.
-        let mut oldtop = {
-            let mut m = self.m.write().unwrap();
-            mem::replace(&mut m.topbuf, newbuf)
-        };
-        // lock the previous top buffer, this will take some time.
-        oldtop.lock();
-        self.m.write().unwrap().bufs.push(oldtop);
+    pub fn push_anns(
+        &self,
+        anns: &[&[u8]],
+        mut indexes: &[u32],
+        buf: Box<AnnBufSz>,
+    ) -> (usize, Option<Box<AnnBufSz>>) {
+        let mut maybe_buf = Some(buf);
+        let mut total_consumed = 0;
+        loop {
+            {
+                let m = self.m.read().unwrap();
+                match &m.topbuf {
+                    Some(tb) => {
+                        let consumed = tb.push_anns(anns, indexes);
+                        total_consumed += consumed;
+                        if consumed == indexes.len() {
+                            return (total_consumed, maybe_buf);
+                        }
+                        indexes = &indexes[consumed..];
+                    }
+                    None => (),
+                }
+            }
+            let newbuf = if let Some(buf) = maybe_buf.take() {
+                buf
+            } else {
+                warn!("Not enough buf space to take anns");
+                return (total_consumed, None);
+            };
+            let oldtop = {
+                let mut m = self.m.write().unwrap();
+                println!("new buf: count: {}", m.bufs.len());
+                match &m.topbuf {
+                    Some(tb) => {
+                        // Need to double-check
+                        let consumed = tb.push_anns(anns, indexes);
+                        if consumed > 0 {
+                            total_consumed += consumed;
+                            if consumed == indexes.len() {
+                                return (total_consumed, Some(newbuf));
+                            }
+                            indexes = &indexes[consumed..];
+                        }
+                    }
+                    None => (),
+                }
+                mem::replace(&mut m.topbuf, Some(newbuf))
+            };
+            if let Some(mut oldtop) = oldtop {
+                oldtop.lock();
+                self.m.write().unwrap().bufs.push(oldtop);
+            }
+        }
     }
 
     pub fn steal_buf(&self) -> Result<Option<Box<AnnBufSz>>, ()> {
@@ -102,20 +139,12 @@ impl AnnClass {
             return Err(());
         }
         if m.bufs.is_empty() {
-            return Ok(None);
+            return Ok(m.topbuf.take());
         }
 
         m.dependent_trees.iter_mut().for_each(|t| t.invalidate());
         m.dependent_trees.clear();
         Ok(m.bufs.pop())
-    }
-
-    pub fn destroy(self) -> Box<AnnBufSz> {
-        {
-            let m = self.m.write().unwrap();
-            assert!(m.bufs.is_empty() && !m.mining);
-        }
-        self.m.into_inner().unwrap().topbuf
     }
 
     pub fn ready_anns(&self) -> usize {
