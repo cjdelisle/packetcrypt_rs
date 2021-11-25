@@ -42,7 +42,7 @@ thread_local!(static ANN_BUF: RefCell<Option<Box<AnnBufSz>>> = RefCell::new(None
 impl AnnStore {
     pub fn new(bm: Arc<BlkMiner>) -> Self {
         // initial buf store, capable of filling the received miner entirely.
-        assert!(bm.max_anns >= ANNBUF_SZ);
+        assert!(bm.max_anns >= ANNBUF_SZ as u32);
         let buf_store = (0..)
             .map(|i| Box::new(AnnBufSz::new(Arc::clone(&bm), i * ANNBUF_SZ)))
             .take(bm.max_anns as usize / ANNBUF_SZ); // this rounds the result down.
