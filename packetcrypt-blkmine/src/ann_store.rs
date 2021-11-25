@@ -1,10 +1,9 @@
-#![allow(dead_code)]
 use crate::ann_buf::Hash;
 use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
 use crate::blkmine::{AnnChunk, HeightWork};
 use crate::blkminer::BlkMiner;
-use crate::prooftree::{AnnData, ProofTree};
-use log::{debug, info, trace, warn};
+use crate::prooftree::ProofTree;
+use log::warn;
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::cell::RefCell;

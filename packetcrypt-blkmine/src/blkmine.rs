@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::ann_store::AnnStore;
 use crate::blkminer::{BlkMiner, BlkResult, OnShare};
-use crate::downloader;
-use crate::prooftree::{self, ProofTree};
+use crate::prooftree::ProofTree;
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use log::{debug, info, trace, warn};
-use packetcrypt_sys::difficulty::{pc_degrade_announcement_target, pc_get_effective_target};
+use packetcrypt_sys::difficulty::pc_get_effective_target;
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol;
 use packetcrypt_util::{hash, util};
-use rayon::prelude::*;
-use std::cmp::max;
 use std::iter;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -29,35 +26,6 @@ pub struct BlkArgs {
     pub uploaders: usize,
     pub handler_pass: String,
     pub spray_cfg: Option<packetcrypt_sprayer::Config>,
-}
-
-struct FreeInfo {
-    // Number of anns at this location
-    ann_count: u32,
-
-    // Location of the ann in the memory slab
-    mloc: u32,
-}
-
-#[derive(Clone, Default)]
-struct AnnInfo {
-    // Parent block height for this batch of anns
-    parent_block_height: i32,
-
-    // Work for this batch
-    ann_min_work: u32,
-
-    // Effective work for this batch, temporary and used when sorting active_infos
-    ann_effective_work: u32,
-
-    // Number of anns or ann slots at this memory location
-    ann_count: u32,
-
-    // Location of the ann in the memory slab
-    mloc: u32,
-
-    // Hashes of anns, empty if this represents a block of free space
-    hashes: Vec<[u8; 32]>,
 }
 
 #[derive(Default, Clone)]
@@ -86,20 +54,9 @@ pub struct BlkMineS {
     // The new specialized announcement store
     ann_store: AnnStore,
 
-    // Free space and discards from last mining lock
-    inactive_infos: Mutex<Vec<AnnInfo>>,
-
-    // Newly added, not yet selected for mining
-    new_infos: Mutex<Vec<AnnInfo>>,
-
-    // Currently in use mining (do not touch these anns)
-    active_infos: Mutex<Vec<AnnInfo>>,
-
     trees: [Mutex<ProofTree>; 2],
 
     current_mining: Mutex<Option<CurrentMining>>,
-
-    downloaders: tokio::sync::Mutex<Vec<downloader::Downloader<BlkMine>>>,
 
     current_work: Mutex<Option<CurrentWork>>,
 
@@ -150,61 +107,6 @@ fn get_current_mining(bm: &BlkMine) -> Option<CurrentMining> {
     out
 }
 
-// Reclaims free space or poor quality AnnInfos which are not currently being mined
-// This might not return the number of free items you want, it can even return 0
-// if there is no space available.
-fn get_free(bm: &BlkMine, mut count: u32) -> Vec<FreeInfo> {
-    let mut inactive_l = bm.inactive_infos.lock().unwrap();
-    let mut out = Vec::new();
-    //debug!("Get {} free from {} inactives", count, inactive_l.len());
-    loop {
-        if count == 0 {
-            return out;
-        }
-        out.push(if let Some(mut ai) = inactive_l.pop() {
-            if ai.ann_count > count {
-                // Split the AnnInfo, taking the low mloc's and leaving the high ones
-                let fi = FreeInfo {
-                    ann_count: count,
-                    mloc: ai.mloc,
-                };
-                ai.mloc += count;
-                ai.ann_count -= count;
-                if ai.hashes.len() > count as usize {
-                    // remove the first n hashes so that the AnnInfo returned
-                    // is still valid
-                    ai.hashes.drain(0..(count as usize)).count();
-                }
-                inactive_l.push(ai);
-                count = 0;
-                fi
-            } else {
-                count -= ai.ann_count;
-                FreeInfo {
-                    ann_count: ai.ann_count,
-                    mloc: ai.mloc,
-                }
-            }
-        } else {
-            return out;
-        });
-    }
-}
-
-struct AnnStats {
-    parent_block_height: i32,
-    ann_min_work: u32,
-    hash: [u8; 32],
-}
-fn get_ann_stats(b: &[u8]) -> AnnStats {
-    let hash = hash::compress32(b);
-    AnnStats {
-        parent_block_height: packetcrypt_sys::parent_block_height(b),
-        ann_min_work: packetcrypt_sys::work_bits(b),
-        hash,
-    }
-}
-
 trait GetAnn {
     fn get_ann(&self, num: usize) -> &[u8];
     fn ann_count(&self) -> usize;
@@ -215,59 +117,6 @@ impl GetAnn for bytes::Bytes {
     }
     fn ann_count(&self) -> usize {
         self.len() / 1024
-    }
-}
-
-fn mk_ann_info(anns: &impl GetAnn, mut free: Vec<FreeInfo>) -> Vec<AnnInfo> {
-    let mut out = Vec::with_capacity(anns.ann_count());
-    let mut ann_i = 0;
-    let mut maybe_fi = free.pop();
-    let mut maybe_ai: Option<AnnInfo> = None;
-    loop {
-        let mloc = if let Some(fi) = &mut maybe_fi {
-            if fi.ann_count == 0 {
-                maybe_fi = free.pop();
-                continue;
-            } else {
-                fi.ann_count -= 1;
-                fi.mloc += 1;
-                fi.mloc - 1
-            }
-        } else {
-            // Ran out of free space
-            if let Some(ai) = maybe_ai {
-                out.push(ai);
-            }
-            return out;
-        };
-        let stats = get_ann_stats(anns.get_ann(ann_i));
-        ann_i += 1;
-        maybe_ai = {
-            let mut next_ai = None;
-            if let Some(mut ai) = maybe_ai {
-                if ai.ann_min_work == stats.ann_min_work
-                    && ai.parent_block_height == stats.parent_block_height
-                    && mloc == ai.mloc + ai.ann_count
-                {
-                    ai.ann_count += 1;
-                    ai.hashes.push(stats.hash);
-                    next_ai = Some(ai)
-                } else {
-                    out.push(ai);
-                }
-            }
-            if next_ai.is_none() {
-                next_ai = Some(AnnInfo {
-                    parent_block_height: stats.parent_block_height,
-                    ann_min_work: stats.ann_min_work,
-                    ann_effective_work: u32::MAX,
-                    ann_count: 1,
-                    hashes: vec![stats.hash],
-                    mloc,
-                })
-            }
-            next_ai
-        };
     }
 }
 
@@ -303,44 +152,6 @@ fn on_anns2(bm: &BlkMine, hw: HeightWork, ac: AnnChunk) {
         );
     }
     trace!("Loaded {} ANNS", total);
-}
-
-fn on_anns(bm: &BlkMine, ac: AnnChunk) {
-    // Try to get unused space to place them
-    let free = get_free(bm, ac.indexes.len() as u32);
-
-    // generate ann infos from them
-    let num_frees = free.len();
-    let mut info = mk_ann_info(&ac, free);
-
-    // place anns in the data buffer
-    let mut ann_i = 0;
-    for r in &info {
-        for i in 0..r.ann_count {
-            bm.block_miner.put_ann(r.mloc + i, ac.get_ann(ann_i));
-            ann_i += 1;
-        }
-    }
-
-    // place the ann infos, this is what will make it possible to use the data
-    let num_infos = info.len();
-    bm.new_infos.lock().unwrap().append(&mut info);
-
-    // Stats
-    let count = ac.ann_count();
-    if ann_i != count {
-        trace!(
-            "Out of slab space, could only store {} of {} anns",
-            ann_i,
-            count
-        );
-    }
-    trace!(
-        "Loaded {} ANNS - {} frees, {} infos",
-        ann_i,
-        num_frees,
-        num_infos
-    );
 }
 
 impl packetcrypt_sprayer::OnAnns for BlkMine {
@@ -423,76 +234,6 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
     }
 }
 
-impl downloader::OnAnns for BlkMine {
-    fn on_anns(&self, anns: bytes::Bytes, url: &str) {
-        // Get the number of anns
-        let count = if anns.len() % 1024 == 0 {
-            anns.len() / 1024
-        } else {
-            info!(
-                "Anns [{}] had unexpected length [{}] (not a multiple of 1024)",
-                url,
-                anns.len()
-            );
-            return;
-        } as u32;
-
-        let stats = get_ann_stats(&anns[0..1024]);
-        {
-            let cw_l = self.current_work.lock().unwrap();
-            match &*cw_l {
-                Some(cw) => {
-                    let age = max(0, cw.work.height - stats.parent_block_height) as u32;
-                    let ann_effective_work =
-                        pc_degrade_announcement_target(stats.ann_min_work, age);
-                    if age > 3 && ann_effective_work == 0xffffffff {
-                        debug!("Discarding {} because it is already out of date", url);
-                        return;
-                    }
-                }
-                None => (),
-            }
-        }
-
-        // Try to get unused space to place them
-        let free = get_free(self, count);
-
-        // generate ann infos from them
-        let num_frees = free.len();
-        let mut info = mk_ann_info(&anns, free);
-
-        // place anns in the data buffer
-        let mut ann_index = 0;
-        let mut count_landed = 0;
-        for r in &info {
-            for i in 0..r.ann_count {
-                self.block_miner
-                    .put_ann(r.mloc + i, &anns[ann_index..(ann_index + 1024)]);
-                ann_index += 1024;
-                count_landed += 1;
-            }
-        }
-
-        // place the ann infos, this is what will make it possible to use the data
-        let num_infos = info.len();
-        self.new_infos.lock().unwrap().append(&mut info);
-
-        // Stats
-        if count_landed != count {
-            debug!(
-                "Out of slab space, could only store {} of {} anns from req {}",
-                count_landed, count, url
-            );
-        }
-        trace!(
-            "Loaded {} ANNS - {} frees, {} infos",
-            count_landed,
-            num_frees,
-            num_infos
-        );
-    }
-}
-
 struct ReloadedClasses {
     ann_min_work: u32,
     best_set: Vec<HeightWork>,
@@ -524,93 +265,6 @@ fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> Option<ReloadedCl
             .map(|ci| ci.hw)
             .collect(),
     })
-}
-
-struct ReloadAnns {
-    ann_min_work: u32,
-}
-fn reload_anns(
-    bm: &BlkMine,
-    next_work: &protocol::Work,
-    active_l: &mut Vec<AnnInfo>,
-) -> ReloadAnns {
-    // Collect all of the active infos, inactive infos and new infos
-    // compute effective work for everything
-    // place discards into inactive, accepted into active, leave new as empty
-
-    // Lets avoid unlocking inactive until we've re-added entries to it because
-    // otherwise a call to on_anns will have no free work
-    let mut inactive_l = bm.inactive_infos.lock().unwrap();
-    let mut new_l = bm.new_infos.lock().unwrap();
-
-    let mut v = Vec::with_capacity(inactive_l.len() + new_l.len() + active_l.len());
-    v.append(&mut inactive_l);
-    v.append(&mut new_l);
-    v.append(active_l);
-    for ai in &mut v {
-        if ai.hashes.is_empty() {
-            // This is the free space marker
-            ai.ann_effective_work = u32::MAX;
-        } else {
-            let age = max(0, next_work.height - ai.parent_block_height) as u32;
-            ai.ann_effective_work = pc_degrade_announcement_target(ai.ann_min_work, age);
-            trace!(
-                "computed effective work of ann {:#x} with age {} -> {:#x}",
-                ai.ann_min_work,
-                age,
-                ai.ann_effective_work
-            );
-        }
-    }
-    debug!("reload_anns() processing {} ann files", v.len());
-    // Sort by effective work, lowest numbers (most work) first
-    v.sort_by(|a, b| a.ann_effective_work.cmp(&b.ann_effective_work));
-
-    // Get the best subset
-    let mut best_aew = 0xffffffff;
-    let mut best_tar = 0;
-    let mut best_i = 0;
-    let mut sum_count = 0;
-    for (i, elem) in (0..).zip(v.iter()) {
-        if elem.ann_effective_work == 0xffffffff {
-            break;
-        }
-        sum_count += elem.ann_count;
-        let tar = pc_get_effective_target(
-            next_work.share_target,
-            elem.ann_effective_work,
-            sum_count as u64,
-        );
-        trace!(
-            "reload_anns() try {}/{:#x}",
-            sum_count,
-            elem.ann_effective_work
-        );
-        if tar > best_tar {
-            best_tar = tar;
-            best_i = i;
-            best_aew = elem.ann_effective_work;
-        }
-        if sum_count >= bm.max_mining {
-            break;
-        }
-    }
-    //debug!("Best target is {}, best_i {}", best_tar, best_i);
-
-    for (i, elem) in (0..).zip(v.drain(..)) {
-        if i >= best_i {
-            inactive_l.push(elem);
-        } else {
-            active_l.push(elem);
-        }
-    }
-    // This is important because if we keep inactive sorted
-    inactive_l.sort_by(|b, a| a.parent_block_height.cmp(&b.parent_block_height));
-    //debug!("active_l.len() -> {}", active_l.len());
-
-    ReloadAnns {
-        ann_min_work: best_aew,
-    }
 }
 
 const COINBASE_COMMIT_LEN: usize = 50;
@@ -737,21 +391,10 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
     let bm = BlkMine(Arc::new(BlkMineS {
         block_miner: Arc::clone(&block_miner),
         ann_store: AnnStore::new(block_miner),
-        inactive_infos: Mutex::new(vec![AnnInfo {
-            parent_block_height: 0,
-            ann_min_work: 0,
-            ann_effective_work: 0,
-            ann_count: max_anns,
-            mloc: 0,
-            hashes: Vec::new(),
-        }]),
-        new_infos: Mutex::new(Vec::new()),
-        active_infos: Mutex::new(Vec::new()),
         trees: [
             Mutex::new(ProofTree::new(max_anns)),
             Mutex::new(ProofTree::new(max_anns)),
         ],
-        downloaders: tokio::sync::Mutex::new(Vec::new()),
         current_mining: Mutex::new(None),
         current_work: Mutex::new(None),
         max_mining: ((1.0 - ba.min_free_space) * max_anns as f64) as u32,
@@ -764,48 +407,6 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
     }));
     bm.block_miner.set_handler(bm.clone());
     Ok(bm)
-}
-
-async fn downloader_loop(bm: &BlkMine) {
-    let mut chan = poolclient::update_chan(&bm.pcli).await;
-    let mut urls: Vec<String> = Vec::new();
-    loop {
-        let upd = match chan.recv().await {
-            Ok(x) => x,
-            Err(e) => {
-                info!("Error recv from pool client channel {}", e);
-                util::sleep_ms(5_000).await;
-                continue;
-            }
-        };
-        if upd.conf.download_ann_urls != urls {
-            if !urls.is_empty() {
-                info!(
-                    "Change of ann handler list {:?} -> {:?}",
-                    urls, upd.conf.download_ann_urls
-                )
-            } else {
-                info!("Got ann handler list {:?}", upd.conf.download_ann_urls)
-            }
-            let mut downloaders = bm.downloaders.lock().await.drain(..).collect::<Vec<_>>();
-            for d in downloaders.drain(..) {
-                downloader::stop(&d).await;
-            }
-            let pass = if !bm.ba.handler_pass.is_empty() {
-                Some(bm.ba.handler_pass.clone())
-            } else {
-                None
-            };
-            for url in &upd.conf.download_ann_urls {
-                let dl =
-                    downloader::new(bm.ba.downloader_count, url.to_owned(), bm, pass.clone()).await;
-                downloader::start(&dl).await.unwrap();
-                downloaders.push(dl);
-            }
-            bm.downloaders.lock().await.append(&mut downloaders);
-            urls = upd.conf.download_ann_urls;
-        }
-    }
 }
 
 async fn update_work_cycle(bm: &BlkMine, chan: &mut tokio::sync::broadcast::Receiver<PoolUpdate>) {
@@ -849,17 +450,6 @@ async fn update_work_loop(bm: &BlkMine) {
 
 async fn stats_loop(bm: &BlkMine) {
     loop {
-        let unused = bm.inactive_infos.lock().unwrap().len();
-        let ready = bm.new_infos.lock().unwrap().len();
-        let mut downloaded: Vec<usize> = Vec::new();
-        let mut downloading: Vec<usize> = Vec::new();
-        let mut queued: Vec<usize> = Vec::new();
-        for dl in bm.downloaders.lock().await.iter() {
-            let st = downloader::stats(dl, true).await;
-            downloaded.push(st.downloaded);
-            downloading.push(st.downloading);
-            queued.push(st.queued);
-        }
         let (rdy, spare, cls, imm) = {
             let cw_l = bm.current_work.lock().unwrap();
             if let Some(w) = &*cw_l {
@@ -893,9 +483,7 @@ async fn stats_loop(bm: &BlkMine) {
                 .join(", ");
             format!(" {} <- [ {} ]", spr, v)
         } else {
-            let got = util::pad_to(19, format!("<- got: {:?} ", downloaded));
-            let get = util::pad_to(19, format!("<- get: {:?} ", downloading));
-            format!(" {} {} {} <- q: {:?}", spr, got, get, queued)
+            format!(" {} <- <sprayer disabled>", spr)
         };
         let start_mining = match get_current_mining(bm) {
             None => {
@@ -931,7 +519,7 @@ async fn stats_loop(bm: &BlkMine) {
         // We relock every time if unused space is zero, in order to
         // keep fresh anns flowing in.
         #[allow(clippy::never_loop)] // yes, it's for the break statements.
-        if start_mining || unused == 0 {
+        if start_mining {
             loop {
                 let work = {
                     let cw_l = bm.current_work.lock().unwrap();
@@ -1226,8 +814,7 @@ impl BlkMine {
             spray.set_handler(self.clone());
             spray.start();
         } else {
-            let a = self.clone();
-            tokio::spawn(async move { downloader_loop(&a).await });
+            warn!("Sprayer disabled.")
         }
         {
             let a = self.clone();

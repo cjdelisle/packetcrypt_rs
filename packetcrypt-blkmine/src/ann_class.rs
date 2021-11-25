@@ -1,7 +1,7 @@
 use crate::ann_buf::{AnnBuf, Hash};
 use crate::blkmine::HeightWork;
 use crate::prooftree;
-use log::{debug, info, trace, warn};
+use log::warn;
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::mem;
