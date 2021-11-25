@@ -135,9 +135,10 @@ impl AnnStore {
                 println!("adding buf to class");
                 class.add_buf(buf);
             } else {
-                println!("new class: total: {}", m.classes.len());
+                let l0 = m.classes.len();
                 let new_class = Box::new(AnnClass::with_topbuf(buf, &hw));
                 assert!(m.classes.insert(hw, new_class).is_none());
+                println!("new class: total: {} {}", l0, m.classes.len());
             }
             drop(m);
         }
