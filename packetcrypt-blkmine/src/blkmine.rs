@@ -305,10 +305,15 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 }
 
 fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
+    let mut timings = Vec::new();
     let start = Instant::now();
+
     bm.block_miner.stop();
+    timings.push(("block_miner.stop", start.elapsed()));
+
     bm.ann_store
         .block(next_work.height - 1, next_work.header.hash_prev_block);
+    timings.push(("ann_store.block", start.elapsed()));
 
     let reload;
     if let Some(r) = reload_classes(bm, next_work) {
@@ -317,25 +322,33 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         debug!("Not mining, no anns ready");
         return;
     }
+    timings.push(("reload_classes", start.elapsed()));
 
     let (index_table, real_target, current_mining);
     {
         debug!("Computing tree with {} classes", reload.best_set.len());
         let (tree, tree_num) = get_tree(bm, false);
+        timings.push(("get_tree", start.elapsed()));
         let mut tree_l = tree.lock().unwrap();
+        timings.push(("tree_l", start.elapsed()));
         tree_l.reset();
+        timings.push(("tree_l.reset", start.elapsed()));
         index_table = bm
             .ann_store
             .compute_tree(&reload.best_set, &mut tree_l)
             .unwrap();
+        timings.push(("ann_store.compute_tree", start.elapsed()));
 
         debug!("Computing block header");
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
+        timings.push(("tree_l.get_commit", start.elapsed()));
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
+        timings.push(("compute_block_header", start.elapsed()));
 
         let count = index_table.len();
         real_target =
             pc_get_effective_target(next_work.share_target, reload.ann_min_work, count as u64);
+        timings.push(("pc_get_effective_target", start.elapsed()));
         current_mining = CurrentMining {
             count: count as u32,
             ann_min_work: reload.ann_min_work,
@@ -352,6 +365,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
     let br = bm
         .block_miner
         .fake_mine(&current_mining.block_header[..], &index_table[..]);
+    timings.push(("block_miner.fake_mine", start.elapsed()));
 
     debug!("Start mining...");
     bm.block_miner.mine(
@@ -360,19 +374,28 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         real_target,
         0,
     );
-    let elapsed = start.elapsed();
+    timings.push(("block_miner.mine", start.elapsed()));
 
     trace!(
         "Mining with header {}",
         hex::encode(&current_mining.block_header)
     );
     debug!(
-        "Mining {} with {} @ {} [elapsed: {}ms]",
+        "Mining {} with {} @ {}",
         next_work.height,
         index_table.len(),
         packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
-        elapsed.as_millis()
     );
+
+    let max_size = timings.iter().map(|c| c.0.len()).max().unwrap();
+    let mut debug_timings = String::new();
+    for (name, dur) in timings.into_iter() {
+        debug_timings += "\n  ";
+        debug_timings += &util::pad_to(max_size, name.to_owned());
+        debug_timings += &format!(": {}ms", dur.as_millis());
+    }
+    debug!("Elapsed time per section:{}", &debug_timings);
+
     bm.current_mining.lock().unwrap().replace(current_mining);
 
     // Validate self-test
