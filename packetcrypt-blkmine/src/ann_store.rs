@@ -197,12 +197,29 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
         .filter(|cl|cl.effective_work != 0xffffffff)
         .collect::<Vec<Class<'a>>>();
     classes.sort_unstable_by_key(|a|0xffffffff - a.effective_work);
+    let (mut class_count, mut mining_count, mut empty_count) = (0,0,0);
     for cl in classes {
+        class_count += 1;
+        match cl.class.steal_buf() {
+            Err(_) => {
+                // we're mining with this one, can't take it.
+                mining_count += 1;
+            },
+            Ok(None) => {
+                // this one has been completely wiped out.
+                empty_count += 1;
+            },
+            Ok(Some(mut buf)) => {
+                buf.reset();
+                return Some(buf);
+            }
+        }
         if let Ok(Some(mut buf)) = cl.class.steal_buf() {
             buf.reset();
             return Some(buf);
         }
     }
-    warn!("Unable to get a buffer, seems every buffer is busy mining?!");
+    warn!("Unable to get a buffer: classes: [{}], mining: [{}], empty: [{}]",
+        class_count, mining_count, empty_count);
     None
 }
