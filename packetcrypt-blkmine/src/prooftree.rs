@@ -23,6 +23,7 @@ pub struct ProofTree {
     capacity: u32,
     size: u32,
     pub root_hash: Option<[u8; 32]>,
+    pub ann_data: Vec<AnnData>,
 }
 
 unsafe impl Send for ProofTree {}
@@ -52,6 +53,7 @@ impl ProofTree {
             size: 0,
             capacity: max_anns,
             root_hash: None,
+            ann_data: vec![AnnData::default(); max_anns as usize], // TODO: this is going to take ages
         }
     }
 
@@ -60,10 +62,11 @@ impl ProofTree {
         self.root_hash = None;
     }
 
-    pub fn compute(&mut self, data: &mut [AnnData]) -> Result<Vec<u32>, &'static str> {
+    pub fn compute(&mut self, count: usize) -> Result<Vec<u32>, &'static str> {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
+        let mut data = &self.ann_data[..count];
         if data.is_empty() {
             return Err("no anns, cannot compute tree");
         }

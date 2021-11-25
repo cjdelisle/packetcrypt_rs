@@ -149,10 +149,9 @@ impl AnnStore {
             })
             .collect::<Vec<_>>();
         let total_anns = set.iter().map(|(_, r, _)| r).sum();
-        let mut buffer = vec![AnnData::default(); total_anns];
 
         // split the out buffer into sub-buffers for each class.
-        let mut out = &mut buffer[..];
+        let mut out = &mut pt.ann_data[..];
         for (_, this, dst) in &mut set {
             let (data, excess) = out.split_at_mut(*this);
             *dst = Some(data);
@@ -164,7 +163,7 @@ impl AnnStore {
         });
 
         // compute the tree.
-        pt.compute(&mut buffer)
+        pt.compute(total_anns)
     }
 
     pub fn stats(&self) -> String {
