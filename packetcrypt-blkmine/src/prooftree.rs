@@ -66,7 +66,7 @@ impl ProofTree {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
-        let mut data = &self.ann_data[..count];
+        let data = &mut self.ann_data[..count];
         if data.is_empty() {
             return Err("no anns, cannot compute tree");
         }
@@ -100,7 +100,7 @@ impl ProofTree {
         debug!("Loaded {} out of {} anns", out.len(), data.len());
 
         // Copy the data to the location
-        data.par_iter().for_each(|d| {
+        self.ann_data[..count].par_iter().for_each(|d| {
             if d.index == 0 {
                 // Removed in dedupe stage
                 return;
