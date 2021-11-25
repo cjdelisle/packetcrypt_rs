@@ -34,3 +34,6 @@ jemallocator = { version = "0.3.2", optional = true }
 leak_detect = ["leak-detect-allocator"]
 jemalloc = ["jemallocator"]
 portable = ["packetcrypt-sys/portable"]
+
+[profile.release]
+debug = true
