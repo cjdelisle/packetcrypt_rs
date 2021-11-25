@@ -18,7 +18,7 @@ impl Hash {
     }
 
     fn to_u64(&self) -> u64 {
-        u64::from_le_bytes(self.0[24..].try_into().unwrap())
+        u64::from_le_bytes(self.0[..8].try_into().unwrap())
     }
 }
 
