@@ -133,6 +133,11 @@ impl AnnClass {
         }
     }
 
+    pub fn is_dead(&self) -> bool {
+        let m = self.m.read().unwrap();
+        m.bufs.len() == 0 && m.topbuf.is_none()
+    }
+
     pub fn steal_buf(&self) -> Result<Option<Box<AnnBufSz>>, ()> {
         let mut m = self.m.write().unwrap();
         if m.mining {

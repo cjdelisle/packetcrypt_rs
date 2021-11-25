@@ -88,6 +88,11 @@ impl AnnStore {
             }
             {
                 let mut m = self.m.write().unwrap();
+                let v = m.classes.iter().filter(|(_,c)|c.is_dead()).map(|(hw,_)|hw).cloned().collect::<Vec<_>>();
+                for hw in v {
+                    println!("dropped dead class");
+                    m.classes.remove(&hw);
+                }
                 println!("new class: count: {}", m.classes.len());
                 let new_class = Box::new(AnnClass::new(None, vec![], &hw));
                 assert!(m.classes.insert(hw, new_class).is_none());
@@ -219,7 +224,7 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
             return Some(buf);
         }
     }
-    warn!("Unable to get a buffer: classes: [{}], mining: [{}], empty: [{}]",
-        class_count, mining_count, empty_count);
+    warn!("Unable to get a buffer in [{:#}]: classes: [{}], mining: [{}], empty: [{}]",
+        (m as *const AnnStoreMut as *const u8 as usize), class_count, mining_count, empty_count);
     None
 }

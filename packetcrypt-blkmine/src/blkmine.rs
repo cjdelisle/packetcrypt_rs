@@ -296,12 +296,11 @@ fn on_anns2(bm: &BlkMine, hw: HeightWork, ac: AnnChunk) {
     let total = bm.ann_store.push_anns(hw, &ac);
 
     // Stats
-    let count = ac.ann_count();
-    if total != count {
-        trace!(
+    if total < ac.indexes.len() {
+        info!(
             "Out of slab space, could only store {} out of {} anns",
             total,
-            count
+            ac.indexes.len()
         );
     }
     trace!("Loaded {} ANNS", total);
