@@ -54,17 +54,28 @@ pub struct AnnClass {
     // The type of anns in this class.
     block_height: u32,
     min_ann_work: u32,
+
+    pub id: usize,
 }
 
 impl AnnClass {
-    pub fn with_bufs(bufs: impl Iterator<Item = Box<AnnBufSz>>, hw: &HeightWork) -> Self {
+    pub fn with_bufs(
+        bufs: impl Iterator<Item = Box<AnnBufSz>>,
+        hw: &HeightWork,
+        id: usize,
+    ) -> Self {
         // we want topbuf to be the last slice, since it will be the last one to be stolen.
         let mut bufs = bufs.collect::<Vec<_>>();
         let topbuf = bufs.pop().unwrap();
-        Self::new(Some(topbuf), bufs, hw)
+        Self::new(Some(topbuf), bufs, hw, id)
     }
 
-    pub fn new(topbuf: Option<Box<AnnBufSz>>, bufs: Vec<Box<AnnBufSz>>, hw: &HeightWork) -> Self {
+    pub fn new(
+        topbuf: Option<Box<AnnBufSz>>,
+        bufs: Vec<Box<AnnBufSz>>,
+        hw: &HeightWork,
+        id: usize,
+    ) -> Self {
         AnnClass {
             m: RwLock::new(AnnClassMut {
                 bufs,
@@ -75,6 +86,7 @@ impl AnnClass {
             block_hash: Default::default(),
             block_height: hw.block_height as u32,
             min_ann_work: hw.work,
+            id,
         }
     }
 
@@ -109,7 +121,7 @@ impl AnnClass {
             };
             let oldtop = {
                 let mut m = self.m.write().unwrap();
-                println!("new buf: count: {}", m.bufs.len());
+                println!("new buf in [{}]: count: {}", self.id, m.bufs.len());
                 match &m.topbuf {
                     Some(tb) => {
                         // Need to double-check

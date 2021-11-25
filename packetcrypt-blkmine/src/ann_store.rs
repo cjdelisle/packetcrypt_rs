@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, RwLock};
 use log::{debug, info, trace, warn};
 use std::cell::RefCell;
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 #[derive(Debug)]
 pub struct ClassInfo {
@@ -26,6 +27,7 @@ struct AnnStoreMut {
 
 pub struct AnnStore {
     m: RwLock<AnnStoreMut>,
+    next_class_id: AtomicUsize,
 }
 
 thread_local!(static ANN_BUF: RefCell<Option<Box<AnnBufSz>>> = RefCell::new(None));
@@ -42,7 +44,7 @@ impl AnnStore {
             work: 0xffffffff,
         };
         // bufs will always be stolen from this class until it is used up.
-        let class_store = Box::new(AnnClass::with_bufs(buf_store, &hw_store));
+        let class_store = Box::new(AnnClass::with_bufs(buf_store, &hw_store, 0));
 
         let mut classes = BTreeMap::new();
         classes.insert(hw_store, class_store);
@@ -51,6 +53,7 @@ impl AnnStore {
                 classes,
                 recent_blocks: HashMap::new(),
             }),
+            next_class_id: AtomicUsize::new(1),
         }
     }
 
@@ -96,8 +99,9 @@ impl AnnStore {
                 if m.classes.get(&hw).is_some() {
                     continue;
                 }
-                println!("new class: count: {}", m.classes.len());
-                let new_class = Box::new(AnnClass::new(None, vec![], &hw));
+                let id = self.next_class_id.fetch_add(1, Relaxed);
+                println!("new class [{}]: count: {}", id, m.classes.len());
+                let new_class = Box::new(AnnClass::new(None, vec![], &hw, id));
                 assert!(m.classes.insert(hw, new_class).is_none());
             }
         }
@@ -167,12 +171,11 @@ impl AnnStore {
         let m = self.m.read().unwrap();
         m.classes
             .iter()
-            .enumerate()
-            .map(|(i, (hw, c))| {
+            .map(|(hw, c)| {
                 let (anns, bufs) = c.ready_anns_bufs();
                 format!(
                     "  class #{} [height={} work={}] -> anns={} bufs={}",
-                    i, hw.block_height, hw.work, anns, bufs
+                    c.id, hw.block_height, hw.work, anns, bufs
                 )
             })
             .collect::<Vec<_>>()
