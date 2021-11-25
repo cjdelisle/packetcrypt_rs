@@ -42,9 +42,10 @@ thread_local!(static ANN_BUF: RefCell<Option<Box<AnnBufSz>>> = RefCell::new(None
 impl AnnStore {
     pub fn new(bm: Arc<BlkMiner>) -> Self {
         // initial buf store, capable of filling the received miner entirely.
-        let buf_store = (0..bm.max_anns)
-            .step_by(ANNBUF_SZ)
-            .map(|i| Box::new(AnnBufSz::new(Arc::clone(&bm), i as usize)));
+        assert!(bm.max_anns >= ANNBUF_SZ);
+        let buf_store = (0..)
+            .map(|i| Box::new(AnnBufSz::new(Arc::clone(&bm), i * ANNBUF_SZ)))
+            .take(bm.max_anns as usize / ANNBUF_SZ); // this rounds the result down.
 
         let hw_store = HeightWork {
             block_height: 0,
