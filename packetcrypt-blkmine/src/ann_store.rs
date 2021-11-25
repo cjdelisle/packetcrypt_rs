@@ -178,21 +178,29 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
         class: &'a Box<AnnClass>,
         effective_work: u32,
     }
-    let next_block_height = 1 + *m.recent_blocks.keys().max().unwrap() as u32;
+    let next_block_height = if let Some(current_height) = m.recent_blocks.keys().max() {
+        1 + *current_height as u32
+    } else {
+        for (hw, cl) in &m.classes {
+            if hw.block_height == 0 {
+                if let Ok(Some(mut buf)) = cl.steal_buf() {
+                    buf.reset();
+                    return Some(buf);
+                }
+            }
+        }
+        warn!("Cannot steal buffer yet because we have no recent blocks");
+        return None
+    };
     let mut classes = m.classes.iter()
         .map(|(hw, c)|Class{ hw, class: c, effective_work: c.ann_effective_work(next_block_height) })
         .filter(|cl|cl.effective_work != 0xffffffff)
         .collect::<Vec<Class<'a>>>();
     classes.sort_unstable_by_key(|a|0xffffffff - a.effective_work);
     for cl in classes {
-        //cl.class.steal_buf()
-        match cl.class.steal_buf() {
-            Err(_) => (), // we're mining with this one, can't take it.
-            Ok(None) => (), // this one has been completely wiped out.
-            Ok(Some(mut buf)) => {
-                buf.reset();
-                return Some(buf);
-            }
+        if let Ok(Some(mut buf)) = cl.class.steal_buf() {
+            buf.reset();
+            return Some(buf);
         }
     }
     warn!("Unable to get a buffer, seems every buffer is busy mining?!");
