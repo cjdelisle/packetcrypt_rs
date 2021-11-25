@@ -718,6 +718,8 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
     );
     bm.current_mining.lock().unwrap().replace(current_mining);
 
+    drop(tree_l);
+
     // Validate self-test
     match make_share(bm, br, true) {
         Ok(_) => (),
