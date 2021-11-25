@@ -124,7 +124,6 @@ impl AnnStore {
 
     /// Return the classes that does have announcements at the moment, already ranked according to
     /// their effective ann work.
-    /// Also it is sure to exclude the 0xffffffff effective work announcements.
     pub fn classes(&self, next_height: i32) -> Vec<ClassInfo> {
         let m = self.m.read().unwrap();
         let mut ready = m
