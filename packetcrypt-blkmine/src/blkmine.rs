@@ -502,7 +502,8 @@ struct ReloadedClasses {
 /// Get all ready classes, already ranked by effective ann work, compute effective work target for each
 /// sub-set, and find the sub-set for which this resulting effective target is the highest.
 fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> Option<ReloadedClasses> {
-    let ready = bm.ann_store.ready_classes(next_work.height);
+    let mut ready = bm.ann_store.classes(next_work.height);
+    ready.retain(|c|c.can_mine());
 
     // computes the cummulative counts of the classes.
     let counts = ready.iter().scan(0u64, |acc, ci| {
@@ -666,7 +667,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
 
     let (index_table, real_target, current_mining);
     {
-        debug!("Computing tree");
+        debug!("Computing tree with {} classes", reload.best_set.len());
         let (tree, tree_num) = get_tree(bm, false);
         let mut tree_l = tree.lock().unwrap();
         tree_l.reset();
@@ -861,7 +862,27 @@ async fn stats_loop(bm: &BlkMine) {
             downloading.push(st.downloading);
             queued.push(st.queued);
         }
-        let spr = util::pad_to(27, format!("spare: {} rdy: {} ", unused, ready));
+        let (rdy, spare, cls, imm) = {
+            let cw_l = bm.current_work.lock().unwrap();
+            if let Some(w) = &*cw_l {
+                let classes = bm.ann_store.classes(w.work.height);
+                let (mut rdy, mut spr, mut cls, mut imm) = (0_isize, 0_isize, 0_isize, 0_isize);
+                for c in classes {
+                    cls += 1;
+                    if c.can_mine() {
+                        rdy += c.ann_count as isize;
+                    } else if c.immature {
+                        imm += c.ann_count as isize;
+                    } else {
+                        spr += crate::ann_class::ANNBUF_SZ as isize;
+                    }
+                }
+                (rdy, spr, cls, imm)
+            } else {
+                (-1, -1, -1, -1)
+            }
+        };
+        let spr = util::pad_to(27, format!("rdy: {} spr: {} imm: {} cls: {}", rdy, spare, imm, cls));
         let dlst = if let Some(spray) = &bm.spray {
             let st = spray.get_peer_stats();
             let v = st
@@ -899,12 +920,11 @@ async fn stats_loop(bm: &BlkMine) {
                 let diff = packetcrypt_sys::difficulty::tar_to_diff(cm.ann_min_work);
                 let anns = util::pad_to(20, format!("anns: {} @ {}", cm.count, diff));
                 info!("{}{}{}{}", shr, hr, anns, dlst);
-                info!("AnnStore:\n{}", bm.ann_store.stats());
                 // Restart mining after 45s w/o a block
                 util::now_ms() - cm.time_started_ms > 45_000
             }
         };
-        if unused == 0 {
+        if spare == 0 {
             info!("Out of buffer space, increasing --memorysizemb will improve efficiency");
         }
         // We relock every time if unused space is zero, in order to

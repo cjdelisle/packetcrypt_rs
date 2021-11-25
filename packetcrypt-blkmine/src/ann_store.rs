@@ -18,6 +18,14 @@ pub struct ClassInfo {
     pub hw: HeightWork,
     pub ann_count: usize,
     pub ann_effective_work: u32,
+    pub immature: bool,
+    pub buf_count: usize,
+    pub id: usize,
+}
+impl ClassInfo {
+    pub fn can_mine(&self) -> bool {
+        self.ann_effective_work != 0xffffffff && self.ann_count > 0
+    }
 }
 
 struct AnnStoreMut {
@@ -110,7 +118,7 @@ impl AnnStore {
     /// Return the classes that does have announcements at the moment, already ranked according to
     /// their effective ann work.
     /// Also it is sure to exclude the 0xffffffff effective work announcements.
-    pub fn ready_classes(&self, next_height: i32) -> Vec<ClassInfo> {
+    pub fn classes(&self, next_height: i32) -> Vec<ClassInfo> {
         println!("*** AnnStore::ready_classes: next_height={}", next_height);
         let m = self.m.read().unwrap();
         let mut ready = m
@@ -119,15 +127,19 @@ impl AnnStore {
             .map(|(&hw, ac)| {
                 let age = max(0, next_height - hw.block_height) as u32;
                 let aew = pc_degrade_announcement_target(hw.work, age);
-                (hw, ac, aew)
+                (hw, ac, aew, age <= 3)
             })
-            .filter(|(_hw, _ac, aew)| *aew != 0xffffffff)
-            .map(|(hw, ac, aew)| ClassInfo {
-                hw,
-                ann_count: ac.ready_anns(),
-                ann_effective_work: aew,
+            .map(|(hw, ac, aew, immature)| {
+                let (ann_count, buf_count) = ac.ready_anns_bufs();
+                ClassInfo {
+                    hw,
+                    ann_count,
+                    ann_effective_work: aew,
+                    buf_count,
+                    id: ac.id,
+                    immature,
+                }
             })
-            .filter(|ci| ci.ann_count != 0)
             .collect::<Vec<_>>();
 
         ready.sort_unstable_by_key(|ci| ci.ann_effective_work);
@@ -139,7 +151,7 @@ impl AnnStore {
         set: &[HeightWork],
         pt: &mut ProofTree,
     ) -> Result<Vec<u32>, &'static str> {
-        println!("*** AnnStore::compute_tree: set={:?}", set);
+        //println!("*** AnnStore::compute_tree: set={:?}", set);
         let m = self.m.read().unwrap(); // keep a read lock, so no push is made.
         let mut set = set
             .into_par_iter() // parallel, since locks must be acquired for all classes.
@@ -164,21 +176,6 @@ impl AnnStore {
 
         // compute the tree.
         pt.compute(total_anns)
-    }
-
-    pub fn stats(&self) -> String {
-        let m = self.m.read().unwrap();
-        m.classes
-            .iter()
-            .map(|(hw, c)| {
-                let (anns, bufs) = c.ready_anns_bufs();
-                format!(
-                    "  class #{} [height={} work={}] -> anns={} bufs={}",
-                    c.id, hw.block_height, hw.work, anns, bufs
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
     }
 }
 
