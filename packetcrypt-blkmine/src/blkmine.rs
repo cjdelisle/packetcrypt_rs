@@ -13,7 +13,7 @@ use std::iter;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub struct BlkArgs {
     pub payment_addr: String,
@@ -305,6 +305,7 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 }
 
 fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
+    let start = Instant::now();
     bm.block_miner.stop();
     bm.ann_store
         .block(next_work.height - 1, next_work.header.hash_prev_block);
@@ -359,15 +360,18 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         real_target,
         0,
     );
+    let elapsed = start.elapsed();
+
     trace!(
         "Mining with header {}",
         hex::encode(&current_mining.block_header)
     );
     debug!(
-        "Mining {} with {} @ {}",
+        "Mining {} with {} @ {} [elapsed: {}ms]",
         next_work.height,
         index_table.len(),
         packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
+        elapsed.as_millis()
     );
     bm.current_mining.lock().unwrap().replace(current_mining);
 
