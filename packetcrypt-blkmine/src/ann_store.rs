@@ -66,7 +66,6 @@ impl AnnStore {
     }
 
     pub fn block(&self, height: i32, hash: [u8; 32]) {
-        println!("*** AnnStore::block: height={}", height);
         let mut m = self.m.write().unwrap();
         m.recent_blocks.insert(height, hash.into());
     }
@@ -112,14 +111,12 @@ impl AnnStore {
                     .cloned()
                     .collect::<Vec<_>>();
                 for hw in v {
-                    println!("dropped dead class");
                     m.classes.remove(&hw);
                 }
                 if m.classes.get(&hw).is_some() {
                     continue;
                 }
                 let id = self.next_class_id.fetch_add(1, Relaxed);
-                println!("new class [{}]: count: {}", id, m.classes.len());
                 let new_class = Box::new(AnnClass::new(None, vec![], &hw, id));
                 assert!(m.classes.insert(hw, new_class).is_none());
             }
@@ -130,7 +127,6 @@ impl AnnStore {
     /// their effective ann work.
     /// Also it is sure to exclude the 0xffffffff effective work announcements.
     pub fn classes(&self, next_height: i32) -> Vec<ClassInfo> {
-        println!("*** AnnStore::ready_classes: next_height={}", next_height);
         let m = self.m.read().unwrap();
         let mut ready = m
             .classes
@@ -162,7 +158,6 @@ impl AnnStore {
         set: &[HeightWork],
         pt: &mut ProofTree,
     ) -> Result<Vec<u32>, &'static str> {
-        //println!("*** AnnStore::compute_tree: set={:?}", set);
         let m = self.m.read().unwrap(); // keep a read lock, so no push is made.
         let mut set = set
             .into_par_iter() // parallel, since locks must be acquired for all classes.

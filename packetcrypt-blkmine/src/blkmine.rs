@@ -292,7 +292,6 @@ impl<'a> GetAnn for AnnChunk<'a> {
 }
 
 fn on_anns2(bm: &BlkMine, hw: HeightWork, ac: AnnChunk) {
-    // println!("*** on_anns2: {:?}", hw);
     let total = bm.ann_store.push_anns(hw, &ac);
 
     // Stats
@@ -652,7 +651,6 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 }
 
 fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
-    println!("*** on_work2: next_work_height={}", next_work.height);
     bm.block_miner.stop();
     bm.ann_store
         .block(next_work.height - 1, next_work.header.hash_prev_block);

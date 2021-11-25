@@ -121,7 +121,6 @@ impl AnnClass {
             };
             let oldtop = {
                 let mut m = self.m.write().unwrap();
-                //println!("new buf in [{}]: count: {}", self.id, m.bufs.len());
                 match &m.topbuf {
                     Some(tb) => {
                         // Need to double-check
