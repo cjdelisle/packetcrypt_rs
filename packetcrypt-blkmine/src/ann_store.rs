@@ -132,8 +132,10 @@ impl AnnStore {
             let mut buf = steal_non_mining_buf(&mut m, next_block_height.unwrap());
             buf.reset();
             if let Some(class) = m.classes.get(&hw) {
+                println!("adding buf to class");
                 class.add_buf(buf);
             } else {
+                println!("new class");
                 let new_class = Box::new(AnnClass::with_topbuf(buf, &hw));
                 assert!(m.classes.insert(hw, new_class).is_none());
             }
