@@ -59,15 +59,6 @@ unsafe impl<const ANNBUF_SZ: usize> Sync for AnnBuf<ANNBUF_SZ> {}
 
 impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
     pub fn new(bm: Arc<BlkMiner>, base_offset: usize) -> Self {
-        if (base_offset + ANNBUF_SZ) as u32 > bm.max_anns {
-            println!(
-                "ANNBUF_SZ={} base_offset={} max_anns={} diff={}",
-                ANNBUF_SZ,
-                base_offset,
-                bm.max_anns,
-                (base_offset + ANNBUF_SZ) as i64 - bm.max_anns as i64
-            );
-        }
         assert!((base_offset + ANNBUF_SZ) as u32 <= bm.max_anns);
         Self {
             bm,
