@@ -4,14 +4,14 @@ use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
 use crate::blkmine::{AnnChunk, HeightWork};
 use crate::blkminer::BlkMiner;
 use crate::prooftree::{AnnData, ProofTree};
+use log::{debug, info, trace, warn};
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
+use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, RwLock};
-use log::{debug, info, trace, warn};
-use std::cell::RefCell;
 use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+use std::sync::{Arc, RwLock};
 
 #[derive(Debug)]
 pub struct ClassInfo {
@@ -89,7 +89,12 @@ impl AnnStore {
         })
     }
 
-    fn push_anns1(&self, hw: HeightWork, ac: &AnnChunk, buf: Box<AnnBufSz>) -> (usize, Option<Box<AnnBufSz>>) {
+    fn push_anns1(
+        &self,
+        hw: HeightWork,
+        ac: &AnnChunk,
+        buf: Box<AnnBufSz>,
+    ) -> (usize, Option<Box<AnnBufSz>>) {
         loop {
             {
                 let m = self.m.read().unwrap();
@@ -99,7 +104,13 @@ impl AnnStore {
             }
             {
                 let mut m = self.m.write().unwrap();
-                let v = m.classes.iter().filter(|(_,c)|c.is_dead()).map(|(hw,_)|hw).cloned().collect::<Vec<_>>();
+                let v = m
+                    .classes
+                    .iter()
+                    .filter(|(_, c)| c.is_dead())
+                    .map(|(hw, _)| hw)
+                    .cloned()
+                    .collect::<Vec<_>>();
                 for hw in v {
                     println!("dropped dead class");
                     m.classes.remove(&hw);
@@ -197,13 +208,19 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
             }
         }
         warn!("Cannot steal buffer yet because we have no recent blocks");
-        return None
+        return None;
     };
-    let mut classes = m.classes.iter()
-        .map(|(hw, c)|Class{ hw, class: c, effective_work: c.ann_effective_work(next_block_height as u32) })
+    let mut classes = m
+        .classes
+        .iter()
+        .map(|(hw, c)| Class {
+            hw,
+            class: c,
+            effective_work: c.ann_effective_work(next_block_height as u32),
+        })
         .collect::<Vec<Class<'a>>>();
-    classes.sort_unstable_by_key(|a|0xffffffff - a.effective_work);
-    let (mut class_count, mut mining_count, mut empty_count, mut too_new) = (0,0,0,0);
+    classes.sort_unstable_by_key(|a| 0xffffffff - a.effective_work);
+    let (mut class_count, mut mining_count, mut empty_count, mut too_new) = (0, 0, 0, 0);
     for cl in classes {
         class_count += 1;
         if next_block_height - cl.hw.block_height <= 3 {
@@ -214,11 +231,11 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
             Err(_) => {
                 // we're mining with this one, can't take it.
                 mining_count += 1;
-            },
+            }
             Ok(None) => {
                 // this one has been completely wiped out.
                 empty_count += 1;
-            },
+            }
             Ok(Some(mut buf)) => {
                 buf.reset();
                 return Some(buf);
@@ -229,7 +246,9 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
             return Some(buf);
         }
     }
-    warn!("Unable to get a buffer: classes: [{}], too_new: [{}] mining: [{}], empty: [{}]",
-        class_count, too_new, mining_count, empty_count);
+    warn!(
+        "Unable to get a buffer: classes: [{}], too_new: [{}] mining: [{}], empty: [{}]",
+        class_count, too_new, mining_count, empty_count
+    );
     None
 }

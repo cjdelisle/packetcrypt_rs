@@ -1,11 +1,11 @@
 use crate::ann_buf::{AnnBuf, Hash};
 use crate::blkmine::HeightWork;
 use crate::prooftree;
+use log::{debug, info, trace, warn};
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::mem;
 use std::sync::{Arc, Mutex, RwLock};
-use log::{debug, info, trace, warn};
 
 pub const ANNBUF_SZ: usize = 32 * 1024;
 pub type AnnBufSz = AnnBuf<ANNBUF_SZ>;

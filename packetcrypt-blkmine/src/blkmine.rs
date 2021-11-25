@@ -503,7 +503,7 @@ struct ReloadedClasses {
 /// sub-set, and find the sub-set for which this resulting effective target is the highest.
 fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> Option<ReloadedClasses> {
     let mut ready = bm.ann_store.classes(next_work.height);
-    ready.retain(|c|c.can_mine());
+    ready.retain(|c| c.can_mine());
 
     // computes the cummulative counts of the classes.
     let counts = ready.iter().scan(0u64, |acc, ci| {
@@ -882,7 +882,10 @@ async fn stats_loop(bm: &BlkMine) {
                 (-1, -1, -1, -1)
             }
         };
-        let spr = util::pad_to(27, format!("rdy: {} spr: {} imm: {} cls: {}", rdy, spare, imm, cls));
+        let spr = util::pad_to(
+            27,
+            format!("rdy: {} spr: {} imm: {} cls: {}", rdy, spare, imm, cls),
+        );
         let dlst = if let Some(spray) = &bm.spray {
             let st = spray.get_peer_stats();
             let v = st
