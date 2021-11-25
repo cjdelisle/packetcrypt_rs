@@ -190,7 +190,7 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
         effective_work: u32,
     }
     let next_block_height = if let Some(current_height) = m.recent_blocks.keys().max() {
-        1 + *current_height as u32
+        1 + *current_height
     } else {
         for (hw, cl) in &m.classes {
             if hw.block_height == 0 {
@@ -204,13 +204,16 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
         return None
     };
     let mut classes = m.classes.iter()
-        .map(|(hw, c)|Class{ hw, class: c, effective_work: c.ann_effective_work(next_block_height) })
-        .filter(|cl|cl.effective_work != 0xffffffff)
+        .map(|(hw, c)|Class{ hw, class: c, effective_work: c.ann_effective_work(next_block_height as u32) })
         .collect::<Vec<Class<'a>>>();
     classes.sort_unstable_by_key(|a|0xffffffff - a.effective_work);
-    let (mut class_count, mut mining_count, mut empty_count) = (0,0,0);
+    let (mut class_count, mut mining_count, mut empty_count, mut too_new) = (0,0,0,0);
     for cl in classes {
         class_count += 1;
+        if next_block_height - cl.hw.block_height <= 3 {
+            too_new += 1;
+            continue;
+        }
         match cl.class.steal_buf() {
             Err(_) => {
                 // we're mining with this one, can't take it.
@@ -230,7 +233,7 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
             return Some(buf);
         }
     }
-    warn!("Unable to get a buffer in [{:#}]: classes: [{}], mining: [{}], empty: [{}]",
-        (m as *const AnnStoreMut as *const u8 as usize), class_count, mining_count, empty_count);
+    warn!("Unable to get a buffer: classes: [{}], too_new: [{}] mining: [{}], empty: [{}]",
+        class_count, too_new, mining_count, empty_count);
     None
 }
