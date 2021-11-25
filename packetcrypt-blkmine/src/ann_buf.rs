@@ -59,7 +59,6 @@ unsafe impl<const ANNBUF_SZ: usize> Sync for AnnBuf<ANNBUF_SZ> {}
 
 impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
     pub fn new(bm: Arc<BlkMiner>, base_offset: usize) -> Self {
-        assert!((base_offset + ANNBUF_SZ) as u32 <= bm.max_anns);
         Self {
             bm,
             base_offset,
@@ -89,8 +88,6 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
             indexes = &indexes[..ANNBUF_SZ - ann_index];
             self.next_ann_index.store(ANNBUF_SZ, Ordering::Relaxed);
         }
-        assert!(indexes.len() <= ANNBUF_SZ);
-        assert!((self.base_offset + indexes.len()) as u32 <= self.bm.max_anns);
 
         let hashes = self.hashes.get();
         let mut temp = Hash::default();
@@ -102,7 +99,6 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
             }
 
             // actually store ann in miner, with the index offset.
-            assert!((self.base_offset + i) as u32 <= self.bm.max_anns);
             self.bm.put_ann((self.base_offset + i) as u32, ann);
         }
 
