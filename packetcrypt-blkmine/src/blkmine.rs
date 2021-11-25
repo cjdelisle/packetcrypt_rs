@@ -307,6 +307,7 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
 fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
     let mut timings = Vec::new();
     let start = Instant::now();
+    timings.push(("", start.elapsed()));
 
     bm.block_miner.stop();
     timings.push(("block_miner.stop", start.elapsed()));
@@ -389,11 +390,13 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
 
     let max_size = timings.iter().map(|c| c.0.len()).max().unwrap();
     let mut debug_timings = String::new();
-    for (name, dur) in timings.into_iter() {
+    let mut tuples = timings.windows(2);
+    while let Some(&[(_, dur1), (name, dur2)]) = tuples.next() {
         debug_timings += "\n  ";
         debug_timings += &util::pad_to(max_size, name.to_owned());
-        debug_timings += &format!(": {}ms", dur.as_millis());
+        debug_timings += &format!(": {}ms", (dur2 - dur1).as_millis());
     }
+    debug_timings += &format!("\n  total: {}ms", timings.last().unwrap().1.as_millis());
     debug!("Elapsed time per section:{}", &debug_timings);
 
     bm.current_mining.lock().unwrap().replace(current_mining);
