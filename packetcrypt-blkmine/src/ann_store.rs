@@ -93,6 +93,9 @@ impl AnnStore {
                     println!("dropped dead class");
                     m.classes.remove(&hw);
                 }
+                if m.classes.get(&hw).is_some() {
+                    continue;
+                }
                 println!("new class: count: {}", m.classes.len());
                 let new_class = Box::new(AnnClass::new(None, vec![], &hw));
                 assert!(m.classes.insert(hw, new_class).is_none());
