@@ -3,24 +3,27 @@ use bytes::BufMut;
 use log::debug;
 use packetcrypt_sys::*;
 use rayon::prelude::*;
-use std::sync::Arc;
-use crate::blkminer::BlkMiner;
+use std::convert::TryInto;
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone)]
 pub struct AnnData {
-    pub hash_pfx: u64,
+    pub hash: [u8; 32],
     pub mloc: u32,
     pub index: u32,
+}
+
+impl AnnData {
+    fn hash_pfx(&self) -> u64 {
+        u64::from_le_bytes(self.hash[0..8].try_into().unwrap())
+    }
 }
 
 pub struct ProofTree {
     raw: *mut ProofTree_t,
     capacity: u32,
     size: u32,
-    bm: Arc<BlkMiner>,
     pub root_hash: Option<[u8; 32]>,
     pub ann_data: Vec<AnnData>,
-    pub index_table: Vec<u32>,
 }
 
 unsafe impl Send for ProofTree {}
@@ -44,15 +47,13 @@ fn fff_entry() -> *const ProofTree_Entry_t {
 }
 
 impl ProofTree {
-    pub fn new(max_anns: u32, bm: Arc<BlkMiner>) -> ProofTree {
+    pub fn new(max_anns: u32) -> ProofTree {
         ProofTree {
             raw: unsafe { ProofTree_create(max_anns) },
             size: 0,
             capacity: max_anns,
             root_hash: None,
             ann_data: vec![AnnData::default(); max_anns as usize], // TODO: this is going to take ages
-            index_table: Vec::with_capacity(max_anns as usize),
-            bm,
         }
     }
 
@@ -61,7 +62,7 @@ impl ProofTree {
         self.root_hash = None;
     }
 
-    pub fn compute(&mut self, count: usize) -> Result<(), &'static str> {
+    pub fn compute(&mut self, count: usize) -> Result<Vec<u32>, &'static str> {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
@@ -75,26 +76,28 @@ impl ProofTree {
         }
 
         // Sort the data items
-        data.par_sort_by(|a, b| a.hash_pfx.cmp(&b.hash_pfx));
+        data.par_sort_by(|a, b| a.hash_pfx().cmp(&b.hash_pfx()));
 
-        self.index_table.clear();
+        // Create the index table
+        let mut out = Vec::with_capacity(self.size as usize);
         let mut last_pfx = 0;
         for d in data.iter_mut() {
+            let pfx = d.hash_pfx();
             // Deduplicate and insert in the index table
             #[allow(clippy::comparison_chain)]
-            if d.hash_pfx > last_pfx {
-                self.index_table.push(d.mloc);
+            if pfx > last_pfx {
+                out.push(d.mloc);
                 // careful to skip entry 0 which is the 0-entry
-                d.index = self.index_table.len() as u32;
-                last_pfx = d.hash_pfx;
-            } else if d.hash_pfx == last_pfx {
+                d.index = out.len() as u32;
+                last_pfx = pfx;
+            } else if pfx == last_pfx {
                 //debug!("Drop ann with index {:#x}", pfx);
                 d.index = 0;
             } else {
-                panic!("list not sorted {:#x} < {:#x}", d.hash_pfx, last_pfx);
+                panic!("list not sorted {:#x} < {:#x}", pfx, last_pfx);
             }
         }
-        debug!("Loaded {} out of {} anns", self.index_table.len(), data.len());
+        debug!("Loaded {} out of {} anns", out.len(), data.len());
 
         // Copy the data to the location
         self.ann_data[..count].par_iter().for_each(|d| {
@@ -103,14 +106,14 @@ impl ProofTree {
                 return;
             }
             let e = ProofTree_Entry_t {
-                hash: *self.bm.get_hash(d.index as usize).bytes(),
-                start: d.hash_pfx,
+                hash: d.hash,
+                start: d.hash_pfx(),
                 end: 0,
             };
             unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
         });
 
-        let total_anns_zero_included = self.index_table.len() + 1;
+        let total_anns_zero_included = out.len() + 1;
         unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
 
         // Build the merkle tree
@@ -138,8 +141,8 @@ impl ProofTree {
         assert!(odx as u64 == unsafe { ProofTree_complete(self.raw, rh.as_mut_ptr()) });
 
         self.root_hash = Some(rh);
-        self.size = self.index_table.len() as u32;
-        Ok(())
+        self.size = out.len() as u32;
+        Ok(out)
     }
 
     pub fn get_commit(&self, ann_min_work: u32) -> Result<bytes::BytesMut, &'static str> {

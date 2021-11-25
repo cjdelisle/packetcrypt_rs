@@ -150,7 +150,7 @@ impl AnnStore {
         &self,
         set: &[HeightWork],
         pt: &mut ProofTree,
-    ) -> Result<(), &'static str> {
+    ) -> Result<Vec<u32>, &'static str> {
         //println!("*** AnnStore::compute_tree: set={:?}", set);
         let m = self.m.read().unwrap(); // keep a read lock, so no push is made.
         let mut set = set

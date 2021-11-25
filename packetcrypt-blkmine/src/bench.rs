@@ -1,5 +1,4 @@
 use crate::blkminer::BlkMiner;
-use crate::ann_buf::Hash;
 use anyhow::Result;
 use packetcrypt_util::util;
 use rand::Rng;
@@ -56,7 +55,6 @@ fn start_bench_blk(max_mem: u64, threads: u32) -> Result<BlkMiner> {
     let mut nonce = chacha20::Nonce::from_slice(&[0; 8]).unwrap();
     let mut ann = chacha20::stream(1024, &nonce, &key);
     let total_entries = block_miner.max_anns;
-    let hash = Hash::default();
     for i in 0..total_entries {
         print!(
             "\rinserting announcements... {:.1}%",
@@ -66,7 +64,7 @@ fn start_bench_blk(max_mem: u64, threads: u32) -> Result<BlkMiner> {
 
         nonce.increment_le_inplace();
         chacha20::stream_xor_inplace(&mut ann, &nonce, &key);
-        block_miner.put_ann(i, &ann, &hash);
+        block_miner.put_ann(i, &ann);
     }
     println!();
 

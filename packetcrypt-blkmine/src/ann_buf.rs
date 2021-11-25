@@ -1,5 +1,5 @@
 use crate::blkminer::BlkMiner;
-use crate::prooftree::{self,AnnData};
+use crate::prooftree;
 use rayon::prelude::*;
 use sodiumoxide::crypto::generichash;
 use std::cell::UnsafeCell;
@@ -18,10 +18,7 @@ impl Hash {
     }
 
     fn to_u64(&self) -> u64 {
-        u64::from_le_bytes(self.0[..8].try_into().unwrap())
-    }
-    pub fn bytes(&self) -> &[u8; 32] {
-        &self.0
+        u64::from_le_bytes(self.0[24..].try_into().unwrap())
     }
 }
 
@@ -51,9 +48,10 @@ pub struct AnnBuf<const ANNBUF_SZ: usize> {
     next_ann_index: AtomicUsize,
     /// The calculated hashes.
     /// Gives interior mutability, so this struct can be shared among threads.
-    data: UnsafeCell<[AnnData; ANNBUF_SZ]>,
+    hashes: UnsafeCell<[Hash; ANNBUF_SZ]>,
 
     locked: bool,
+    index_table: [u16; ANNBUF_SZ],
 }
 
 unsafe impl<const ANNBUF_SZ: usize> Send for AnnBuf<ANNBUF_SZ> {}
@@ -65,8 +63,9 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
             bm,
             base_offset,
             next_ann_index: AtomicUsize::new(0),
-            data: [AnnData::default(); ANNBUF_SZ].into(),
+            hashes: [Hash::default(); ANNBUF_SZ].into(),
             locked: false.into(),
+            index_table: [0; ANNBUF_SZ],
         }
     }
 
@@ -90,20 +89,17 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
             self.next_ann_index.store(ANNBUF_SZ, Ordering::Relaxed);
         }
 
-        let data = self.data.get();
+        let hashes = self.hashes.get();
         let mut temp = Hash::default();
         for (i, ann) in (ann_index..).zip(indexes.iter().map(|&ci| anns[ci as usize])) {
             temp.compute(ann);
-            let ad = AnnData{
-                hash_pfx: temp.to_u64(),
-                index: 0,
-                mloc: (self.base_offset + i) as u32,
-            };
-            // SAFETY: the starting index comes from an atomic, and we won't write out of indexes.len() range.
-            unsafe { (*data)[i] = ad };
+            unsafe {
+                // SAFETY: the starting index comes from an atomic, and we won't write out of indexes.len() range.
+                (*hashes)[i] = temp;
+            }
 
             // actually store ann in miner, with the index offset.
-            self.bm.put_ann((self.base_offset + i) as u32, ann, &temp);
+            self.bm.put_ann((self.base_offset + i) as u32, ann);
         }
 
         indexes.len()
@@ -120,9 +116,16 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
         //     "*** AnnBuf::lock: base_offset={} size={}",
         //     self.base_offset, last
         // );
-        let data = unsafe { &mut *self.data.get() };
-        data[..last].par_sort_unstable_by_key(|&i| i.hash_pfx);
-        self.locked = true;
+        for i in 0..last {
+            self.index_table[i] = i as u16;
+        }
+        for i in last..ANNBUF_SZ {
+            self.index_table[i] = u16::MAX;
+        }
+
+        let hashes = unsafe { &*self.hashes.get() };
+        self.index_table[..last].par_sort_unstable_by_key(|&i| hashes[i as usize].to_u64());
+        self.locked = true
     }
 
     /// Clear the buf for another usage.
@@ -137,10 +140,12 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
     pub fn read_ready_anns(&self, out: &mut [prooftree::AnnData]) {
         assert!(self.locked);
         let last = self.next_ann_index();
-        let data = unsafe { &*self.data.get() };
-        out.iter_mut().zip(data[..last].iter()).for_each(|(out, inp)| {
-            *out = *inp
-        });
+        let hashes = unsafe { &*self.hashes.get() };
+        for (i, &idx) in self.index_table[0..last].iter().enumerate() {
+            out[i].hash = hashes[idx as usize].0;
+            out[i].mloc = (self.base_offset + idx as usize) as u32;
+            out[i].index = 0; // used internally for other purposes
+        }
     }
 
     pub fn next_ann_index(&self) -> usize {
