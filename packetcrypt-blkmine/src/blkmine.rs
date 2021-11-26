@@ -9,6 +9,7 @@ use packetcrypt_sys::difficulty::pc_get_effective_target;
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol;
 use packetcrypt_util::{hash, util};
+use rayon::prelude::*;
 use std::iter;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -170,15 +171,7 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
                 index: i,
             });
         }
-        v.sort_by(|a, b| {
-            if a.hw.block_height != b.hw.block_height {
-                b.hw.block_height.cmp(&a.hw.block_height)
-            } else if a.hw.work != b.hw.work {
-                a.hw.work.cmp(&b.hw.work)
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        });
+        v.par_sort_unstable_by_key(|a| a.hw);
 
         let mut indexes: Vec<u32> = Vec::with_capacity(anns.len());
         let mut height_work: Option<HeightWork> = None;

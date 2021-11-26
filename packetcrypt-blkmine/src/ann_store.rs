@@ -1,7 +1,6 @@
 use crate::ann_buf::Hash;
 use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
-use crate::blkmine::Time;
-use crate::blkmine::{AnnChunk, HeightWork};
+use crate::blkmine::{AnnChunk, HeightWork, Time};
 use crate::blkminer::BlkMiner;
 use crate::prooftree::ProofTree;
 use log::{debug, warn};
@@ -10,7 +9,7 @@ use rayon::prelude::*;
 use std::cell::RefCell;
 use std::cmp::max;
 use std::collections::{BTreeMap, HashMap};
-use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
 #[derive(Debug)]
@@ -22,6 +21,7 @@ pub struct ClassInfo {
     pub buf_count: usize,
     pub id: usize,
 }
+
 impl ClassInfo {
     pub fn can_mine(&self) -> bool {
         self.ann_effective_work != 0xffffffff && self.ann_count > 0
@@ -104,20 +104,11 @@ impl AnnStore {
             }
             {
                 let mut m = self.m.write().unwrap();
-                let v = m
-                    .classes
-                    .iter()
-                    .filter(|(_, c)| c.is_dead())
-                    .map(|(hw, _)| hw)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                for hw in v {
-                    m.classes.remove(&hw);
-                }
-                if m.classes.get(&hw).is_some() {
+                m.classes.retain(|_hw, c| !c.is_dead());
+                if m.classes.contains_key(&hw) {
                     continue;
                 }
-                let id = self.next_class_id.fetch_add(1, Relaxed);
+                let id = self.next_class_id.fetch_add(1, Ordering::Relaxed);
                 let new_class = Box::new(AnnClass::new(None, vec![], &hw, id));
                 assert!(m.classes.insert(hw, new_class).is_none());
             }
@@ -136,12 +127,12 @@ impl AnnStore {
                 let aew = pc_degrade_announcement_target(hw.work, age);
                 (hw, ac, aew, age <= 3)
             })
-            .map(|(hw, ac, aew, immature)| {
+            .map(|(hw, ac, ann_effective_work, immature)| {
                 let (ann_count, buf_count) = ac.ready_anns_bufs();
                 ClassInfo {
                     hw,
                     ann_count,
-                    ann_effective_work: aew,
+                    ann_effective_work,
                     buf_count,
                     id: ac.id,
                     immature,

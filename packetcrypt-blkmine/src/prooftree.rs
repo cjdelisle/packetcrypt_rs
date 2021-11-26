@@ -79,8 +79,8 @@ impl ProofTree {
         }
 
         // Sort the data items
-        data.par_sort_by(|a, b| a.hash_pfx().cmp(&b.hash_pfx()));
-        debug!("{}", time.next("compute_tree: par_sort_by()"));
+        data.par_sort_unstable_by_key(|a| a.hash_pfx());
+        debug!("{}", time.next("compute_tree: par_sort_unstable_by_key()"));
 
         // Truncate the index table
         self.index_table.clear();
