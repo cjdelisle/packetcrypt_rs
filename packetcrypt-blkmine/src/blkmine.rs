@@ -309,6 +309,7 @@ struct Time {
     tp: Instant,
 }
 impl Time {
+    const PADDING: usize = 40;
     fn start() -> Time {
         let t = Instant::now();
         Time { t0: t, tp: t }
@@ -317,12 +318,12 @@ impl Time {
         let t = Instant::now();
         let ms = (t - self.tp).as_millis();
         self.tp = t;
-        format!("{} : {}ms", &util::pad_to(25, name.to_string()), ms)
+        format!("{} : {}ms", &util::pad_to(Self::PADDING, name.to_string()), ms)
     }
     fn total(&self, name: &str) -> String {
         let t = Instant::now();
         let ms = (t - self.t0).as_millis();
-        format!("{} : {}ms", &util::pad_to(25, name.to_string()), ms)
+        format!("{} : {}ms", &util::pad_to(Self::PADDING, name.to_string()), ms)
     }
 }
 
@@ -330,11 +331,11 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
     let mut time = Time::start();
 
     bm.block_miner.request_stop();
-    debug!("{}", time.next("lock_miner.stop"));
+    //debug!("{}", time.next("lock_miner.stop"));
 
     bm.ann_store
         .block(next_work.height - 1, next_work.header.hash_prev_block);
-    debug!("{}", time.next("ann_store.block"));
+    //debug!("{}", time.next("ann_store.block"));
 
     let reload;
     if let Some(r) = reload_classes(bm, next_work) {
@@ -343,33 +344,33 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         debug!("Not mining, no anns ready");
         return;
     }
-    debug!("{}", time.next("reload_classes"));
+    //debug!("{}", time.next("reload_classes"));
 
-    let (index_table, real_target, current_mining);
+    let (tree, tree_num) = get_tree(bm, false);
+    //debug!("{}", time.next("get_tree"));
+    let mut tree_l = tree.lock().unwrap();
+
+    let (real_target, current_mining);
     {
         debug!("Computing tree with {} classes", reload.best_set.len());
-        let (tree, tree_num) = get_tree(bm, false);
-        debug!("{}", time.next("get_tree"));
-        let mut tree_l = tree.lock().unwrap();
-        debug!("{}", time.next("tree.lock()"));
+        //debug!("{}", time.next("tree.lock()"));
         tree_l.reset();
-        debug!("{}", time.next("tree.reset()"));
-        index_table = bm
-            .ann_store
+        debug!("{}", time.next("Prepare"));
+        bm.ann_store
             .compute_tree(&reload.best_set, &mut tree_l)
             .unwrap();
         debug!("{}", time.next("ann_store.compute_tree()"));
 
-        debug!("Computing block header");
+        //debug!("Computing block header");
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
-        debug!("{}", time.next("tree_l.get_commit()"));
+        //debug!("{}", time.next("tree_l.get_commit()"));
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
-        debug!("{}", time.next("compute_block_header()"));
+        //debug!("{}", time.next("compute_block_header()"));
 
-        let count = index_table.len();
+        let count = tree_l.index_table.len();
         real_target =
             pc_get_effective_target(next_work.share_target, reload.ann_min_work, count as u64);
-        debug!("{}", time.next("pc_get_effective_target()"));
+        //debug!("{}", time.next("pc_get_effective_target()"));
         current_mining = CurrentMining {
             count: count as u32,
             ann_min_work: reload.ann_min_work,
@@ -382,19 +383,20 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         };
     };
 
+    debug!("{}", time.next("Create Block Header"));
+
     bm.block_miner.await_stop();
     debug!("{}", time.next("block_miner.await_stop()"));
 
     // Self-test
     let br = bm
         .block_miner
-        .fake_mine(&current_mining.block_header[..], &index_table[..]);
-    debug!("{}", time.next("block_miner.fake_mine()"));
+        .fake_mine(&current_mining.block_header[..], &tree_l.index_table[..]);
 
     debug!("Start mining...");
     bm.block_miner.mine(
         &current_mining.block_header[..],
-        &index_table[..],
+        &tree_l.index_table[..],
         real_target,
         0,
     );
@@ -407,7 +409,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
     debug!(
         "Mining {} with {} @ {}",
         next_work.height,
-        index_table.len(),
+        tree_l.index_table.len(),
         packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
     );
 
@@ -575,7 +577,7 @@ async fn stats_loop(bm: &BlkMine) {
                     }
                 };
                 on_work2(bm, &work);
-                debug!("Launched miner");
+                //debug!("Launched miner");
                 break;
             }
         }

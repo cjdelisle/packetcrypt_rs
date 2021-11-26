@@ -156,7 +156,7 @@ impl AnnStore {
         &self,
         set: &[HeightWork],
         pt: &mut ProofTree,
-    ) -> Result<Vec<u32>, &'static str> {
+    ) -> Result<(), &'static str> {
         let m = self.m.read().unwrap(); // keep a read lock, so no push is made.
         let mut set = set
             .into_par_iter() // parallel, since locks must be acquired for all classes.

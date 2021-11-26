@@ -24,6 +24,7 @@ pub struct ProofTree {
     size: u32,
     pub root_hash: Option<[u8; 32]>,
     pub ann_data: Vec<AnnData>,
+    pub index_table: Vec<u32>,
 }
 
 unsafe impl Send for ProofTree {}
@@ -54,6 +55,7 @@ impl ProofTree {
             capacity: max_anns,
             root_hash: None,
             ann_data: vec![AnnData::default(); max_anns as usize], // TODO: this is going to take ages
+            index_table: Vec::with_capacity(max_anns as usize),
         }
     }
 
@@ -62,7 +64,7 @@ impl ProofTree {
         self.root_hash = None;
     }
 
-    pub fn compute(&mut self, count: usize) -> Result<Vec<u32>, &'static str> {
+    pub fn compute(&mut self, count: usize) -> Result<(), &'static str> {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
@@ -78,17 +80,18 @@ impl ProofTree {
         // Sort the data items
         data.par_sort_by(|a, b| a.hash_pfx().cmp(&b.hash_pfx()));
 
-        // Create the index table
-        let mut out = Vec::with_capacity(self.size as usize);
+        // Truncate the index table
+        self.index_table.clear();
+
         let mut last_pfx = 0;
         for d in data.iter_mut() {
             let pfx = d.hash_pfx();
             // Deduplicate and insert in the index table
             #[allow(clippy::comparison_chain)]
             if pfx > last_pfx {
-                out.push(d.mloc);
+                self.index_table.push(d.mloc);
                 // careful to skip entry 0 which is the 0-entry
-                d.index = out.len() as u32;
+                d.index = self.index_table.len() as u32;
                 last_pfx = pfx;
             } else if pfx == last_pfx {
                 //debug!("Drop ann with index {:#x}", pfx);
@@ -97,7 +100,7 @@ impl ProofTree {
                 panic!("list not sorted {:#x} < {:#x}", pfx, last_pfx);
             }
         }
-        debug!("Loaded {} out of {} anns", out.len(), data.len());
+        //debug!("Loaded {} out of {} anns", out.len(), data.len());
 
         // Copy the data to the location
         self.ann_data[..count].par_iter().for_each(|d| {
@@ -113,7 +116,7 @@ impl ProofTree {
             unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
         });
 
-        let total_anns_zero_included = out.len() + 1;
+        let total_anns_zero_included = self.index_table.len() + 1;
         unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
 
         // Build the merkle tree
@@ -141,8 +144,8 @@ impl ProofTree {
         assert!(odx as u64 == unsafe { ProofTree_complete(self.raw, rh.as_mut_ptr()) });
 
         self.root_hash = Some(rh);
-        self.size = out.len() as u32;
-        Ok(out)
+        self.size = self.index_table.len() as u32;
+        Ok(())
     }
 
     pub fn get_commit(&self, ann_min_work: u32) -> Result<bytes::BytesMut, &'static str> {
