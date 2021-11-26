@@ -321,12 +321,20 @@ impl Time {
         let t = Instant::now();
         let ms = (t - self.tp).as_millis();
         self.tp = t;
-        format!("{} : {}ms", &util::pad_to(Self::PADDING, name.to_string()), ms)
+        format!(
+            "{} : {}ms",
+            &util::pad_to(Self::PADDING, name.to_string()),
+            ms
+        )
     }
     pub fn total(&self, name: &str) -> String {
         let t = Instant::now();
         let ms = (t - self.t0).as_millis();
-        format!("{} : {}ms", &util::pad_to(Self::PADDING, name.to_string()), ms)
+        format!(
+            "{} : {}ms",
+            &util::pad_to(Self::PADDING, name.to_string()),
+            ms
+        )
     }
 }
 

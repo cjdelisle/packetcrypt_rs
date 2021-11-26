@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
+use crate::blkmine::Time;
 use bytes::BufMut;
 use log::debug;
 use packetcrypt_sys::*;
 use rayon::prelude::*;
 use std::convert::TryInto;
-use crate::blkmine::Time;
 
 #[derive(Default, Clone)]
 pub struct AnnData {
