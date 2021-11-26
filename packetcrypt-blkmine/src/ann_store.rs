@@ -1,10 +1,10 @@
 use crate::ann_buf::Hash;
 use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
+use crate::blkmine::Time;
 use crate::blkmine::{AnnChunk, HeightWork};
 use crate::blkminer::BlkMiner;
 use crate::prooftree::ProofTree;
-use crate::blkmine::Time;
-use log::{warn,debug};
+use log::{debug, warn};
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::cell::RefCell;
@@ -159,7 +159,7 @@ impl AnnStore {
         pt: &mut ProofTree,
         time: &mut Time,
     ) -> Result<(), &'static str> {
-        let m = self.m.read().unwrap(); // keep a read lock, so no push is made.
+        let m = self.m.read().unwrap();
         let mut set = set
             .into_par_iter() // parallel, since locks must be acquired for all classes.
             .map(|hw| {
@@ -169,7 +169,8 @@ impl AnnStore {
             .collect::<Vec<_>>();
         let total_anns = set.iter().map(|(_, r, _)| r).sum();
 
-        // split the out buffer into sub-buffers for each class.
+        // split the out buffer into sub-buffers for each class according to
+        // how many anns they had ready, which may be changing as we speak...
         let mut out = &mut pt.ann_data[..];
         for (_, this, dst) in &mut set {
             let (data, excess) = out.split_at_mut(*this);

@@ -1,7 +1,7 @@
 use crate::ann_buf::{AnnBuf, Hash};
 use crate::blkmine::HeightWork;
 use crate::prooftree;
-use log::warn;
+use log::{debug, warn};
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::mem;
@@ -177,10 +177,18 @@ impl AnnClass {
     pub fn read_ready_anns(&self, mut out: &mut [prooftree::AnnData]) {
         let m = self.m.read().unwrap();
         // split the out buffer into sub-buffers each of which has enough space to hold
-        // enough AnnData for each entry in one buf.
+        // the number of bufs that were ready when tallied, which may be changing as we speak...
         let mut v = Vec::with_capacity(m.bufs.len());
         for b in &m.bufs {
             let this = b.next_ann_index();
+            if this > out.len() {
+                debug!(
+                    "Avoided panic in class read: buf.len={} out.len={}",
+                    this,
+                    out.len()
+                );
+                break;
+            }
             let (data, excess) = out.split_at_mut(this);
             v.push((b, data));
             out = excess;
