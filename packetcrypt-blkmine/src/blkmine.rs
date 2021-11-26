@@ -245,11 +245,14 @@ fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> Option<ReloadedCl
     let mut ready = bm.ann_store.classes(next_work.height);
     ready.retain(|c| c.can_mine());
 
-    // computes the cummulative counts of the classes.
-    let counts = ready.iter().scan(0u64, |acc, ci| {
-        *acc += ci.ann_count as u64;
-        Some(*acc)
-    });
+    // computes the cummulative counts of the anns within the classes.
+    let counts = ready
+        .iter()
+        .scan(0u64, |acc, ci| {
+            *acc += ci.ann_count as u64;
+            Some(*acc)
+        })
+        .take_while(|&t| t < bm.max_mining as u64);
 
     // computes the effective work target, and find the sub-set of classes for which it is the highest.
     let (best, _) = ready.iter().zip(counts).max_by_key(|&(ci, count)| {
