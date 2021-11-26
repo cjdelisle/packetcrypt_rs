@@ -304,23 +304,23 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
     bh
 }
 
-struct Time {
+pub struct Time {
     t0: Instant,
     tp: Instant,
 }
 impl Time {
     const PADDING: usize = 40;
-    fn start() -> Time {
+    pub fn start() -> Time {
         let t = Instant::now();
         Time { t0: t, tp: t }
     }
-    fn next(&mut self, name: &str) -> String {
+    pub fn next(&mut self, name: &str) -> String {
         let t = Instant::now();
         let ms = (t - self.tp).as_millis();
         self.tp = t;
         format!("{} : {}ms", &util::pad_to(Self::PADDING, name.to_string()), ms)
     }
-    fn total(&self, name: &str) -> String {
+    pub fn total(&self, name: &str) -> String {
         let t = Instant::now();
         let ms = (t - self.t0).as_millis();
         format!("{} : {}ms", &util::pad_to(Self::PADDING, name.to_string()), ms)
@@ -357,7 +357,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         tree_l.reset();
         debug!("{}", time.next("Prepare"));
         bm.ann_store
-            .compute_tree(&reload.best_set, &mut tree_l)
+            .compute_tree(&reload.best_set, &mut tree_l, &mut time)
             .unwrap();
         debug!("{}", time.next("ann_store.compute_tree()"));
 

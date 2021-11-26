@@ -3,7 +3,8 @@ use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
 use crate::blkmine::{AnnChunk, HeightWork};
 use crate::blkminer::BlkMiner;
 use crate::prooftree::ProofTree;
-use log::warn;
+use crate::blkmine::Time;
+use log::{warn,debug};
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::cell::RefCell;
@@ -156,6 +157,7 @@ impl AnnStore {
         &self,
         set: &[HeightWork],
         pt: &mut ProofTree,
+        time: &mut Time,
     ) -> Result<(), &'static str> {
         let m = self.m.read().unwrap(); // keep a read lock, so no push is made.
         let mut set = set
@@ -174,13 +176,14 @@ impl AnnStore {
             *dst = Some(data);
             out = excess;
         }
+        debug!("{}", time.next("compute_tree: prepare"));
         // now that they're split, copy the hashes over in parallel.
         set.into_par_iter().for_each(|(c, _, dst)| {
             c.read_ready_anns(dst.unwrap());
         });
-
+        debug!("{}", time.next("compute_tree: read_ready_anns"));
         // compute the tree.
-        pt.compute(total_anns)
+        pt.compute(total_anns, time)
     }
 }
 

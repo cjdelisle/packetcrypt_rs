@@ -4,6 +4,7 @@ use log::debug;
 use packetcrypt_sys::*;
 use rayon::prelude::*;
 use std::convert::TryInto;
+use crate::blkmine::Time;
 
 #[derive(Default, Clone)]
 pub struct AnnData {
@@ -64,7 +65,7 @@ impl ProofTree {
         self.root_hash = None;
     }
 
-    pub fn compute(&mut self, count: usize) -> Result<(), &'static str> {
+    pub fn compute(&mut self, count: usize, time: &mut Time) -> Result<(), &'static str> {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
@@ -79,6 +80,7 @@ impl ProofTree {
 
         // Sort the data items
         data.par_sort_by(|a, b| a.hash_pfx().cmp(&b.hash_pfx()));
+        debug!("{}", time.next("compute_tree: par_sort_by()"));
 
         // Truncate the index table
         self.index_table.clear();
@@ -100,6 +102,7 @@ impl ProofTree {
                 panic!("list not sorted {:#x} < {:#x}", pfx, last_pfx);
             }
         }
+        debug!("{}", time.next("compute_tree: walk"));
         //debug!("Loaded {} out of {} anns", out.len(), data.len());
 
         // Copy the data to the location
@@ -115,9 +118,11 @@ impl ProofTree {
             };
             unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
         });
+        debug!("{}", time.next("compute_tree: putEntry()"));
 
         let total_anns_zero_included = self.index_table.len() + 1;
         unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
+        debug!("{}", time.next("compute_tree: prepare2()"));
 
         // Build the merkle tree
         let mut count_this_layer = total_anns_zero_included;
@@ -142,6 +147,7 @@ impl ProofTree {
         assert!(idx + 1 == odx);
         let mut rh = [0u8; 32];
         assert!(odx as u64 == unsafe { ProofTree_complete(self.raw, rh.as_mut_ptr()) });
+        debug!("{}", time.next("compute_tree: compute tree"));
 
         self.root_hash = Some(rh);
         self.size = self.index_table.len() as u32;
