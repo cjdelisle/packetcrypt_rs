@@ -413,6 +413,8 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
     );
 
+    drop(tree_l);
+
     debug!("{}", time.total("total time spent:"));
 
     bm.current_mining.lock().unwrap().replace(current_mining);
