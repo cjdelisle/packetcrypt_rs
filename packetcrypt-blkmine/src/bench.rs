@@ -41,7 +41,8 @@ impl Bencher {
             result += partial;
         }
         println!("average: {}", result / self.repeats);
-        block_miner.stop();
+        block_miner.request_stop();
+        block_miner.await_stop();
         Ok(())
     }
 }

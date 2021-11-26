@@ -364,9 +364,13 @@ void BlockMine_mine(BlockMine_t* bm,
     pthread_cond_broadcast(&ctx->g.cond);
 }
 
-void BlockMine_stop(BlockMine_t* bm) {
+void BlockMine_requestStop(BlockMine_t* bm) {
     BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
     reqState(ctx, ThreadState_STOPPED);
+}
+
+void BlockMine_awaitStop(BlockMine_t* bm) {
+    BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
     waitState(ctx, ThreadState_STOPPED);
 }
 

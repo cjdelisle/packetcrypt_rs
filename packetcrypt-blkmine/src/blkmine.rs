@@ -304,17 +304,37 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
     bh
 }
 
-fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
-    let mut timings = Vec::new();
-    let start = Instant::now();
-    timings.push(("", start.elapsed()));
+struct Time {
+    t0: Instant,
+    tp: Instant,
+}
+impl Time {
+    fn start() -> Time {
+        let t = Instant::now();
+        Time { t0: t, tp: t }
+    }
+    fn next(&mut self, name: &str) -> String {
+        let t = Instant::now();
+        let ms = (t - self.tp).as_millis();
+        self.tp = t;
+        format!("{} : {}ms", &util::pad_to(25, name.to_string()), ms)
+    }
+    fn total(&self, name: &str) -> String {
+        let t = Instant::now();
+        let ms = (t - self.t0).as_millis();
+        format!("{} : {}ms", &util::pad_to(25, name.to_string()), ms)
+    }
+}
 
-    bm.block_miner.stop();
-    timings.push(("block_miner.stop", start.elapsed()));
+fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
+    let mut time = Time::start();
+
+    bm.block_miner.request_stop();
+    debug!("{}", time.next("lock_miner.stop"));
 
     bm.ann_store
         .block(next_work.height - 1, next_work.header.hash_prev_block);
-    timings.push(("ann_store.block", start.elapsed()));
+    debug!("{}", time.next("ann_store.block"));
 
     let reload;
     if let Some(r) = reload_classes(bm, next_work) {
@@ -323,33 +343,33 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         debug!("Not mining, no anns ready");
         return;
     }
-    timings.push(("reload_classes", start.elapsed()));
+    debug!("{}", time.next("reload_classes"));
 
     let (index_table, real_target, current_mining);
     {
         debug!("Computing tree with {} classes", reload.best_set.len());
         let (tree, tree_num) = get_tree(bm, false);
-        timings.push(("get_tree", start.elapsed()));
+        debug!("{}", time.next("get_tree"));
         let mut tree_l = tree.lock().unwrap();
-        timings.push(("tree_l", start.elapsed()));
+        debug!("{}", time.next("tree.lock()"));
         tree_l.reset();
-        timings.push(("tree_l.reset", start.elapsed()));
+        debug!("{}", time.next("tree.reset()"));
         index_table = bm
             .ann_store
             .compute_tree(&reload.best_set, &mut tree_l)
             .unwrap();
-        timings.push(("ann_store.compute_tree", start.elapsed()));
+        debug!("{}", time.next("ann_store.compute_tree()"));
 
         debug!("Computing block header");
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
-        timings.push(("tree_l.get_commit", start.elapsed()));
+        debug!("{}", time.next("tree_l.get_commit()"));
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
-        timings.push(("compute_block_header", start.elapsed()));
+        debug!("{}", time.next("compute_block_header()"));
 
         let count = index_table.len();
         real_target =
             pc_get_effective_target(next_work.share_target, reload.ann_min_work, count as u64);
-        timings.push(("pc_get_effective_target", start.elapsed()));
+        debug!("{}", time.next("pc_get_effective_target()"));
         current_mining = CurrentMining {
             count: count as u32,
             ann_min_work: reload.ann_min_work,
@@ -362,11 +382,14 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         };
     };
 
+    bm.block_miner.await_stop();
+    debug!("{}", time.next("block_miner.await_stop()"));
+
     // Self-test
     let br = bm
         .block_miner
         .fake_mine(&current_mining.block_header[..], &index_table[..]);
-    timings.push(("block_miner.fake_mine", start.elapsed()));
+    debug!("{}", time.next("block_miner.fake_mine()"));
 
     debug!("Start mining...");
     bm.block_miner.mine(
@@ -375,7 +398,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         real_target,
         0,
     );
-    timings.push(("block_miner.mine", start.elapsed()));
+    debug!("{}", time.next("block_miner.mine()"));
 
     trace!(
         "Mining with header {}",
@@ -388,16 +411,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
     );
 
-    let max_size = timings.iter().map(|c| c.0.len()).max().unwrap();
-    let mut debug_timings = String::new();
-    let mut tuples = timings.windows(2);
-    while let Some(&[(_, dur1), (name, dur2)]) = tuples.next() {
-        debug_timings += "\n  ";
-        debug_timings += &util::pad_to(max_size, name.to_owned());
-        debug_timings += &format!(": {}ms", (dur2 - dur1).as_millis());
-    }
-    debug_timings += &format!("\n  total: {}ms", timings.last().unwrap().1.as_millis());
-    debug!("Elapsed time per section:{}", &debug_timings);
+    debug!("{}", time.total("total time spent:"));
 
     bm.current_mining.lock().unwrap().replace(current_mining);
 

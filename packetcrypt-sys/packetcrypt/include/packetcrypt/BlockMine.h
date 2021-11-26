@@ -57,6 +57,10 @@ void BlockMine_mine(BlockMine_t* bm,
     uint32_t effectiveTarget,
     uint32_t jobNum);
 
+void BlockMine_requestStop(BlockMine_t* bm);
+
+void BlockMine_awaitStop(BlockMine_t* bm);
+
 void BlockMine_stop(BlockMine_t* bm);
 
 void BlockMine_fakeMine(BlockMine_t* bm,
