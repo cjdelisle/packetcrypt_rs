@@ -90,11 +90,15 @@ impl ProofTree {
 
         self.index_table.par_iter().enumerate().for_each(|(i, mloc)|{
             let hash = self.db.get_hash(*mloc as usize);
-            let hash_next = self.db.get_hash(self.index_table[i+1] as usize);
+            let pfx_next = if self.index_table.len() > i+1 {
+                self.db.get_hash(self.index_table[i+1] as usize).to_u64()
+            } else {
+                u64::MAX
+            };
             let e = ProofTree_Entry_t {
                 hash: *hash,
                 start: hash.to_u64(),
-                end: hash_next.to_u64(),
+                end: pfx_next,
             };
             unsafe { ProofTree_putEntry(self.raw, (i + 1) as u32, &e as *const ProofTree_Entry_t) };
         });
