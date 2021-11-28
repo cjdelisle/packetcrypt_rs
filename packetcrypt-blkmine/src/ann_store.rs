@@ -11,7 +11,6 @@ use std::cmp::max;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
-use std::cell::UnsafeCell;
 
 #[derive(Debug)]
 pub struct ClassInfo {
@@ -64,7 +63,6 @@ impl AnnStore {
                 recent_blocks: HashMap::new(),
             }),
             next_class_id: AtomicUsize::new(1),
-            hash_store: Arc::default(),
         }
     }
 
