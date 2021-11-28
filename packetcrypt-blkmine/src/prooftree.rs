@@ -86,12 +86,15 @@ impl ProofTree {
                 Some(d.mloc as u32) // TODO: risk
             }
         }));
+        debug!("{}", time.next("compute_tree: index_table.extend()"));
+
         self.index_table.par_iter().enumerate().for_each(|(i, mloc)|{
             let hash = self.db.get_hash(*mloc as usize);
+            let hash_next = self.db.get_hash(self.index_table[i+1] as usize);
             let e = ProofTree_Entry_t {
                 hash: *hash,
                 start: hash.to_u64(),
-                end: 0,
+                end: hash_next.to_u64(),
             };
             unsafe { ProofTree_putEntry(self.raw, (i + 1) as u32, &e as *const ProofTree_Entry_t) };
         });

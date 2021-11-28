@@ -30,10 +30,10 @@ void ProofTree_prepare2(ProofTree_t* pt, uint64_t totalAnns)
     // setup the start and end fields
     tree->totalAnns = totalAnns;
     Buf_OBJSET(&tree->entries[totalAnns], 0xff);
-    for (uint64_t i = 0; i < totalAnns; i++) {
-        tree->entries[i].end = tree->entries[i+1].start;
-        assert(tree->entries[i].end > tree->entries[i].start);
-    }
+    // for (uint64_t i = 0; i < totalAnns; i++) {
+    //     tree->entries[i].end = tree->entries[i+1].start;
+    //     assert(tree->entries[i].end > tree->entries[i].start);
+    // }
 }
 
 ProofTree_Proof_t* ProofTree_mkProof(ProofTree_t* pt, const uint64_t annNumbers[4]) {
