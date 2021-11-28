@@ -5,12 +5,12 @@ use log::debug;
 use packetcrypt_sys::*;
 use rayon::prelude::*;
 use std::convert::TryInto;
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 
 #[derive(Default, Clone)]
 pub struct AnnData {
     pub hash: [u8; 32],
     pub mloc: u32,
-    pub index: u32,
 }
 
 impl AnnData {
@@ -69,54 +69,44 @@ impl ProofTree {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
-        let data = &mut self.ann_data[..count];
-        if data.is_empty() {
+        if count == 0 {
             return Err("no anns, cannot compute tree");
         }
-
-        if data.len() > self.capacity as usize {
+        if count > self.capacity as usize {
             return Err("too many anns");
         }
 
         // Sort the data items
-        data.par_sort_unstable_by_key(|a| a.hash_pfx());
+        self.ann_data[..count].par_sort_unstable_by_key(|a| a.hash_pfx());
         debug!("{}", time.next("compute_tree: par_sort_unstable_by_key()"));
 
         // Truncate the index table
         self.index_table.clear();
 
         let mut last_pfx = 0;
-        for d in data.iter_mut() {
+        let mut i = 0;
+        unsafe { self.index_table.set_len(count) };
+        self.ann_data[..count].iter().map(|d| {
             let pfx = d.hash_pfx();
-            // Deduplicate and insert in the index table
-            #[allow(clippy::comparison_chain)]
-            if pfx > last_pfx {
-                self.index_table.push(d.mloc);
-                // careful to skip entry 0 which is the 0-entry
-                d.index = self.index_table.len() as u32;
-                last_pfx = pfx;
-            } else if pfx == last_pfx {
+            if pfx == last_pfx {
                 //debug!("Drop ann with index {:#x}", pfx);
-                d.index = 0;
-            } else {
+                (0, d, pfx)
+            } else if pfx < last_pfx {
                 panic!("list not sorted {:#x} < {:#x}", pfx, last_pfx);
+            } else {
+                last_pfx = pfx;
+                i += 1;
+                (i, d, pfx)
             }
-        }
-        debug!("{}", time.next("compute_tree: walk"));
-        //debug!("Loaded {} out of {} anns", out.len(), data.len());
-
-        // Copy the data to the location
-        self.ann_data[..count].par_iter().for_each(|d| {
-            if d.index == 0 {
-                // Removed in dedupe stage
-                return;
-            }
+        }).par_bridge().for_each(|(i,d, pfx)|{
+            if i == 0 { return; }
+            unsafe { (*(&self.index_table[..] as *const [u32] as *mut [u32]))[i as usize] = d.mloc };
             let e = ProofTree_Entry_t {
                 hash: d.hash,
-                start: d.hash_pfx(),
+                start: pfx,
                 end: 0,
             };
-            unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
+            unsafe { ProofTree_putEntry(self.raw, i, &e as *const ProofTree_Entry_t) };
         });
         debug!("{}", time.next("compute_tree: putEntry()"));
 

@@ -139,7 +139,6 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
         for (i, &idx) in self.index_table[0..last].iter().enumerate() {
             out[i].hash = hashes[idx as usize].0;
             out[i].mloc = (self.base_offset + idx as usize) as u32;
-            out[i].index = 0; // used internally for other purposes
         }
     }
 
