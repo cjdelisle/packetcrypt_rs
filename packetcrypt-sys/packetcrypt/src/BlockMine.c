@@ -27,7 +27,7 @@
 
 typedef struct HeaderAndIndex_s {
     PacketCrypt_BlockHeader_t header;
-    uint32_t index[0];
+    const uint32_t* index;
 } HeaderAndIndex_t;
 
 typedef struct Worker_s Worker_t;
@@ -39,7 +39,7 @@ typedef struct Global_s {
     PacketCrypt_Announce_t* anns;
 
     // Altered only when workers are stopped
-    HeaderAndIndex_t* hai;
+    HeaderAndIndex_t hai;
     uint32_t annCount;
     uint32_t maxAnns;
     uint32_t effectiveTarget;
@@ -130,7 +130,7 @@ static void mine(Worker_t* w)
     Time_BEGIN(t);
 
     PacketCrypt_BlockHeader_t hdr;
-    Buf_OBJCPY(&hdr, &w->g->hai->header);
+    Buf_OBJCPY(&hdr, &w->g->hai.header);
     hdr.nonce = w->nonceId;
 
     uint32_t lowNonce = w->lowNonce;
@@ -146,7 +146,7 @@ static void mine(Worker_t* w)
             for (int j = 0; j < 4; j++) {
                 uint64_t itnum = res.ann_llocs[j] = CryptoCycle_getItemNo(&w->pcState) % w->g->annCount;
                 assert(itnum < w->g->annCount);
-                uint64_t x = res.ann_mlocs[j] = w->g->hai->index[itnum];
+                uint64_t x = res.ann_mlocs[j] = w->g->hai.index[itnum];
                 assert(x < w->g->maxAnns);
                 CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &w->g->anns[x];
                 assert(CryptoCycle_update(&w->pcState, it));
@@ -248,9 +248,6 @@ BlockMine_Create_t BlockMine_create(uint64_t maxmem, int threads, BlockMine_Call
     out->numWorkers = threads;
 
     out->g.anns = (PacketCrypt_Announce_t*) ptr;
-    out->g.hai = (HeaderAndIndex_t*) (&out->g.anns[maxAnns]);
-    // Lazy man's assertion
-    out->g.hai->index[maxAnns - 1] = 0;
     out->g.annCount = 0; // set when we begin mining
     out->g.maxAnns = maxAnns;
     out->g.effectiveTarget = 0; // set when we begin mining
@@ -353,20 +350,19 @@ void BlockMine_mine(BlockMine_t* bm,
     ctx->g.annCount = annCount;
     ctx->g.effectiveTarget = effectiveTarget;
     ctx->g.jobNum = jobNum;
-    memcpy(&ctx->g.hai->header, header, sizeof(PacketCrypt_BlockHeader_t));
-    // Assertion
-    memset(ctx->g.hai->index, 0xff, ctx->pub.maxAnns * 4);
-    memcpy(ctx->g.hai->index, annIndexes, annCount * 4);
-    for (uint32_t i = 0; i < annCount; i++) {
-        assert(annIndexes[i] < ctx->g.maxAnns);
-    }
+    memcpy(&ctx->g.hai.header, header, sizeof(PacketCrypt_BlockHeader_t));
+    ctx->g.hai.index = annIndexes;
     reqState(ctx, ThreadState_RUNNING);
     pthread_cond_broadcast(&ctx->g.cond);
 }
 
-void BlockMine_stop(BlockMine_t* bm) {
+void BlockMine_requestStop(BlockMine_t* bm) {
     BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
     reqState(ctx, ThreadState_STOPPED);
+}
+
+void BlockMine_awaitStop(BlockMine_t* bm) {
+    BlockMine_pvt_t* ctx = (BlockMine_pvt_t*) bm;
     waitState(ctx, ThreadState_STOPPED);
 }
 

@@ -901,6 +901,12 @@ extern "C" {
     );
 }
 extern "C" {
+    pub fn BlockMine_requestStop(bm: *mut BlockMine_t);
+}
+extern "C" {
+    pub fn BlockMine_awaitStop(bm: *mut BlockMine_t);
+}
+extern "C" {
     pub fn BlockMine_stop(bm: *mut BlockMine_t);
 }
 extern "C" {

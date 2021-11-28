@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
+use crate::blkmine::Time;
 use bytes::BufMut;
 use log::debug;
 use packetcrypt_sys::*;
 use rayon::prelude::*;
 use std::convert::TryInto;
 
+#[derive(Default, Clone)]
 pub struct AnnData {
     pub hash: [u8; 32],
     pub mloc: u32,
     pub index: u32,
 }
+
 impl AnnData {
     fn hash_pfx(&self) -> u64 {
         u64::from_le_bytes(self.hash[0..8].try_into().unwrap())
@@ -20,10 +23,14 @@ pub struct ProofTree {
     raw: *mut ProofTree_t,
     capacity: u32,
     size: u32,
-    root_hash: Option<[u8; 32]>,
+    pub root_hash: Option<[u8; 32]>,
+    pub ann_data: Vec<AnnData>,
+    pub index_table: Vec<u32>,
 }
+
 unsafe impl Send for ProofTree {}
 unsafe impl Sync for ProofTree {}
+
 impl Drop for ProofTree {
     fn drop(&mut self) {
         unsafe {
@@ -48,37 +55,45 @@ impl ProofTree {
             size: 0,
             capacity: max_anns,
             root_hash: None,
+            ann_data: vec![AnnData::default(); max_anns as usize], // TODO: this is going to take ages
+            index_table: Vec::with_capacity(max_anns as usize),
         }
     }
+
     pub fn reset(&mut self) {
         self.size = 0;
         self.root_hash = None;
     }
-    pub fn compute(&mut self, data: &mut [AnnData]) -> Result<Vec<u32>, &'static str> {
+
+    pub fn compute(&mut self, count: usize, time: &mut Time) -> Result<(), &'static str> {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
+        let data = &mut self.ann_data[..count];
         if data.is_empty() {
             return Err("no anns, cannot compute tree");
         }
+
         if data.len() > self.capacity as usize {
             return Err("too many anns");
         }
 
         // Sort the data items
-        data.par_sort_by(|a, b| a.hash_pfx().cmp(&b.hash_pfx()));
+        data.par_sort_unstable_by_key(|a| a.hash_pfx());
+        debug!("{}", time.next("compute_tree: par_sort_unstable_by_key()"));
 
-        // Create the index table
-        let mut out = Vec::with_capacity(self.size as usize);
+        // Truncate the index table
+        self.index_table.clear();
+
         let mut last_pfx = 0;
         for d in data.iter_mut() {
             let pfx = d.hash_pfx();
             // Deduplicate and insert in the index table
             #[allow(clippy::comparison_chain)]
             if pfx > last_pfx {
-                out.push(d.mloc);
+                self.index_table.push(d.mloc);
                 // careful to skip entry 0 which is the 0-entry
-                d.index = out.len() as u32;
+                d.index = self.index_table.len() as u32;
                 last_pfx = pfx;
             } else if pfx == last_pfx {
                 //debug!("Drop ann with index {:#x}", pfx);
@@ -87,10 +102,11 @@ impl ProofTree {
                 panic!("list not sorted {:#x} < {:#x}", pfx, last_pfx);
             }
         }
-        debug!("Loaded {} out of {} anns", out.len(), data.len());
+        debug!("{}", time.next("compute_tree: walk"));
+        //debug!("Loaded {} out of {} anns", out.len(), data.len());
 
         // Copy the data to the location
-        data.par_iter().for_each(|d| {
+        self.ann_data[..count].par_iter().for_each(|d| {
             if d.index == 0 {
                 // Removed in dedupe stage
                 return;
@@ -102,9 +118,11 @@ impl ProofTree {
             };
             unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
         });
+        debug!("{}", time.next("compute_tree: putEntry()"));
 
-        let total_anns_zero_included = out.len() + 1;
+        let total_anns_zero_included = self.index_table.len() + 1;
         unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
+        debug!("{}", time.next("compute_tree: prepare2()"));
 
         // Build the merkle tree
         let mut count_this_layer = total_anns_zero_included;
@@ -129,11 +147,13 @@ impl ProofTree {
         assert!(idx + 1 == odx);
         let mut rh = [0u8; 32];
         assert!(odx as u64 == unsafe { ProofTree_complete(self.raw, rh.as_mut_ptr()) });
+        debug!("{}", time.next("compute_tree: compute tree"));
 
         self.root_hash = Some(rh);
-        self.size = out.len() as u32;
-        Ok(out)
+        self.size = self.index_table.len() as u32;
+        Ok(())
     }
+
     pub fn get_commit(&self, ann_min_work: u32) -> Result<bytes::BytesMut, &'static str> {
         let hash = if let Some(h) = self.root_hash.as_ref() {
             h
@@ -147,6 +167,7 @@ impl ProofTree {
         out.put_u64_le(self.size as u64);
         Ok(out)
     }
+
     pub fn mk_proof(&mut self, ann_nums: &[u64; 4]) -> Result<bytes::BytesMut, &'static str> {
         if self.root_hash.is_none() {
             return Err("Not in computed state, call compute() first");
