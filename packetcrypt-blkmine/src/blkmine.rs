@@ -2,6 +2,7 @@
 use crate::ann_store::AnnStore;
 use crate::blkminer::{BlkMiner, BlkResult, OnShare};
 use crate::prooftree::ProofTree;
+use crate::databuf::DataBuf;
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use log::{debug, info, trace, warn};
@@ -440,12 +441,13 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
         None
     };
     let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+    let db = Arc::new(DataBuf::new(Arc::clone(&block_miner)));
     let bm = BlkMine(Arc::new(BlkMineS {
         block_miner: Arc::clone(&block_miner),
-        ann_store: AnnStore::new(block_miner),
+        ann_store: AnnStore::new(Arc::clone(&db)),
         trees: [
-            Mutex::new(ProofTree::new(max_anns)),
-            Mutex::new(ProofTree::new(max_anns)),
+            Mutex::new(ProofTree::new(max_anns, Arc::clone(&db))),
+            Mutex::new(ProofTree::new(max_anns, db)),
         ],
         current_mining: Mutex::new(None),
         current_work: Mutex::new(None),

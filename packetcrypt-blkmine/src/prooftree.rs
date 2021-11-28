@@ -1,25 +1,15 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::blkmine::Time;
+use crate::types::AnnData;
+use crate::databuf::DataBuf;
 use bytes::BufMut;
 use log::debug;
 use packetcrypt_sys::*;
 use rayon::prelude::*;
-use std::convert::TryInto;
-use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
-
-#[derive(Default, Clone)]
-pub struct AnnData {
-    pub hash: [u8; 32],
-    pub mloc: u32,
-}
-
-impl AnnData {
-    fn hash_pfx(&self) -> u64 {
-        u64::from_le_bytes(self.hash[0..8].try_into().unwrap())
-    }
-}
+use std::sync::Arc;
 
 pub struct ProofTree {
+    db: Arc<DataBuf>,
     raw: *mut ProofTree_t,
     capacity: u32,
     size: u32,
@@ -49,8 +39,9 @@ fn fff_entry() -> *const ProofTree_Entry_t {
 }
 
 impl ProofTree {
-    pub fn new(max_anns: u32) -> ProofTree {
+    pub fn new(max_anns: u32, db: Arc<DataBuf>) -> ProofTree {
         ProofTree {
+            db,
             raw: unsafe { ProofTree_create(max_anns) },
             size: 0,
             capacity: max_anns,
@@ -77,36 +68,32 @@ impl ProofTree {
         }
 
         // Sort the data items
-        self.ann_data[..count].par_sort_unstable_by_key(|a| a.hash_pfx());
+        self.ann_data[..count].par_sort_unstable_by_key(|a| a.hash_pfx);
         debug!("{}", time.next("compute_tree: par_sort_unstable_by_key()"));
 
         // Truncate the index table
         self.index_table.clear();
 
         let mut last_pfx = 0;
-        let mut i = 0;
-        unsafe { self.index_table.set_len(count) };
-        self.ann_data[..count].iter().map(|d| {
-            let pfx = d.hash_pfx();
-            if pfx == last_pfx {
+        self.index_table.extend(self.ann_data[..count].iter().filter_map(|d| {
+            if d.hash_pfx == last_pfx {
                 //debug!("Drop ann with index {:#x}", pfx);
-                (0, d, pfx)
-            } else if pfx < last_pfx {
-                panic!("list not sorted {:#x} < {:#x}", pfx, last_pfx);
+                None
+            } else if d.hash_pfx < last_pfx {
+                panic!("list not sorted {:#x} < {:#x}", d.hash_pfx, last_pfx);
             } else {
-                last_pfx = pfx;
-                i += 1;
-                (i, d, pfx)
+                last_pfx = d.hash_pfx;
+                Some(d.mloc as u32) // TODO: risk
             }
-        }).par_bridge().for_each(|(i,d, pfx)|{
-            if i == 0 { return; }
-            unsafe { (*(&self.index_table[..] as *const [u32] as *mut [u32]))[(i - 1) as usize] = d.mloc };
+        }));
+        self.index_table.par_iter().enumerate().for_each(|(i, mloc)|{
+            let hash = self.db.get_hash(*mloc as usize);
             let e = ProofTree_Entry_t {
-                hash: d.hash,
-                start: pfx,
+                hash: *hash,
+                start: hash.to_u64(),
                 end: 0,
             };
-            unsafe { ProofTree_putEntry(self.raw, i, &e as *const ProofTree_Entry_t) };
+            unsafe { ProofTree_putEntry(self.raw, (i + 1) as u32, &e as *const ProofTree_Entry_t) };
         });
         debug!("{}", time.next("compute_tree: putEntry()"));
 

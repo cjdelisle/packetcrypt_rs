@@ -1,7 +1,7 @@
-use crate::ann_buf::Hash;
+use crate::types::Hash;
 use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
 use crate::blkmine::{AnnChunk, HeightWork, Time};
-use crate::blkminer::BlkMiner;
+use crate::databuf::DataBuf;
 use crate::prooftree::ProofTree;
 use log::{debug, warn};
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
@@ -11,6 +11,7 @@ use std::cmp::max;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
+use std::cell::UnsafeCell;
 
 #[derive(Debug)]
 pub struct ClassInfo {
@@ -41,12 +42,12 @@ pub struct AnnStore {
 thread_local!(static ANN_BUF: RefCell<Option<Box<AnnBufSz>>> = RefCell::new(None));
 
 impl AnnStore {
-    pub fn new(bm: Arc<BlkMiner>) -> Self {
+    pub fn new(db: Arc<DataBuf>) -> Self {
         // initial buf store, capable of filling the received miner entirely.
-        assert!(bm.max_anns >= ANNBUF_SZ as u32);
+        assert!(db.max_anns >= ANNBUF_SZ);
         let buf_store = (0..)
-            .map(|i| Box::new(AnnBufSz::new(Arc::clone(&bm), i * ANNBUF_SZ)))
-            .take(bm.max_anns as usize / ANNBUF_SZ); // this rounds the result down.
+            .map(|i| Box::new(AnnBufSz::new(Arc::clone(&db), i * ANNBUF_SZ)))
+            .take(db.max_anns / ANNBUF_SZ); // this rounds the result down.
 
         let hw_store = HeightWork {
             block_height: 0,
@@ -63,6 +64,7 @@ impl AnnStore {
                 recent_blocks: HashMap::new(),
             }),
             next_class_id: AtomicUsize::new(1),
+            hash_store: Arc::default(),
         }
     }
 

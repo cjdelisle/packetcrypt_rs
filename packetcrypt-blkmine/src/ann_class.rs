@@ -1,4 +1,5 @@
-use crate::ann_buf::{AnnBuf, Hash};
+use crate::types::{Hash,AnnData};
+use crate::ann_buf::AnnBuf;
 use crate::blkmine::HeightWork;
 use crate::prooftree;
 use log::{debug, warn};
@@ -174,7 +175,7 @@ impl AnnClass {
         (anns, m.bufs.len())
     }
 
-    pub fn read_ready_anns(&self, mut out: &mut [prooftree::AnnData]) {
+    pub fn read_ready_anns(&self, mut out: &mut [AnnData]) {
         let m = self.m.read().unwrap();
         // split the out buffer into sub-buffers each of which has enough space to hold
         // the number of bufs that were ready when tallied, which may be changing as we speak...
