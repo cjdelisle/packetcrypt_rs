@@ -100,7 +100,7 @@ impl ProofTree {
             }
         }).par_bridge().for_each(|(i,d, pfx)|{
             if i == 0 { return; }
-            unsafe { (*(&self.index_table[..] as *const [u32] as *mut [u32]))[i as usize] = d.mloc };
+            unsafe { (*(&self.index_table[..] as *const [u32] as *mut [u32]))[(i - 1) as usize] = d.mloc };
             let e = ProofTree_Entry_t {
                 hash: d.hash,
                 start: pfx,
