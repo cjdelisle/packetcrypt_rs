@@ -26,6 +26,11 @@ static FFF_ENTRY: ProofTree_Entry_t = ProofTree_Entry_t {
     start: 0xffffffffffffffff,
     end: 0xffffffffffffffff,
 };
+static ZERO_ENTRY: ProofTree_Entry_t = ProofTree_Entry_t {
+    hash: [0; 32],
+    start: 0,
+    end: 0,
+};
 
 impl ProofTree {
     pub fn new(max_anns: u32, db: Arc<DataBuf>) -> ProofTree {
@@ -95,6 +100,8 @@ impl ProofTree {
         debug!("{}", time.next("compute_tree: putEntry()"));
 
         let total_anns_zero_included = self.index_table.len() + 1;
+        tbl[0] = ZERO_ENTRY;
+        tbl[0].end = tbl[1].start;
         tbl[self.index_table.len() + 1] = FFF_ENTRY;
         //unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
         debug!("{} total {}", time.next("compute_tree: prepare2()"), total_anns_zero_included);
