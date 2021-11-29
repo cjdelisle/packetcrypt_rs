@@ -37,3 +37,4 @@ portable = ["packetcrypt-sys/portable"]
 
 [profile.release]
 debug = true
+lto = "fat"

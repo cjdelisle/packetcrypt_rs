@@ -89,7 +89,7 @@ impl AnnStore {
                         return Err(());
                     }
                 };
-                let (sz, opt_ab) = self.push_anns1(hw, ac.anns, ac.indexes, ab);
+                let (sz, opt_ab) = self.push_anns1(hw, ac.anns, indexes, ab);
                 *opt_buf.borrow_mut() = opt_ab;
                 Ok(sz)
             });
