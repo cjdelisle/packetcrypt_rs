@@ -67,9 +67,15 @@ void ProofTree_hashPair(const ProofTree_Entry_t* table, uint64_t odx, uint64_t i
     et[odx].start = et[idx].start;
     et[odx].end = et[idx+1].end;
     if (__builtin_expect(et[idx].end <= et[idx].start, 0)) {
-        printf("et[%llu].end <= et[%llu].start (%llx <= %llx)\n",
+        printf("idx et[%llu].end <= et[%llu].start (%llx <= %llx)\n",
             (unsigned long long)idx, (unsigned long long)idx,
             (unsigned long long)et[idx].end, (unsigned long long)et[idx].start);
+        abort();
+    }
+    if (__builtin_expect(et[odx].end <= et[odx].start, 0)) {
+        printf("odx et[%llu].end <= et[%llu].start (%llx <= %llx)\n",
+            (unsigned long long)odx, (unsigned long long)odx,
+            (unsigned long long)et[odx].end, (unsigned long long)et[odx].start);
         abort();
     }
 }

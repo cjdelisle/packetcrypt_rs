@@ -38,11 +38,19 @@ impl ProofTree {
         let tbl_sz = unsafe { PacketCryptProof_entryCount(max_anns as u64) } as usize;
         ProofTree {
             db,
-            tbl: Some(vec![ProofTree_Entry_t::default(); tbl_sz]),
+            tbl: Some(unsafe {
+                let mut v = Vec::with_capacity(tbl_sz);
+                v.set_len(tbl_sz);
+                v
+            }),
             size: 0,
             capacity: max_anns,
             root_hash: None,
-            ann_data: vec![AnnData::default(); max_anns as usize], // TODO: this is going to take ages
+            ann_data: unsafe {
+                let mut v = Vec::with_capacity(max_anns as usize);
+                v.set_len(max_anns as usize);
+                v
+            },
             index_table: Vec::with_capacity(max_anns as usize),
         }
     }
@@ -113,6 +121,7 @@ impl ProofTree {
         while count_this_layer > 1 {
             if (count_this_layer & 1) != 0 {
                 tbl[odx + 1] = FFF_ENTRY;
+                tbl[odx].end = FFF_ENTRY.start;
                 count_this_layer += 1;
                 odx += 1;
             }
