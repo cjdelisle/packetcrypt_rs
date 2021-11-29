@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 pub struct ProofTree {
     db: Arc<DataBuf>,
-    raw: *mut ProofTree_t,
+    tbl: Option<Vec<ProofTree_Entry_t>>,
     capacity: u32,
     size: u32,
     pub root_hash: Option<[u8; 32]>,
@@ -21,28 +21,19 @@ pub struct ProofTree {
 unsafe impl Send for ProofTree {}
 unsafe impl Sync for ProofTree {}
 
-impl Drop for ProofTree {
-    fn drop(&mut self) {
-        unsafe {
-            ProofTree_destroy(self.raw);
-        }
-    }
-}
-
 static FFF_ENTRY: ProofTree_Entry_t = ProofTree_Entry_t {
     hash: [0xff_u8; 32],
     start: 0xffffffffffffffff,
     end: 0xffffffffffffffff,
 };
-fn fff_entry() -> *const ProofTree_Entry_t {
-    &FFF_ENTRY as *const ProofTree_Entry_t
-}
 
 impl ProofTree {
     pub fn new(max_anns: u32, db: Arc<DataBuf>) -> ProofTree {
+        //let raw_tree = unsafe { ProofTree_create(max_anns) };
+        let tbl_sz = unsafe { PacketCryptProof_entryCount(max_anns as u64) } as usize;
         ProofTree {
             db,
-            raw: unsafe { ProofTree_create(max_anns) },
+            tbl: Some(vec![ProofTree_Entry_t::default(); tbl_sz]),
             size: 0,
             capacity: max_anns,
             root_hash: None,
@@ -88,24 +79,24 @@ impl ProofTree {
         }));
         debug!("{}", time.next("compute_tree: index_table.extend()"));
 
-        self.index_table.par_iter().enumerate().for_each(|(i, mloc)|{
+        let mut tbl = self.tbl.take().unwrap();
+        self.index_table.par_iter().zip(tbl[1..].par_iter_mut()).enumerate().for_each(|(i, (mloc, ent))|{
             let hash = self.db.get_hash(*mloc as usize);
             let pfx_next = if self.index_table.len() > i+1 {
                 self.db.get_hash(self.index_table[i+1] as usize).to_u64()
             } else {
                 u64::MAX
             };
-            let e = ProofTree_Entry_t {
-                hash: *hash,
-                start: hash.to_u64(),
-                end: pfx_next,
-            };
-            unsafe { ProofTree_putEntry(self.raw, (i + 1) as u32, &e as *const ProofTree_Entry_t) };
+            ent.hash = *hash;
+            ent.start = hash.to_u64();
+            ent.end = pfx_next;
+            assert!(ent.end > ent.start);
         });
         debug!("{}", time.next("compute_tree: putEntry()"));
 
         let total_anns_zero_included = self.index_table.len() + 1;
-        unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
+        tbl[self.index_table.len() + 1] = FFF_ENTRY;
+        //unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
         debug!("{} total {}", time.next("compute_tree: prepare2()"), total_anns_zero_included);
 
         // Build the merkle tree
@@ -114,7 +105,7 @@ impl ProofTree {
         let mut idx = 0;
         while count_this_layer > 1 {
             if (count_this_layer & 1) != 0 {
-                unsafe { ProofTree_putEntry(self.raw, odx as u32, fff_entry()) };
+                tbl[odx + 1] = FFF_ENTRY;
                 count_this_layer += 1;
                 odx += 1;
             }
@@ -122,7 +113,7 @@ impl ProofTree {
                 .into_par_iter()
                 .step_by(2)
                 .for_each(|i| unsafe {
-                    ProofTree_hashPair(self.raw, (odx + i / 2) as u64, (idx + i) as u64);
+                    ProofTree_hashPair(tbl.as_ptr(), (odx + i / 2) as u64, (idx + i) as u64);
                 });
             idx += count_this_layer;
             count_this_layer /= 2;
@@ -130,9 +121,13 @@ impl ProofTree {
         }
         assert!(idx + 1 == odx);
         let mut rh = [0u8; 32];
-        assert!(odx as u64 == unsafe { ProofTree_complete(self.raw, rh.as_mut_ptr()) });
+        assert!(odx as u64 == unsafe {
+            ProofTree_complete2(tbl.as_ptr(), total_anns_zero_included as u64, rh.as_mut_ptr())
+        });
+        //assert!(odx as u64 == unsafe { ProofTree_complete(self.raw, rh.as_mut_ptr()) });
         debug!("{}", time.next("compute_tree: compute tree"));
 
+        self.tbl = Some(tbl);
         self.root_hash = Some(rh);
         self.size = self.index_table.len() as u32;
         Ok(())
@@ -162,7 +157,11 @@ impl ProofTree {
             }
         }
         Ok(unsafe {
-            let proof = ProofTree_mkProof(self.raw, ann_nums.as_ptr());
+            let proof = ProofTree_mkProof(self.tbl.as_deref_mut().unwrap().as_ptr(), 
+                (self.index_table.len() + 1) as u64,
+                self.root_hash.unwrap().as_ptr(),
+                ann_nums.as_ptr(),
+            );
             let mut out = bytes::BytesMut::with_capacity((*proof).size as usize);
             let sl = std::slice::from_raw_parts((*proof).data, (*proof).size as usize);
             out.put(sl);

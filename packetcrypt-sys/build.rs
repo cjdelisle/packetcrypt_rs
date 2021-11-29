@@ -58,6 +58,7 @@ fn main() {
             .header("bindings.h")
             .clang_args(&["-I", "packetcrypt/include"])
             .generate_comments(false)
+            .derive_default(true)
             .whitelist_function(".*")
             .whitelist_type("ExportMe")
             .generate()

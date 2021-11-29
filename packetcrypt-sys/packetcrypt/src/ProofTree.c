@@ -38,11 +38,19 @@ void ProofTree_prepare2(ProofTree_t* pt, uint64_t totalAnns)
     // }
 }
 
-ProofTree_Proof_t* ProofTree_mkProof(ProofTree_t* pt, const uint64_t annNumbers[4]) {
+ProofTree_Proof_t* ProofTree_mkProof(
+    const ProofTree_Entry_t* table,
+    const uint64_t annCount,
+    const uint8_t rootHash[32],
+    const uint64_t annNumbers[4]
+) {
     ProofTree_Proof_t* out = malloc(sizeof(ProofTree_Proof_t));
     assert(out);
     int size = 0;
-    out->data = PacketCryptProof_mkProof(&size, &pt->tree, annNumbers);
+    const Entry_t* et = (const Entry_t*) table;
+    Buf32_t rootBuf;
+    memcpy(&rootBuf, rootHash, 32);
+    out->data = PacketCryptProof_mkProof(&size, et, annCount, &rootBuf, annNumbers);
     out->size = size;
     return out;
 }
@@ -51,19 +59,28 @@ void ProofTree_destroyProof(ProofTree_Proof_t* ptp) {
     free(ptp);
 }
 
-void ProofTree_hashPair(ProofTree_t* pt, uint64_t odx, uint64_t idx)
+void ProofTree_hashPair(const ProofTree_Entry_t* table, uint64_t odx, uint64_t idx)
 {
-    PacketCryptProof_Tree2_t* tree = (PacketCryptProof_Tree2_t*) &pt->tree;
+    Entry_t* et = (Entry_t*) table;
     struct TwoEntries { Entry_t e[2]; };
-    Hash_COMPRESS32_OBJ(&tree->entries[odx].hash, (struct TwoEntries*)(&tree->entries[idx]));
-    tree->entries[odx].start = tree->entries[idx].start;
-    tree->entries[odx].end = tree->entries[idx+1].end;
-    if (__builtin_expect(tree->entries[idx].end <= tree->entries[idx].start, 0)) {
-        printf("tree->entries[%llu].end <= tree->entries[%llu].start (%llx <= %llx)\n",
+    Hash_COMPRESS32_OBJ(&et[odx].hash, (struct TwoEntries*)(&et[idx]));
+    et[odx].start = et[idx].start;
+    et[odx].end = et[idx+1].end;
+    if (__builtin_expect(et[idx].end <= et[idx].start, 0)) {
+        printf("et[%llu].end <= et[%llu].start (%llx <= %llx)\n",
             (unsigned long long)idx, (unsigned long long)idx,
-            (unsigned long long)tree->entries[idx].end, (unsigned long long)tree->entries[idx].start);
+            (unsigned long long)et[idx].end, (unsigned long long)et[idx].start);
         abort();
     }
+}
+
+uint64_t ProofTree_complete2(const ProofTree_Entry_t* table, uint64_t annCountZeroIncl, uint8_t* rootHash)
+{
+    uint64_t odx = PacketCryptProof_entryCount(annCountZeroIncl);
+    Buf32_t b;
+    Hash_COMPRESS32_OBJ(&b, &table[odx - 1]);
+    memcpy(rootHash, b.bytes, 32);
+    return odx;
 }
 
 uint64_t ProofTree_complete(ProofTree_t* pt, uint8_t* rootHash)
@@ -78,4 +95,9 @@ uint64_t ProofTree_complete(ProofTree_t* pt, uint8_t* rootHash)
 void ProofTree_putEntry(ProofTree_t* pt, uint32_t index, const ProofTree_Entry_t* entry)
 {
     Buf_OBJCPY(&pt->tree.entries[index - 1], entry);
+}
+
+ProofTree_Entry_t* ProofTree_getTable(ProofTree_t* pt)
+{
+    return (ProofTree_Entry_t*) pt->tree.entries;
 }
