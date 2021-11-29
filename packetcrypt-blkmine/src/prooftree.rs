@@ -106,7 +106,7 @@ impl ProofTree {
 
         let total_anns_zero_included = self.index_table.len() + 1;
         unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
-        debug!("{}", time.next("compute_tree: prepare2()"));
+        debug!("{} total {}", time.next("compute_tree: prepare2()"), total_anns_zero_included);
 
         // Build the merkle tree
         let mut count_this_layer = total_anns_zero_included;
