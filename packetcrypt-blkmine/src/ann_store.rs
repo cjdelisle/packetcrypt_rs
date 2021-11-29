@@ -72,34 +72,49 @@ impl AnnStore {
     }
 
     pub fn push_anns(&self, hw: HeightWork, ac: &AnnChunk) -> usize {
-        ANN_BUF.with(|opt_buf| {
-            let ab = if let Some(ab) = opt_buf.borrow_mut().take() {
-                ab
-            } else {
-                let m = self.m.read().unwrap();
-                if let Some(ab) = steal_non_mining_buf(&m) {
+        let mut indexes = ac.indexes;
+        let mut total = 0;
+        loop {
+            if indexes.len() == 0 {
+                return total;
+            }
+            let ret = ANN_BUF.with(|opt_buf| {
+                let ab = if let Some(ab) = opt_buf.borrow_mut().take() {
                     ab
                 } else {
-                    return 0;
+                    let m = self.m.read().unwrap();
+                    if let Some(ab) = steal_non_mining_buf(&m) {
+                        ab
+                    } else {
+                        return Err(());
+                    }
+                };
+                let (sz, opt_ab) = self.push_anns1(hw, ac.anns, ac.indexes, ab);
+                *opt_buf.borrow_mut() = opt_ab;
+                Ok(sz)
+            });
+            match ret {
+                Err(_) => return total,
+                Ok(sz) => {
+                    indexes = &indexes[..sz];
+                    total += sz;
                 }
-            };
-            let (sz, opt_ab) = self.push_anns1(hw, ac, ab);
-            *opt_buf.borrow_mut() = opt_ab;
-            sz
-        })
+            }
+        }
     }
 
     fn push_anns1(
         &self,
         hw: HeightWork,
-        ac: &AnnChunk,
+        all_anns: &[&[u8]],
+        interesting_indexes: &[u32],
         buf: Box<AnnBufSz>,
     ) -> (usize, Option<Box<AnnBufSz>>) {
         loop {
             {
                 let m = self.m.read().unwrap();
                 if let Some(class) = m.classes.get(&hw) {
-                    return class.push_anns(ac.anns, ac.indexes, buf);
+                    return class.push_anns(all_anns, interesting_indexes, buf);
                 }
             }
             {

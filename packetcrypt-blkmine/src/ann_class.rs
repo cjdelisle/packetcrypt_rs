@@ -117,7 +117,8 @@ impl AnnClass {
             let newbuf = if let Some(buf) = maybe_buf.take() {
                 buf
             } else {
-                warn!("Not enough buf space to take anns");
+                // This can happen when there is a race after a new buf was just inserted.
+                //warn!("Not enough buf space to take anns");
                 return (total_consumed, None);
             };
             let oldtop = {
