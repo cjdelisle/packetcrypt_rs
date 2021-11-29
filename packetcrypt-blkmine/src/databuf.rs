@@ -14,7 +14,11 @@ impl DataBuf {
         let max_anns = bm.max_anns as usize;
         Self {
             bm,
-            hashes: UnsafeCell::new(vec![Hash::default(); max_anns]),
+            hashes: UnsafeCell::new(unsafe {
+                let mut v = Vec::with_capacity(max_anns);
+                v.set_len(max_anns);
+                v
+            }),
             max_anns,
         }
     }
