@@ -57,10 +57,12 @@ void ProofTree_hashPair(ProofTree_t* pt, uint64_t odx, uint64_t idx)
     Hash_COMPRESS32_OBJ(&tree->entries[odx].hash, (struct TwoEntries*)(&tree->entries[idx]));
     tree->entries[odx].start = tree->entries[idx].start;
     tree->entries[odx].end = tree->entries[idx+1].end;
-    assert(tree->entries[idx].end > tree->entries[idx].start);
-    assert(tree->entries[idx+1].end > tree->entries[idx+1].start || (
-        tree->entries[idx+1].start == UINT64_MAX &&
-        tree->entries[idx+1].end == UINT64_MAX));
+    if (__builtin_expect(tree->entries[idx].end <= tree->entries[idx].start, 0)) {
+        printf("tree->entries[%llu].end <= tree->entries[%llu].start (%llx <= %llx)\n",
+            (unsigned long long)idx, (unsigned long long)idx,
+            (unsigned long long)tree->entries[idx].end, (unsigned long long)tree->entries[idx].start);
+        abort();
+    }
 }
 
 uint64_t ProofTree_complete(ProofTree_t* pt, uint8_t* rootHash)
