@@ -67,7 +67,7 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
             }
 
             // actually store ann in miner, with the index offset.
-            self.db.put_ann(self.base_offset + i, ann, &hashes[i]);
+            self.db.put_ann(self.base_offset + i, ann, &hashes[idx as usize]);
         }
 
         indexes.len()
