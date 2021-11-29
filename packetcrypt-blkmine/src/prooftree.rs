@@ -93,8 +93,8 @@ impl ProofTree {
         debug!("{}", time.next("compute_tree: index_table.extend()"));
 
         let mut tbl = self.tbl.take().unwrap();
-        self.index_table.par_iter().zip(tbl[1..].par_iter_mut()).enumerate().for_each(|(i, (mloc, ent))|{
-            let hash = self.db.get_hash(*mloc as usize);
+        self.index_table.par_iter().zip(tbl[1..].par_iter_mut()).enumerate().for_each(|(i, (&mloc, ent))|{
+            let hash = self.db.get_hash(mloc as usize);
             let pfx_next = if self.index_table.len() > i+1 {
                 self.db.get_hash(self.index_table[i+1] as usize).to_u64()
             } else {
@@ -110,7 +110,7 @@ impl ProofTree {
         let total_anns_zero_included = self.index_table.len() + 1;
         tbl[0] = ZERO_ENTRY;
         tbl[0].end = tbl[1].start;
-        tbl[self.index_table.len() + 1] = FFF_ENTRY;
+        assert!(tbl[0].end > tbl[0].start);
         //unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
         debug!("{} total {}", time.next("compute_tree: prepare2()"), total_anns_zero_included);
 
@@ -120,8 +120,7 @@ impl ProofTree {
         let mut idx = 0;
         while count_this_layer > 1 {
             if (count_this_layer & 1) != 0 {
-                tbl[odx + 1] = FFF_ENTRY;
-                tbl[odx].end = FFF_ENTRY.start;
+                tbl[odx] = FFF_ENTRY;
                 count_this_layer += 1;
                 odx += 1;
             }
