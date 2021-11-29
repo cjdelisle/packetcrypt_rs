@@ -98,8 +98,8 @@ impl AnnStore {
                 while td.hashes.len() < ac.anns.len() {
                     td.hashes.push(Hash::default());
                 }
-                for index in ac.indexes[total..].iter() {
-                    td.hashes[*index as usize].compute(ac.anns[*index as usize]);
+                for index in ac.indexes[total..].iter().cloned() {
+                    td.hashes[index as usize].compute(ac.anns[index as usize]);
                 }
                 let (sz, opt_ab) = self.push_anns1(hw, ac.anns, &ac.indexes[total..], ab, &td.hashes);
                 if let Some(ab) = opt_ab {

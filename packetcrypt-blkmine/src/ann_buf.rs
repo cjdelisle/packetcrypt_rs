@@ -57,11 +57,11 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
         }
 
         let ann_data = self.ann_data.get();
-        for (i, ann) in (ann_index..).zip(indexes.iter().map(|&ci| anns[ci as usize])) {
+        for (i, (ann, idx)) in (ann_index..).zip(indexes.iter().map(|&ci| (anns[ci as usize], ci))) {
             unsafe {
                 // SAFETY: the starting index comes from an atomic, and we won't write out of indexes.len() range.
                 (*ann_data)[i] = AnnData{
-                    hash_pfx: hashes[i].to_u64(),
+                    hash_pfx: hashes[idx as usize].to_u64(),
                     mloc: self.base_offset + i,
                 };
             }
