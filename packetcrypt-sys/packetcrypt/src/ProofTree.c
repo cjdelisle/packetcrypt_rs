@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdio.h>
 
 struct ProofTree_s {
     PacketCryptProof_Tree_t tree;

@@ -72,10 +72,9 @@ impl AnnStore {
     }
 
     pub fn push_anns(&self, hw: HeightWork, ac: &AnnChunk) -> usize {
-        let mut indexes = ac.indexes;
         let mut total = 0;
         loop {
-            if indexes.len() == 0 {
+            if total == ac.indexes.len() {
                 return total;
             }
             let ret = ANN_BUF.with(|opt_buf| {
@@ -89,16 +88,13 @@ impl AnnStore {
                         return Err(());
                     }
                 };
-                let (sz, opt_ab) = self.push_anns1(hw, ac.anns, indexes, ab);
+                let (sz, opt_ab) = self.push_anns1(hw, ac.anns, &ac.indexes[total..], ab);
                 *opt_buf.borrow_mut() = opt_ab;
                 Ok(sz)
             });
             match ret {
                 Err(_) => return total,
-                Ok(sz) => {
-                    indexes = &indexes[..sz];
-                    total += sz;
-                }
+                Ok(sz) => total += sz,
             }
         }
     }
