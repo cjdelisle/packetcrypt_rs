@@ -38,7 +38,13 @@ pub struct AnnStore {
     next_class_id: AtomicUsize,
 }
 
-thread_local!(static ANN_BUF: RefCell<Option<Box<AnnBufSz>>> = RefCell::new(None));
+#[derive(Default)]
+struct ThreadData {
+    hashes: Vec<Hash>,
+    spare_buf: Option<Box<AnnBufSz>>,
+}
+
+thread_local!(static ANN_BUF: RefCell<ThreadData> = RefCell::default());
 
 impl AnnStore {
     pub fn new(db: Arc<DataBuf>) -> Self {
@@ -77,8 +83,9 @@ impl AnnStore {
             if total == ac.indexes.len() {
                 return total;
             }
-            let ret = ANN_BUF.with(|opt_buf| {
-                let ab = if let Some(ab) = opt_buf.borrow_mut().take() {
+            let ret = ANN_BUF.with(|thread_data| {
+                let mut td = thread_data.borrow_mut();
+                let ab = if let Some(ab) = td.spare_buf.take() {
                     ab
                 } else {
                     let m = self.m.read().unwrap();
@@ -88,8 +95,16 @@ impl AnnStore {
                         return Err(());
                     }
                 };
-                let (sz, opt_ab) = self.push_anns1(hw, ac.anns, &ac.indexes[total..], ab);
-                *opt_buf.borrow_mut() = opt_ab;
+                while td.hashes.len() < ac.anns.len() {
+                    td.hashes.push(Hash::default());
+                }
+                for index in ac.indexes[total..].iter() {
+                    td.hashes[*index as usize].compute(ac.anns[*index as usize]);
+                }
+                let (sz, opt_ab) = self.push_anns1(hw, ac.anns, &ac.indexes[total..], ab, &td.hashes);
+                if let Some(ab) = opt_ab {
+                    td.spare_buf.replace(ab);
+                }
                 Ok(sz)
             });
             match ret {
@@ -105,12 +120,13 @@ impl AnnStore {
         all_anns: &[&[u8]],
         interesting_indexes: &[u32],
         buf: Box<AnnBufSz>,
+        hashes: &Vec<Hash>
     ) -> (usize, Option<Box<AnnBufSz>>) {
         loop {
             {
                 let m = self.m.read().unwrap();
                 if let Some(class) = m.classes.get(&hw) {
-                    return class.push_anns(all_anns, interesting_indexes, buf);
+                    return class.push_anns(all_anns, interesting_indexes, buf, hashes);
                 }
             }
             {

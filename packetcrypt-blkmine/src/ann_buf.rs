@@ -38,7 +38,7 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
 
     /// Push a slice of announcements into this buffer.
     /// Returns the number of actually inserted anns.
-    pub fn push_anns(&self, anns: &[&[u8]], mut indexes: &[u32]) -> usize {
+    pub fn push_anns(&self, anns: &[&[u8]], mut indexes: &[u32], hashes: &Vec<Hash>) -> usize {
         assert!(!self.locked);
 
         // atomically advance the next_ann_index to "claim" the space.
@@ -57,19 +57,17 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
         }
 
         let ann_data = self.ann_data.get();
-        let mut temp = Hash::default();
         for (i, ann) in (ann_index..).zip(indexes.iter().map(|&ci| anns[ci as usize])) {
-            temp.compute(ann);
             unsafe {
                 // SAFETY: the starting index comes from an atomic, and we won't write out of indexes.len() range.
                 (*ann_data)[i] = AnnData{
-                    hash_pfx: temp.to_u64(),
+                    hash_pfx: hashes[i].to_u64(),
                     mloc: self.base_offset + i,
                 };
             }
 
             // actually store ann in miner, with the index offset.
-            self.db.put_ann(self.base_offset + i, ann, &temp);
+            self.db.put_ann(self.base_offset + i, ann, &hashes[i]);
         }
 
         indexes.len()

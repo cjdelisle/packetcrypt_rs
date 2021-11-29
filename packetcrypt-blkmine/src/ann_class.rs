@@ -96,6 +96,7 @@ impl AnnClass {
         anns: &[&[u8]],
         mut indexes: &[u32],
         buf: Box<AnnBufSz>,
+        hashes: &Vec<Hash>,
     ) -> (usize, Option<Box<AnnBufSz>>) {
         let mut maybe_buf = Some(buf);
         let mut total_consumed = 0;
@@ -104,7 +105,7 @@ impl AnnClass {
                 let m = self.m.read().unwrap();
                 match &m.topbuf {
                     Some(tb) => {
-                        let consumed = tb.push_anns(anns, indexes);
+                        let consumed = tb.push_anns(anns, indexes, hashes);
                         total_consumed += consumed;
                         if consumed == indexes.len() {
                             return (total_consumed, maybe_buf);
@@ -126,7 +127,7 @@ impl AnnClass {
                 match &m.topbuf {
                     Some(tb) => {
                         // Need to double-check
-                        let consumed = tb.push_anns(anns, indexes);
+                        let consumed = tb.push_anns(anns, indexes, hashes);
                         if consumed > 0 {
                             total_consumed += consumed;
                             if consumed == indexes.len() {
