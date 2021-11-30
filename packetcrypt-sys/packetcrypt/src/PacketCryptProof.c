@@ -430,7 +430,7 @@ uint8_t* PacketCryptProof_mkProof(
     const Entry_t* announces[PacketCrypt_NUM_ANNS];
     for (int i = 0; i < PacketCrypt_NUM_ANNS; i++) {
         annNumbers2[i] = annNumbers[i] + 1;
-        announces[i] = &entryTable[annNumbers[i]];
+        announces[i] = &entryTable[annNumbers[i] + 1];
     }
     PacketCryptProof_Big_t* big = mkProofBig(entryTable, entryCountZeroIncl, root, annNumbers2);
     uint8_t* ret = compress(sizeOut, big, announces);
