@@ -119,6 +119,7 @@ impl ProofTree {
         let mut odx = count_this_layer;
         let mut idx = 0;
         while count_this_layer > 1 {
+            assert!(tbl[odx-1].end == u64::MAX);
             if (count_this_layer & 1) != 0 {
                 tbl[odx] = FFF_ENTRY;
                 count_this_layer += 1;
@@ -135,6 +136,7 @@ impl ProofTree {
             odx += count_this_layer;
         }
         assert!(idx + 1 == odx);
+        assert!(tbl[idx].start == 0 && tbl[idx].end == u64::MAX);
         let mut rh = [0u8; 32];
         assert!(odx as u64 == unsafe {
             ProofTree_complete2(tbl.as_ptr(), total_anns_zero_included as u64, rh.as_mut_ptr())
