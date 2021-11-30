@@ -93,14 +93,15 @@ impl ProofTree {
         debug!("{}", time.next("compute_tree: index_table.extend()"));
 
         let mut tbl = self.tbl.take().unwrap();
-        self.index_table.par_iter().zip(tbl[1..].par_iter_mut()).enumerate().for_each(|(i, (&mloc, ent))|{
-            let hash = self.db.get_hash(mloc as usize);
+        tbl[1..self.index_table.len()+1].par_iter_mut().enumerate().for_each(|(i, ent)| {
+            let mloc = self.index_table[i] as usize;
+            let hash = self.db.get_hash(mloc);
             let pfx_next = if self.index_table.len() > i+1 {
-                self.db.get_hash(self.index_table[i+1] as usize).to_u64()
+                self.db.get_hash_pfx(self.index_table[i+1] as usize)
             } else {
                 u64::MAX
             };
-            ent.hash = *hash;
+            ent.hash = hash.as_bytes();
             ent.start = hash.to_u64();
             ent.end = pfx_next;
             assert!(ent.end > ent.start);
@@ -112,7 +113,7 @@ impl ProofTree {
         tbl[0].end = tbl[1].start;
         assert!(tbl[0].end > tbl[0].start);
         //unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
-        debug!("{} total {}", time.next("compute_tree: prepare2()"), total_anns_zero_included);
+        //debug!("{} total {}", time.next("compute_tree: prepare2()"), total_anns_zero_included);
 
         // Build the merkle tree
         let mut count_this_layer = total_anns_zero_included;

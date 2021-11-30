@@ -195,7 +195,7 @@ impl AnnStore {
             *dst = Some(data);
             out = excess;
         }
-        debug!("{}", time.next("compute_tree: prepare"));
+        //debug!("{}", time.next("compute_tree: prepare"));
         // now that they're split, copy the hashes over in parallel.
         set.into_par_iter().for_each(|(c, _, dst)| {
             c.read_ready_anns(dst.unwrap());

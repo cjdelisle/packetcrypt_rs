@@ -364,7 +364,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         bm.ann_store
             .compute_tree(&reload.best_set, &mut tree_l, &mut time)
             .unwrap();
-        debug!("{}", time.next("ann_store.compute_tree()"));
+        //debug!("{}", time.next("ann_store.compute_tree()"));
 
         //debug!("Computing block header");
         let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
@@ -388,7 +388,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         };
     };
 
-    debug!("{}", time.next("Create Block Header"));
+    //debug!("{}", time.next("Create Block Header"));
 
     bm.block_miner.await_stop();
     debug!("{}", time.next("block_miner.await_stop()"));
@@ -398,14 +398,14 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         .block_miner
         .fake_mine(&current_mining.block_header[..], &tree_l.index_table[..]);
 
-    debug!("Start mining...");
+    //debug!("Start mining...");
     bm.block_miner.mine(
         &current_mining.block_header[..],
         &tree_l.index_table[..],
         real_target,
         0,
     );
-    debug!("{}", time.next("block_miner.mine()"));
+    //debug!("{}", time.next("block_miner.mine()"));
 
     trace!(
         "Mining with header {}",

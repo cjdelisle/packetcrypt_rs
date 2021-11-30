@@ -23,7 +23,7 @@ impl HashTree {
         }
 
         let mut pf = self.origin.lock().unwrap();
-        if pf.root_hash.as_ref() == self.root_hash.as_deref() {
+        if pf.root_hash == self.root_hash.map(|rh|rh.as_bytes()) {
             pf.reset();
         }
         self.root_hash = None

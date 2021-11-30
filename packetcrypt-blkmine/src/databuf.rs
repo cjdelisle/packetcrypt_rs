@@ -22,6 +22,12 @@ impl DataBuf {
             max_anns,
         }
     }
+    pub fn get_hash_pfx(&self, index: usize) -> u64 {
+        unsafe {
+            let x: &Hash = &(*self.hashes.get())[index];
+            x.to_u64()
+        }
+    }
     pub fn get_hash(&self, index: usize) -> Hash {
         unsafe { (*self.hashes.get())[index] }
     }
