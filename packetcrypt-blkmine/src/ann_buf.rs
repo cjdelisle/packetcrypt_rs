@@ -10,7 +10,7 @@ use std::sync::Arc;
 /// Every AnnBuf has a base address (in the big memory storage area).
 pub struct AnnBuf<const ANNBUF_SZ: usize> {
     db: Arc<DataBuf>,
-    base_offset: usize,
+    pub base_offset: usize,
 
     /// The index of the next push.
     /// Allows atomic adds to allocate space for additional anns.

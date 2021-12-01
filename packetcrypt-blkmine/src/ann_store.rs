@@ -253,6 +253,9 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
                 empty_count += 1;
             }
             Ok(Some(mut buf)) => {
+                if buf.next_ann_index() > 0 {
+                    debug!("Stealing buf at loc {}", buf.base_offset);
+                }
                 buf.reset();
                 return Some(buf);
             }
