@@ -104,7 +104,9 @@ impl ProofTree {
             ent.hash = hash.as_bytes();
             ent.start = hash.to_u64();
             ent.end = pfx_next;
-            assert!(ent.end > ent.start);
+            if ent.end <= ent.start {
+                panic!("ent.end {:#} <= ent.start {:#} idx: {}", ent.end, ent.start, i);
+            }
         });
         debug!("{}", time.next("compute_tree: putEntry()"));
 
