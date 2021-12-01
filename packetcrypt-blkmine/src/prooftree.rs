@@ -105,7 +105,7 @@ impl ProofTree {
             ent.start = hash.to_u64();
             ent.end = pfx_next;
             if ent.end <= ent.start {
-                panic!("ent.end {:#} <= ent.start {:#} idx: {}", ent.end, ent.start, i);
+                panic!("ent.end <= ent.start as mloc: {}\n", mloc);
             }
         });
         debug!("{}", time.next("compute_tree: putEntry()"));
