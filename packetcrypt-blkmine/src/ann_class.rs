@@ -6,7 +6,7 @@ use log::{debug, warn};
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::mem;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock, atomic::AtomicBool, atomic::Ordering::Relaxed};
 
 pub const ANNBUF_SZ: usize = 32 * 1024;
 pub type AnnBufSz = AnnBuf<ANNBUF_SZ>;
@@ -39,9 +39,6 @@ struct AnnClassMut {
     /// A hash tree will only care to include either all anns in a class or none
     /// so this is not needed per-AnnBuf.
     dependent_trees: Vec<HashTree>,
-
-    /// Are we currently mining?
-    mining: bool,
 }
 
 /// AnnClass is a "classification" or grouping of announcements which are similar in their
@@ -55,6 +52,9 @@ pub struct AnnClass {
     // The type of anns in this class.
     block_height: u32,
     min_ann_work: u32,
+
+    /// Are we currently mining?
+    pub mining: AtomicBool,
 
     pub id: usize,
 }
@@ -82,12 +82,12 @@ impl AnnClass {
                 bufs,
                 topbuf,
                 dependent_trees: vec![],
-                mining: false,
             }),
             block_hash: Default::default(),
             block_height: hw.block_height as u32,
             min_ann_work: hw.work,
             id,
+            mining: AtomicBool::default(),
         }
     }
 
@@ -154,7 +154,7 @@ impl AnnClass {
 
     pub fn steal_buf(&self) -> Result<Option<Box<AnnBufSz>>, ()> {
         let mut m = self.m.write().unwrap();
-        if m.mining {
+        if self.mining.load(Relaxed) {
             return Err(());
         }
         if m.bufs.is_empty() {
@@ -166,7 +166,12 @@ impl AnnClass {
         Ok(m.bufs.pop())
     }
 
-    pub fn ready_anns(&self) -> usize {
+    pub fn stop_mining(&self) {
+        self.mining.store(false, Relaxed);
+    }
+
+    pub fn begin_mining(&self) -> usize {
+        self.mining.store(true, Relaxed);
         let m = self.m.read().unwrap();
         m.bufs.iter().map(|b| b.next_ann_index()).sum()
     }

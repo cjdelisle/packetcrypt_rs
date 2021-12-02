@@ -173,18 +173,19 @@ impl AnnStore {
 
     pub fn compute_tree(
         &self,
-        set: &[HeightWork],
+        hwset: &[HeightWork],
         pt: &mut ProofTree,
         time: &mut Time,
     ) -> Result<(), &'static str> {
         let m = self.m.read().unwrap();
-        let mut set = set
-            .into_par_iter() // parallel, since locks must be acquired for all classes.
-            .map(|hw| {
-                let c = &m.classes[hw]; // will panic if a wrong hw is passed.
-                (c, c.ready_anns(), None) // count again, since they may have changed.
-            })
-            .collect::<Vec<_>>();
+        let mut set = Vec::new();
+        for (hw, c) in m.classes.iter() {
+            if hwset.contains(hw) {
+                set.push((c, c.begin_mining(), None));
+            } else {
+                c.stop_mining();
+            }
+        }
         let total_anns = set.iter().map(|(_, r, _)| r).sum();
 
         // split the out buffer into sub-buffers for each class according to
