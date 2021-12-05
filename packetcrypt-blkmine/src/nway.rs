@@ -47,8 +47,10 @@ impl<'a, T: Ord + Clone> Iterator for Nway<'a, T> {
         }
         if let Some(ii) = self.heap.pop() {
             let out = ii.list[0].clone();
-            prefetch(&ii.list[1]);
-            self.update_list = Some(&ii.list[1..]);
+            if !ii.list.is_empty() {
+                prefetch(&ii.list[1]);
+                self.update_list = Some(&ii.list[1..]);
+            }
             Some(out)
         } else {
             None
@@ -58,5 +60,5 @@ impl<'a, T: Ord + Clone> Iterator for Nway<'a, T> {
 fn prefetch<T>(t: &T) {
     let p = t as *const T as *const u8;
     #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
-    unsafe { core::arch::x86_64::_mm_prefetch::<core::arch::x86_64::_MM_HINT_T0>(p) }
+    unsafe { core::arch::x86_64::_mm_prefetch::<{ core::arch::x86_64::_MM_HINT_T0 }>(p) }
 }
