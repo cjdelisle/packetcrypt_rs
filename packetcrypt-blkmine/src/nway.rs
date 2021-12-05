@@ -1,5 +1,6 @@
 use std::cmp::{Ord,Ordering};
 use std::collections::BinaryHeap;
+use packetcrypt_util::util;
 
 struct NwayItem<'a, T: Ord + Clone>
 {
@@ -48,7 +49,7 @@ impl<'a, T: Ord + Clone> Iterator for Nway<'a, T> {
         if let Some(ii) = self.heap.pop() {
             let out = ii.list[0].clone();
             if ii.list.len() > 1 {
-                prefetch(&ii.list[1]);
+                util::prefetch(&ii.list[1]);
                 self.update_list = Some(&ii.list[1..]);
             }
             Some(out)
@@ -56,9 +57,4 @@ impl<'a, T: Ord + Clone> Iterator for Nway<'a, T> {
             None
         }
     }
-}
-fn prefetch<T>(t: &T) {
-    let p = t as *const T as *const i8;
-    #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
-    unsafe { core::arch::x86_64::_mm_prefetch::<{ core::arch::x86_64::_MM_HINT_T0 }>(p) }
 }

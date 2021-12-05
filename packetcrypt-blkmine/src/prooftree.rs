@@ -66,19 +66,57 @@ impl ProofTree {
         }
 
         let mut tbl = self.tbl.take().unwrap();
-        tbl[1..self.index_table.len()+1].par_iter_mut().enumerate().for_each(|(i, ent)| {
-            let mloc = self.index_table[i] as usize;
-            let hash = self.db.get_hash(mloc);
-            let pfx_next = if self.index_table.len() > i+1 {
-                self.db.get_hash_pfx(self.index_table[i+1] as usize)
-            } else {
-                u64::MAX
-            };
-            ent.hash = hash.as_bytes();
-            ent.start = hash.to_u64();
-            ent.end = pfx_next;
-            if ent.end <= ent.start {
-                panic!("ent.end <= ent.start as mloc: {}\n", mloc);
+        //for (i, ent) in tbl[1..self.index_table.len()+1]
+        
+        const CHUNK_SZ: usize = 256;
+        let mut tbl_s = &mut tbl[..];
+        let mut slots = Vec::with_capacity( (1..self.index_table.len()+1).step_by(CHUNK_SZ).len() );
+        loop {
+            if tbl_s.len() <= CHUNK_SZ - 3 {
+                slots.push(tbl_s);
+                break;
+            }
+            let (data, excess) = tbl_s.split_at_mut(CHUNK_SZ);
+            slots.push(data);
+            tbl_s = excess;
+        }
+        let num_slots = slots.len();
+        slots.par_iter_mut().enumerate().for_each(|(block_num, chunk)| {
+            let i = block_num * CHUNK_SZ;
+            if block_num == num_slots - 1 {
+                // last chunk, special treatment
+                for ((ent, i), mloc) in chunk.iter_mut().zip(i..).zip(self.index_table[i..].iter()) {
+                    let mloc = *mloc as usize;
+                    let hash = self.db.get_hash(mloc);
+                    ent.hash = hash.as_bytes();
+                    ent.start = hash.to_u64();
+                    ent.end = if i+1 < self.index_table.len() {
+                        self.db.get_hash_pfx(self.index_table[i+1] as usize)
+                    } else {
+                        u64::MAX
+                    };
+                    if ent.end <= ent.start {
+                        panic!("ent.end <= ent.start as mloc: {}\n", mloc);
+                    }
+                }
+            }
+            let mut mloc = self.index_table[i] as usize;
+            let mut hash = self.db.get_hash(mloc);
+            let mut mloc_plus1 = self.index_table[i+1] as usize;
+            let mut hash_plus1 = self.db.get_hash(mloc_plus1);
+            for (ent, mloc_plus2) in chunk.iter_mut().zip(self.index_table[i+2..].iter()) {
+                let mloc_plus2 = *mloc_plus2 as usize;
+                self.db.prefetch_hash(mloc_plus2);
+                ent.hash = hash.as_bytes();
+                ent.start = hash.to_u64();
+                ent.end = hash_plus1.to_u64();
+                hash = hash_plus1;
+                hash_plus1 = self.db.get_hash(mloc_plus1);
+                mloc = mloc_plus1;
+                mloc_plus1 = mloc_plus2;
+                if ent.end <= ent.start {
+                    panic!("ent.end <= ent.start as mloc: {}\n", mloc);
+                }
             }
         });
         debug!("{}", time.next("compute_tree: putEntry()"));

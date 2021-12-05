@@ -2,6 +2,7 @@ use crate::types::Hash;
 use crate::blkminer::BlkMiner;
 use std::cell::UnsafeCell;
 use std::sync::Arc;
+use packetcrypt_util::util;
 
 pub struct DataBuf {
     hashes: UnsafeCell<Vec<Hash>>,
@@ -30,6 +31,9 @@ impl DataBuf {
     }
     pub fn get_hash(&self, index: usize) -> Hash {
         unsafe { (*self.hashes.get())[index] }
+    }
+    pub fn prefetch_hash(&self, index: usize) {
+        unsafe { util::prefetch(&(*self.hashes.get())[index]) }
     }
     pub fn put_ann(&self, index: usize, ann: &[u8], hash: &Hash) {
         self.bm.put_ann(index as u32, ann);
