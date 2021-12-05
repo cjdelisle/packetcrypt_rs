@@ -58,7 +58,7 @@ impl<'a, T: Ord + Clone> Iterator for Nway<'a, T> {
     }
 }
 fn prefetch<T>(t: &T) {
-    let p = t as *const T as *const u8;
+    let p = t as *const T as *const i8;
     #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
     unsafe { core::arch::x86_64::_mm_prefetch::<{ core::arch::x86_64::_MM_HINT_T0 }>(p) }
 }
