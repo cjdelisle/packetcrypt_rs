@@ -124,6 +124,13 @@ impl<const ANNBUF_SZ: usize, const RANGES: usize> AnnBuf<ANNBUF_SZ, RANGES> {
         end - begin
     }
 
+    pub fn slice(&self, range: usize) -> &[AnnData] {
+        assert!(self.locked);
+        let (begin, end) = self.range(range);
+        let ptr = unsafe { &*self.ann_data.get() };
+        &ptr[begin..end]        
+    }
+
     pub fn iter<'a>(&'a self, range: usize) -> impl Iterator<Item = &AnnData> + 'a {
         assert!(self.locked);
         let (begin, end) = self.range(range);

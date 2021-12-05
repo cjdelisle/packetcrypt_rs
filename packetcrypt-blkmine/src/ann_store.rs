@@ -198,7 +198,7 @@ impl AnnStore {
                 for (_, bufs) in &set {
                     for b in bufs {
                         total_anns_range += b.range_count(i);
-                        nw.add_iter(b.iter(i));
+                        nw.add_list(b.slice(i));
                     }
                 }
                 let mut all_range = Vec::with_capacity(total_anns_range);

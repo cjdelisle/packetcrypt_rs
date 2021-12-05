@@ -1,51 +1,62 @@
 use std::cmp::{Ord,Ordering};
 use std::collections::BinaryHeap;
 
-struct NwayItem<T: Ord, I: Iterator<Item = T>>
+struct NwayItem<'a, T: Ord + Clone>
 {
-    item: T,
-    iter: I,
+    list: &'a [T],
 }
-impl<T: Ord, I: Iterator<Item = T>> PartialEq for NwayItem<T, I> {
+impl<'a, T: Ord + Clone> NwayItem<'a, T> {
+    fn item(&self) -> Option<&'a T> {
+        self.list.get(0)
+    }
+}
+impl<'a, T: Ord + Clone> PartialEq for NwayItem<'a, T> {
     fn eq(&self, other: &Self) -> bool {
-        self.item == other.item
+        self.item() == other.item()
     }
 }
-impl<T: Ord, I: Iterator<Item = T>> Eq for NwayItem<T, I> {}
-impl<T: Ord, I: Iterator<Item = T>> PartialOrd for NwayItem<T, I> {
+impl<'a, T: Ord + Clone> Eq for NwayItem<'a, T> {}
+impl<'a, T: Ord + Clone> PartialOrd for NwayItem<'a, T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        other.item.partial_cmp(&self.item)
+        other.item().partial_cmp(&self.item())
     }
 }
-impl<T: Ord, I: Iterator<Item = T>> Ord for NwayItem<T, I> {
+impl<'a, T: Ord + Clone> Ord for NwayItem<'a, T> {
     fn cmp(&self, other: &Self) -> Ordering {
         // Inverted so that we'll get bottom values first, though BinaryHeap is top-down
-        other.item.cmp(&self.item)
+        other.item().cmp(&self.item())
     }
 }
-pub struct Nway<T: Ord, I: Iterator<Item = T>> {
-    heap: BinaryHeap<NwayItem<T, I>>
+pub struct Nway<'a, T: Ord + Clone> {
+    heap: BinaryHeap<NwayItem<'a, T>>,
+    update_list: Option<&'a [T]>,
 }
-impl<T: Ord, I: Iterator<Item = T>> Nway<T, I> {
-    pub fn add_iter(&mut self, mut iter: I) {
-        if let Some(item) = iter.next() {
-            let x = NwayItem { item, iter };
-            self.heap.push(x);
-        }
+impl<'a, T: Ord + Clone> Nway<'a, T> {
+    pub fn add_list(&mut self, list: &'a [T]) {
+        self.heap.push(NwayItem { list });
     }
     pub fn with_capacity(initial: usize) -> Self {
-        Self{ heap: BinaryHeap::with_capacity(initial) }
+        Self{ update_list: None, heap: BinaryHeap::with_capacity(initial) }
     }
 }
-impl<T: Ord, I: Iterator<Item = T>> Iterator for Nway<T, I> {
+impl<'a, T: Ord + Clone> Iterator for Nway<'a, T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
+        if let Some(ul) = self.update_list.take() {
+            self.add_list(ul);
+        }
         if let Some(ii) = self.heap.pop() {
-            let out = ii.item;
-            self.add_iter(ii.iter);
+            let out = ii.list[0].clone();
+            prefetch(&ii.list[1]);
+            self.update_list = Some(&ii.list[1..]);
             Some(out)
         } else {
             None
         }
     }
+}
+fn prefetch<T>(t: &T) {
+    let p = t as *const T as *const u8;
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
+    unsafe { core::arch::x86_64::_mm_prefetch::<core::arch::x86_64::_MM_HINT_T0>(p) }
 }
