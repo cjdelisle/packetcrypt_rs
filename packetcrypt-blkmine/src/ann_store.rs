@@ -1,4 +1,4 @@
-use crate::types::Hash;
+use crate::types::{Hash,AnnData};
 use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
 use crate::blkmine::{AnnChunk, HeightWork, Time};
 use crate::databuf::DataBuf;
@@ -202,13 +202,20 @@ impl AnnStore {
                     }
                 }
                 let mut all_range = Vec::with_capacity(total_anns_range);
+                let mut chunk = vec![AnnData::default(); 128];
                 let mut last = 0;
-                for ad in nw {
-                    if ad.hash_pfx > last {
-                        all_range.push(ad.mloc as u32);
-                        last = ad.hash_pfx;
-                    } else if ad.hash_pfx < last {
-                        panic!("hash prefix went backwards!");
+                loop {
+                    let len = nw.next_multi(&mut chunk[..]);
+                    if len == 0 {
+                        break;
+                    }
+                    for (_, ad) in (0..len).zip(chunk.iter()) {
+                        if ad.hash_pfx > last {
+                            all_range.push(ad.mloc as u32);
+                            last = ad.hash_pfx;
+                        } else if ad.hash_pfx < last {
+                            panic!("hash prefix went backwards!");
+                        }
                     }
                 }
                 if last == u64::MAX {
