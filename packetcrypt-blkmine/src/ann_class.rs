@@ -2,7 +2,7 @@ use crate::types::{Hash,AnnData};
 use crate::ann_buf::AnnBuf;
 use crate::blkmine::HeightWork;
 use crate::prooftree;
-use log::{debug, warn};
+use log::debug;
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::mem;
@@ -170,16 +170,24 @@ impl AnnClass {
         self.mining.store(false, Relaxed);
     }
 
-    pub fn begin_mining(&self) -> usize {
+    pub fn begin_mining(&self) {
         self.mining.store(true, Relaxed);
-        let m = self.m.read().unwrap();
-        m.bufs.iter().map(|b| b.next_ann_index()).sum()
     }
 
     pub fn ready_anns_bufs(&self) -> (usize, usize) {
         let m = self.m.read().unwrap();
         let anns = m.bufs.iter().map(|b| b.next_ann_index()).sum();
         (anns, m.bufs.len())
+    }
+
+    pub fn take_bufs(&self) -> Vec<Box<AnnBufSz>> {
+        let mut m = self.m.write().unwrap();
+        m.bufs.drain(..).collect::<Vec<_>>()
+    }
+
+    pub fn return_bufs(&self, mut v: Vec<Box<AnnBufSz>>) {
+        let mut m = self.m.write().unwrap();
+        m.bufs.extend(v.drain(..));
     }
 
     pub fn read_ready_anns(&self, mut out: &mut [AnnData]) {

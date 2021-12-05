@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::blkmine::Time;
-use crate::types::AnnData;
 use crate::databuf::DataBuf;
 use bytes::BufMut;
 use log::debug;
@@ -11,10 +10,9 @@ use std::sync::Arc;
 pub struct ProofTree {
     db: Arc<DataBuf>,
     tbl: Option<Vec<ProofTree_Entry_t>>,
-    capacity: u32,
     size: u32,
     pub root_hash: Option<[u8; 32]>,
-    pub ann_data: Vec<AnnData>,
+    //pub ann_data: Vec<AnnData>,
     pub index_table: Vec<u32>,
 }
 
@@ -44,13 +42,12 @@ impl ProofTree {
                 v
             }),
             size: 0,
-            capacity: max_anns,
             root_hash: None,
-            ann_data: unsafe {
-                let mut v = Vec::with_capacity(max_anns as usize);
-                v.set_len(max_anns as usize);
-                v
-            },
+            // ann_data: unsafe {
+            //     let mut v = Vec::with_capacity(max_anns as usize);
+            //     v.set_len(max_anns as usize);
+            //     v
+            // },
             index_table: Vec::with_capacity(max_anns as usize),
         }
     }
@@ -60,37 +57,13 @@ impl ProofTree {
         self.root_hash = None;
     }
 
-    pub fn compute(&mut self, count: usize, time: &mut Time) -> Result<(), &'static str> {
+    pub fn compute(&mut self, time: &mut Time) -> Result<(), &'static str> {
         if self.root_hash.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
-        if count == 0 {
+        if self.index_table.len() == 0 {
             return Err("no anns, cannot compute tree");
         }
-        if count > self.capacity as usize {
-            return Err("too many anns");
-        }
-
-        // Sort the data items
-        self.ann_data[..count].par_sort_unstable_by_key(|a| a.hash_pfx);
-        debug!("{}", time.next("compute_tree: par_sort_unstable_by_key()"));
-
-        // Truncate the index table
-        self.index_table.clear();
-
-        let mut last_pfx = 0;
-        self.index_table.extend(self.ann_data[..count].iter().filter_map(|d| {
-            if d.hash_pfx == last_pfx {
-                //debug!("Drop ann with index {:#x}", pfx);
-                None
-            } else if d.hash_pfx < last_pfx {
-                panic!("list not sorted {:#x} < {:#x}", d.hash_pfx, last_pfx);
-            } else {
-                last_pfx = d.hash_pfx;
-                Some(d.mloc as u32) // TODO: risk
-            }
-        }));
-        debug!("{}", time.next("compute_tree: index_table.extend()"));
 
         let mut tbl = self.tbl.take().unwrap();
         tbl[1..self.index_table.len()+1].par_iter_mut().enumerate().for_each(|(i, ent)| {

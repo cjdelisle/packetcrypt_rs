@@ -177,33 +177,50 @@ impl AnnStore {
         pt: &mut ProofTree,
         time: &mut Time,
     ) -> Result<(), &'static str> {
-        let m = self.m.read().unwrap();
-        let mut set = Vec::new();
-        for (hw, c) in m.classes.iter() {
-            if hwset.contains(hw) {
-                set.push((c, c.begin_mining(), None));
-            } else {
-                c.stop_mining();
+        {
+            let m = self.m.read().unwrap();
+            let mut set = Vec::new();
+            let mut total_bufs = 0;
+            for (hw, c) in m.classes.iter() {
+                if hwset.contains(hw) {
+                    c.begin_mining();
+                    let bufs = c.take_bufs();
+                    total_bufs += bufs.len();
+                    set.push((c, bufs));
+                } else {
+                    c.stop_mining();
+                }
             }
-        }
-        let total_anns = set.iter().map(|(_, r, _)| r).sum();
+            debug!("{}", time.next("compute_tree: take bufs"));
+            let mut nw = crate::nway::Nway::with_capacity(total_bufs);
+            for (_, bufs) in &set {
+                for b in bufs {
+                    nw.add_iter(b.iter());
+                }
+            }
+            debug!("{}", time.next("compute_tree: add iters"));
 
-        // split the out buffer into sub-buffers for each class according to
-        // how many anns they had ready, which may be changing as we speak...
-        let mut out = &mut pt.ann_data[..];
-        for (_, this, dst) in &mut set {
-            let (data, excess) = out.split_at_mut(*this);
-            *dst = Some(data);
-            out = excess;
+            pt.index_table.clear();
+            let last = 0;
+            for ad in nw {
+                if ad.hash_pfx > last {
+                    pt.index_table.push(ad.mloc as u32);
+                } else if ad.hash_pfx < last {
+                    panic!("hash prefix went backwards!");
+                }
+            }
+            if last == u64::MAX {
+                pt.index_table.pop();
+            }
+            debug!("{}", time.next("compute_tree: read iters"));
+            for (c, bufs) in set {
+                c.return_bufs(bufs);
+            }
+            debug!("{}", time.next("compute_tree: return bufs"));
         }
-        //debug!("{}", time.next("compute_tree: prepare"));
-        // now that they're split, copy the hashes over in parallel.
-        set.into_par_iter().for_each(|(c, _, dst)| {
-            c.read_ready_anns(dst.unwrap());
-        });
-        debug!("{}", time.next("compute_tree: read_ready_anns"));
+        //debug!("{}", time.next("compute_tree: read_ready_anns"));
         // compute the tree.
-        pt.compute(total_anns, time)
+        pt.compute(time)
     }
 }
 

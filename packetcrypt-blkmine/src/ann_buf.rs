@@ -91,6 +91,12 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
         self.locked = false;
     }
 
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &AnnData> + 'a {
+        assert!(self.locked);
+        let last = self.next_ann_index();
+        (0..last).map(move |i| unsafe { &(*self.ann_data.get())[i] })
+    }
+
     /// Read out the data from the buf into an array of prooftree::AnnData, which will be used
     /// for building the final proof tree.
     pub fn read_ready_anns(&self, out: &mut [AnnData]) {

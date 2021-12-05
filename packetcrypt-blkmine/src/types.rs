@@ -2,7 +2,7 @@ use sodiumoxide::crypto::generichash;
 use std::convert::TryInto;
 use std::ops::Deref;
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AnnData {
     pub hash_pfx: u64,
     pub mloc: usize,
