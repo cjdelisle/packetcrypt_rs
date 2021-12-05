@@ -110,13 +110,15 @@ impl ProofTree {
                 ent.hash = hash.as_bytes();
                 ent.start = hash.to_u64();
                 ent.end = hash_plus1.to_u64();
+                if ent.end <= ent.start {
+                    panic!("ent.end {:#x} <= ent.start {:#x} as mloc: {}, mloc+1: {}\n",
+                        ent.end, ent.start, mloc, mloc_plus1);
+                }
                 hash = hash_plus1;
                 hash_plus1 = self.db.get_hash(mloc_plus1);
+                
                 mloc = mloc_plus1;
                 mloc_plus1 = mloc_plus2;
-                if ent.end <= ent.start {
-                    panic!("ent.end {:#} <= ent.start {:#} as mloc: {}\n", ent.end, ent.start, mloc);
-                }
             }
         });
         debug!("{}", time.next("compute_tree: putEntry()"));
