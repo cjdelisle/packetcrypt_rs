@@ -1,90 +1,55 @@
 use std::cmp::{Ord,Ordering};
 use std::collections::BinaryHeap;
-use crate::types::AnnData;
 
-struct NwayItem<'a>
+struct NwayItem<'a, T: Ord + Clone>
 {
-    list: &'a [AnnData],
+    list: &'a [T],
 }
-impl<'a> NwayItem<'a> {
-    fn item(&self) -> Option<&'a AnnData> {
+impl<'a, T: Ord + Clone> NwayItem<'a, T> {
+    fn item(&self) -> Option<&'a T> {
         self.list.get(0)
     }
 }
-impl<'a> PartialEq for NwayItem<'a> {
+impl<'a, T: Ord + Clone> PartialEq for NwayItem<'a, T> {
     fn eq(&self, other: &Self) -> bool {
         self.item() == other.item()
     }
 }
-impl<'a> Eq for NwayItem<'a> {}
-impl<'a> PartialOrd for NwayItem<'a> {
+impl<'a, T: Ord + Clone> Eq for NwayItem<'a, T> {}
+impl<'a, T: Ord + Clone> PartialOrd for NwayItem<'a, T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         other.item().partial_cmp(&self.item())
     }
 }
-impl<'a> Ord for NwayItem<'a> {
+impl<'a, T: Ord + Clone> Ord for NwayItem<'a, T> {
     fn cmp(&self, other: &Self) -> Ordering {
         // Inverted so that we'll get bottom values first, though BinaryHeap is top-down
         other.item().cmp(&self.item())
     }
 }
-pub struct Nway<'a> {
-    heap: BinaryHeap<NwayItem<'a>>,
+pub struct Nway<'a, T: Ord + Clone> {
+    heap: BinaryHeap<NwayItem<'a, T>>,
+    update_list: Option<&'a [T]>,
 }
-impl<'a> Nway<'a> {
-    pub fn add_list(&mut self, list: &'a [AnnData]) {
+impl<'a, T: Ord + Clone> Nway<'a, T> {
+    pub fn add_list(&mut self, list: &'a [T]) {
         self.heap.push(NwayItem { list });
     }
     pub fn with_capacity(initial: usize) -> Self {
-        Self{ heap: BinaryHeap::with_capacity(initial) }
-    }
-    pub fn next_multi(&mut self, out: &mut [AnnData]) -> usize {
-        let count = out.len();
-        let mut v = Vec::with_capacity(count);
-        for _ in 0..count {
-            if let Some(ii) = self.heap.pop() {
-                v.push(ii);
-            } else {
-                break;
-            }
-        }
-        let mut new_min = u64::MAX;
-        for (i, ii) in v.iter().enumerate() {
-            if ii.list.len() > 1 {
-                if new_min > ii.list[1].hash_pfx {
-                    new_min = ii.list[1].hash_pfx;
-                }
-            }
-            if (i+4) < v.len() {
-                let nv = &v[i+4];
-                if nv.list.len() > 1 {
-                    prefetch(&nv.list[1]);
-                }
-            }
-        }
-        let mut out_idx = 0;
-        for ii in v.iter_mut() {
-            if ii.list[0].hash_pfx < new_min {
-                out[out_idx] = ii.list[0].clone();
-                out_idx += 1;
-                ii.list = &ii.list[1..];
-            }
-        }
-        for ii in v.iter_mut() {
-            if !ii.list.is_empty() {
-                self.add_list(ii.list);
-            }
-        }
-        out_idx
+        Self{ update_list: None, heap: BinaryHeap::with_capacity(initial) }
     }
 }
-impl<'a> Iterator for Nway<'a> {
-    type Item = AnnData;
-    fn next(&mut self) -> Option<AnnData> {
+impl<'a, T: Ord + Clone> Iterator for Nway<'a, T> {
+    type Item = T;
+    fn next(&mut self) -> Option<T> {
+        if let Some(ul) = self.update_list.take() {
+            self.add_list(ul);
+        }
         if let Some(ii) = self.heap.pop() {
             let out = ii.list[0].clone();
             if ii.list.len() > 1 {
-                self.add_list(&ii.list[1..]);
+                prefetch(&ii.list[1]);
+                self.update_list = Some(&ii.list[1..]);
             }
             Some(out)
         } else {
