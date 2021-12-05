@@ -115,7 +115,7 @@ impl ProofTree {
                 mloc = mloc_plus1;
                 mloc_plus1 = mloc_plus2;
                 if ent.end <= ent.start {
-                    panic!("ent.end <= ent.start as mloc: {}\n", mloc);
+                    panic!("ent.end {:#} <= ent.start {:#} as mloc: {}\n", ent.end, ent.start, mloc);
                 }
             }
         });
