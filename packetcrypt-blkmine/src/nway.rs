@@ -47,7 +47,7 @@ impl<'a, T: Ord + Clone> Iterator for Nway<'a, T> {
         }
         if let Some(ii) = self.heap.pop() {
             let out = ii.list[0].clone();
-            if !ii.list.is_empty() {
+            if ii.list.len() > 1 {
                 prefetch(&ii.list[1]);
                 self.update_list = Some(&ii.list[1..]);
             }
