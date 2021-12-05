@@ -219,7 +219,6 @@ impl AnnStore {
             debug!("{}", time.next("compute_tree: read iters"));
 
             pt.index_table.clear();
-            let last = 0;
             for tbl in sub_tables {
                 pt.index_table.extend_from_slice(&tbl[..]);
             }

@@ -90,13 +90,14 @@ impl<const ANNBUF_SZ: usize, const RANGES: usize> AnnBuf<ANNBUF_SZ, RANGES> {
         let ann_data = unsafe { &mut *self.ann_data.get() };
         ann_data[..last].par_sort_unstable_by_key(|d| d.hash_pfx);
 
-        let mut pfx = ann_data[0].hash_pfx / RANGES as u64;
+        let divisor = u64::MAX / RANGES as u64;
+        let mut pfx = ann_data[0].hash_pfx / divisor;
         let mut r = 0;
         println!("pfx {:#x}", pfx);
         for (i, ad) in ann_data[..last].iter().enumerate() {
-            let this_pfx = ad.hash_pfx / RANGES as u64;
+            let this_pfx = ad.hash_pfx / divisor;
             if this_pfx != pfx {
-                println!("pfx {:#x}", pfx);
+                println!("pfx {:#x}", this_pfx);
                 self.ranges[r] = i;
                 pfx = this_pfx;
                 r += 1;
