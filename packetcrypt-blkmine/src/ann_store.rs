@@ -192,27 +192,40 @@ impl AnnStore {
                 }
             }
             debug!("{}", time.next("compute_tree: take bufs"));
-            let mut nw = crate::nway::Nway::with_capacity(total_bufs);
-            for (_, bufs) in &set {
-                for b in bufs {
-                    nw.add_iter(b.iter());
+            let sub_tables = (0..crate::ann_class::BUF_RANGES).into_par_iter().map(|i| {
+                let mut nw = crate::nway::Nway::with_capacity(total_bufs);
+                let mut total_anns_range = 0;
+                for (_, bufs) in &set {
+                    for b in bufs {
+                        total_anns_range += b.range_count(i);
+                        nw.add_iter(b.iter(i));
+                    }
                 }
-            }
-            debug!("{}", time.next("compute_tree: add iters"));
+                let mut all_range = Vec::with_capacity(total_anns_range);
+                let mut last = 0;
+                for ad in nw {
+                    if ad.hash_pfx > last {
+                        all_range.push(ad.mloc as u32);
+                        last = ad.hash_pfx;
+                    } else if ad.hash_pfx < last {
+                        panic!("hash prefix went backwards!");
+                    }
+                }
+                if last == u64::MAX {
+                    all_range.pop();
+                }
+                all_range
+            }).collect::<Vec<_>>();
+            debug!("{}", time.next("compute_tree: read iters"));
 
             pt.index_table.clear();
             let last = 0;
-            for ad in nw {
-                if ad.hash_pfx > last {
-                    pt.index_table.push(ad.mloc as u32);
-                } else if ad.hash_pfx < last {
-                    panic!("hash prefix went backwards!");
-                }
+            for tbl in sub_tables {
+                pt.index_table.extend_from_slice(&tbl[..]);
             }
-            if last == u64::MAX {
-                pt.index_table.pop();
-            }
-            debug!("{}", time.next("compute_tree: read iters"));
+
+            debug!("{}", time.next("compute_tree: copy to store"));
+
             for (c, bufs) in set {
                 c.return_bufs(bufs);
             }

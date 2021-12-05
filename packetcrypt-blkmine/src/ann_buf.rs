@@ -8,7 +8,7 @@ use std::sync::Arc;
 /// The purpose of AnnBuf is to be able to store and account for announcements in memory
 /// and efficiently generate sorted lists on demand.
 /// Every AnnBuf has a base address (in the big memory storage area).
-pub struct AnnBuf<const ANNBUF_SZ: usize> {
+pub struct AnnBuf<const ANNBUF_SZ: usize, const RANGES: usize> {
     db: Arc<DataBuf>,
     pub base_offset: usize,
 
@@ -19,19 +19,26 @@ pub struct AnnBuf<const ANNBUF_SZ: usize> {
     /// Gives interior mutability, so this struct can be shared among threads.
     ann_data: UnsafeCell<[AnnData; ANNBUF_SZ]>,
 
+    /// first range is assumed 0-ranges[0]
+    /// second range is ranges[0]-ranges[1]
+    /// last range is ranges[n-1]-ranges[n]
+    /// ranges[n] is the length of this AnnBuf at time of lock
+    ranges: [usize; RANGES],
+
     locked: bool,
 }
 
-unsafe impl<const ANNBUF_SZ: usize> Send for AnnBuf<ANNBUF_SZ> {}
-unsafe impl<const ANNBUF_SZ: usize> Sync for AnnBuf<ANNBUF_SZ> {}
+unsafe impl<const ANNBUF_SZ: usize, const RANGES: usize> Send for AnnBuf<ANNBUF_SZ, RANGES> {}
+unsafe impl<const ANNBUF_SZ: usize, const RANGES: usize> Sync for AnnBuf<ANNBUF_SZ, RANGES> {}
 
-impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
+impl<const ANNBUF_SZ: usize, const RANGES: usize> AnnBuf<ANNBUF_SZ, RANGES> {
     pub fn new(db: Arc<DataBuf>, base_offset: usize) -> Self {
         Self {
             db,
             base_offset,
             next_ann_index: AtomicUsize::new(0),
             ann_data: [AnnData::default(); ANNBUF_SZ].into(),
+            ranges: [0; RANGES],
             locked: false.into(),
         }
     }
@@ -82,6 +89,18 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
         let last = self.next_ann_index();
         let ann_data = unsafe { &mut *self.ann_data.get() };
         ann_data[..last].par_sort_unstable_by_key(|d| d.hash_pfx);
+
+        let mut pfx = ann_data[0].hash_pfx % RANGES as u64;
+        let mut r = 0;
+        for (i, ad) in ann_data[..last].iter().enumerate() {
+            let this_pfx = ad.hash_pfx % RANGES as u64;
+            if this_pfx != pfx {
+                self.ranges[r] = i;
+                pfx = this_pfx;
+                r += 1;
+            }
+        }
+        self.ranges[r] = last;
         self.locked = true
     }
 
@@ -91,10 +110,24 @@ impl<const ANNBUF_SZ: usize> AnnBuf<ANNBUF_SZ> {
         self.locked = false;
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &AnnData> + 'a {
+    fn range(&self, range: usize) -> (usize, usize) {
+        if range == 0 {
+            (0, self.ranges[0])
+        } else {
+            (self.ranges[range-1], self.ranges[range])
+        }
+    }
+
+    pub fn range_count(&self, range: usize) -> usize {
+        let (begin, end) = self.range(range);
+        end - begin
+    }
+
+    pub fn iter<'a>(&'a self, range: usize) -> impl Iterator<Item = &AnnData> + 'a {
         assert!(self.locked);
-        let last = self.next_ann_index();
-        (0..last).map(move |i| unsafe { &(*self.ann_data.get())[i] })
+        let (begin, end) = self.range(range);
+        let ptr = unsafe { &*self.ann_data.get() };
+        (begin..end).map(move |i| &ptr[i])
     }
 
     /// Read out the data from the buf into an array of prooftree::AnnData, which will be used

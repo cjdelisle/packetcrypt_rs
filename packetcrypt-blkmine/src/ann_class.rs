@@ -9,7 +9,8 @@ use std::mem;
 use std::sync::{Arc, Mutex, RwLock, atomic::AtomicBool, atomic::Ordering::Relaxed};
 
 pub const ANNBUF_SZ: usize = 32 * 1024;
-pub type AnnBufSz = AnnBuf<ANNBUF_SZ>;
+pub const BUF_RANGES: usize = 32;
+pub type AnnBufSz = AnnBuf<ANNBUF_SZ, BUF_RANGES>;
 
 struct HashTree {
     origin: Arc<Mutex<prooftree::ProofTree>>,
