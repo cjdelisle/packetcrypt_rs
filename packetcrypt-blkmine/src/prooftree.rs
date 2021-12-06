@@ -69,8 +69,8 @@ impl ProofTree {
         //for (i, ent) in tbl[1..self.index_table.len()+1]
         
         const CHUNK_SZ: usize = 256;
-        let mut tbl_s = &mut tbl[..];
-        let mut slots = Vec::with_capacity( (1..self.index_table.len()+1).step_by(CHUNK_SZ).len() );
+        let mut tbl_s = &mut tbl[1..];
+        let mut slots = Vec::with_capacity(tbl_s.len() / CHUNK_SZ);
         for i in (0..).step_by(CHUNK_SZ) {
             if (self.index_table.len()+1) <= i + CHUNK_SZ + 3 {
                 slots.push(tbl_s);
