@@ -99,20 +99,22 @@ impl ProofTree {
                         panic!("ent.end <= ent.start as mloc: {}\n", mloc);
                     }
                 }
+                return;
             }
+            assert_eq!(chunk.len(), CHUNK_SZ);
             let mut mloc = self.index_table[i] as usize;
             let mut hash = self.db.get_hash(mloc);
             let mut mloc_plus1 = self.index_table[i+1] as usize;
             let mut hash_plus1 = self.db.get_hash(mloc_plus1);
-            for (ent, mloc_plus2) in chunk.iter_mut().zip(self.index_table[i+2..].iter()) {
+            for (i, (ent, mloc_plus2)) in chunk.iter_mut().zip(self.index_table[i+2..].iter()).enumerate() {
                 let mloc_plus2 = *mloc_plus2 as usize;
                 self.db.prefetch_hash(mloc_plus2);
                 ent.hash = hash.as_bytes();
                 ent.start = hash.to_u64();
                 ent.end = hash_plus1.to_u64();
                 if ent.end <= ent.start {
-                    panic!("ent.end {:#x} <= ent.start {:#x} as mloc: {}, mloc+1: {}\n",
-                        ent.end, ent.start, mloc, mloc_plus1);
+                    panic!("ent.end {:#x} <= ent.start {:#x} as mloc: {}, mloc+1: {} - {}\n",
+                        ent.end, ent.start, mloc, mloc_plus1, i);
                 }
                 hash = hash_plus1;
                 hash_plus1 = self.db.get_hash(mloc_plus1);
