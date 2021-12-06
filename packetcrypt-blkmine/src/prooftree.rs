@@ -117,10 +117,10 @@ impl ProofTree {
                         ent.end, ent.start, mloc, mloc_plus1, i);
                 }
                 hash = hash_plus1;
-                hash_plus1 = self.db.get_hash(mloc_plus1);
-                
                 mloc = mloc_plus1;
+
                 mloc_plus1 = mloc_plus2;
+                hash_plus1 = self.db.get_hash(mloc_plus2);
             }
         });
         debug!("{}", time.next("compute_tree: putEntry()"));
