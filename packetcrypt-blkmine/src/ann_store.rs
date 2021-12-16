@@ -212,8 +212,8 @@ impl AnnStore {
             let markers = (0..BUF_RANGES).map(|_|AtomicUsize::new(0)).collect::<Vec<_>>();
             let mut offset = 0;
             for (i, r) in range_total.0.iter().enumerate() {
-                offset += r;
                 markers[i].store(offset, Ordering::Relaxed);
+                offset += r;
             }
             for (_, bufs) in &set {
                 bufs.par_iter().for_each(|b| {
