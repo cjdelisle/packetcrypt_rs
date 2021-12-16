@@ -178,7 +178,9 @@ void CryptoCycle_blockMineMulti(
             update(&pcStates[k], it[k]);
         }
     }
-    CryptoCycle_smul(pcState);
+    for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
+        smul(&pcStates[k]);
+    }
     for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
         final(&pcStates[k]);
     }
