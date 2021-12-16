@@ -86,6 +86,7 @@ fn start_bench_blk(max_mem: u64, threads: u32) -> Result<BlkMiner> {
 
     println!("starting mining");
     block_miner.mine(&[0u8, 80], &lookup, 0x03000001, 0xc001); // 0xc001 is cool :)
+    Box::new(lookup).leak();
     Ok(block_miner)
 }
 
