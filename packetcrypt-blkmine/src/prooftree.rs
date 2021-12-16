@@ -148,7 +148,7 @@ impl ProofTree {
             }
 
             const THREAD_STEP_SZ: usize = 8192;
-            let (in_tbl, out_tbl) = tbl[idx..odx+count_this_layer/2].split_at_mut(odx);
+            let (in_tbl, out_tbl) = tbl[idx..odx+count_this_layer/2].split_at_mut(odx-idx);
             let tbls = in_tbl.chunks(THREAD_STEP_SZ*2).zip(
                 out_tbl.chunks_mut(THREAD_STEP_SZ)
             ).collect::<Vec<_>>();
