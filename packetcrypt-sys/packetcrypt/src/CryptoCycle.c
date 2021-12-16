@@ -149,3 +149,36 @@ static inline void final(CryptoCycle_State_t* restrict state) {
 void CryptoCycle_final(CryptoCycle_State_t* restrict state) {
     final(state);
 }
+
+void CryptoCycle_blockMineMulti(
+    CryptoCycle_State_t* pcStates,
+    const Buf32_t* hdrHash,
+    uint32_t nonceBase,
+    uint64_t annCount,
+    const uint32_t* annIndexes,
+    const CryptoCycle_Item_t* anns,
+    BlockMine_Res_t* res
+) {
+    for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
+        init(&pcStates[k], hdrHash, nonceBase + k);
+    }
+    for (int j = 0; j < 4; j++) {
+        for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
+            uint64_t itnum = res[k].ann_llocs[j] = CryptoCycle_getItemNo(&pcStates[k]) % annCount;
+            __builtin_prefetch(&annIndexes[itnum]);
+        }
+        CryptoCycle_Item_t* it[CryptoCycle_PAR_STATES];
+        for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
+            uint64_t x = res[k].ann_mlocs[j] = annIndexes[res[k].ann_llocs[j]];
+            it[k] = (CryptoCycle_Item_t*) &anns[x];
+            __builtin_prefetch(it[k]);
+        }
+        for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
+            update(&pcStates[k], it[k]);
+        }
+    }
+    CryptoCycle_smul(&w->pcState);
+    for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
+        final(&pcStates[k]);
+    }
+}

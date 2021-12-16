@@ -106,6 +106,7 @@ enum ThreadState {
 
 struct Worker_s {
     CryptoCycle_State_t pcState;
+    CryptoCycle_State_t pcStates[CryptoCycle_PAR_STATES];
 
     Global_t* g;
     pthread_t thread;
@@ -122,6 +123,68 @@ struct Worker_s {
 #define HASHES_PER_CYCLE 2000
 
 #define NOISY_LOG_SHARES 0
+
+// Worker
+static void mineOpt(Worker_t* w)
+{
+    Time t;
+    Time_BEGIN(t);
+
+    PacketCrypt_BlockHeader_t hdr;
+    Buf_OBJCPY(&hdr, &w->g->hai.header);
+    hdr.nonce = w->nonceId;
+
+    uint32_t lowNonce = w->lowNonce;
+
+    Buf32_t hdrHash;
+    Hash_COMPRESS32_OBJ(&hdrHash, &hdr);
+
+    for (;;) {
+        for (uint32_t i = 0; i < HASHES_PER_CYCLE; i += CryptoCycle_PAR_STATES) {
+            BlockMine_Res_t res[CryptoCycle_PAR_STATES];
+            CryptoCycle_blockMineMulti(
+                w->pcStates,
+                &hdrHash,
+                lowNonce + i,
+                w->g->annCount,
+                w->g->hai.index,
+                (const CryptoCycle_Item_t *) w->g->anns,
+                res
+            );
+            if (!Work_check(w->pcStates[0].bytes, w->g->effectiveTarget)) { continue; }
+
+            if (NOISY_LOG_SHARES) {
+                printf("share / %u / %u\n", hdr.nonce, lowNonce);
+                printf("effective target %x\n", w->g->effectiveTarget);
+                for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
+                printf("\n");
+                for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
+                printf("\n");
+                for (int j = 0; j < 4; j++) {
+                    uint64_t loc = res[0].ann_mlocs[j];
+                    printf("%llu - ", (long long unsigned) loc);
+                    for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
+                    printf("\n");
+                }
+            }
+
+            res[0].low_nonce = lowNonce;
+            res[0].high_nonce = hdr.nonce;
+            //Buf_OBJCPY(&res.hdr, &hdr);
+            if (w->g->cb) {
+                w->g->cb(&res[0], w->g->cbc);
+            }
+            w->lowNonce = lowNonce;
+        }
+        Time_END(t);
+        w->hashesPerSecond = ((HASHES_PER_CYCLE * 1024) / (Time_MICROS(t) / 1024));
+        Time_NEXT(t);
+        if (w->reqState != ThreadState_RUNNING) {
+            w->lowNonce = lowNonce;
+            return;
+        }
+    }
+}
 
 // Worker
 static void mine(Worker_t* w)
@@ -151,7 +214,7 @@ static void mine(Worker_t* w)
                 CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &w->g->anns[x];
                 CryptoCycle_update(&w->pcState, it);
             }
-            CryptoCycle_smul(&w->pcState);
+            //CryptoCycle_smul(&w->pcState);
             CryptoCycle_final(&w->pcState);
             if (!Work_check(w->pcState.bytes, w->g->effectiveTarget)) { continue; }
 
@@ -200,7 +263,7 @@ static void* thread(void* vWorker)
         switch (rs) {
             case ThreadState_RUNNING: {
                 pthread_mutex_unlock(&w->g->lock);
-                mine(w);
+                mineOpt(w);
                 pthread_mutex_lock(&w->g->lock);
                 break;
             }
