@@ -151,30 +151,32 @@ static void mineOpt(Worker_t* w)
                 (const CryptoCycle_Item_t *) w->g->anns,
                 res
             );
-            if (!Work_check(w->pcStates[0].bytes, w->g->effectiveTarget)) { continue; }
+            for (int j = 0; j < CryptoCycle_PAR_STATES; j++) {
+                if (!Work_check(w->pcStates[j].bytes, w->g->effectiveTarget)) { continue; }
 
-            if (NOISY_LOG_SHARES) {
-                printf("share / %u / %u\n", hdr.nonce, lowNonce);
-                printf("effective target %x\n", w->g->effectiveTarget);
-                for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
-                printf("\n");
-                for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
-                printf("\n");
-                for (int j = 0; j < 4; j++) {
-                    uint64_t loc = res[0].ann_mlocs[j];
-                    printf("%llu - ", (long long unsigned) loc);
-                    for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
+                if (NOISY_LOG_SHARES) {
+                    printf("share / %u / %u\n", hdr.nonce, lowNonce);
+                    printf("effective target %x\n", w->g->effectiveTarget);
+                    for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
                     printf("\n");
+                    for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
+                    printf("\n");
+                    for (int j = 0; j < 4; j++) {
+                        uint64_t loc = res[j].ann_mlocs[j];
+                        printf("%llu - ", (long long unsigned) loc);
+                        for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
+                        printf("\n");
+                    }
                 }
-            }
 
-            res[0].low_nonce = lowNonce;
-            res[0].high_nonce = hdr.nonce;
-            //Buf_OBJCPY(&res.hdr, &hdr);
-            if (w->g->cb) {
-                w->g->cb(&res[0], w->g->cbc);
+                res[j].low_nonce = lowNonce;
+                res[j].high_nonce = hdr.nonce;
+                //Buf_OBJCPY(&res.hdr, &hdr);
+                if (w->g->cb) {
+                    w->g->cb(&res[j], w->g->cbc);
+                }
+                w->lowNonce = lowNonce;
             }
-            w->lowNonce = lowNonce;
         }
         Time_END(t);
         w->hashesPerSecond = ((HASHES_PER_CYCLE * 1024) / (Time_MICROS(t) / 1024));

@@ -8,6 +8,7 @@
 #include "RandHash.h"
 #include "RandGen.h"
 #include "Hash.h"
+#include "Announce.h"
 
 #include "sodium/crypto_onetimeauth_poly1305.h"
 #include "sodium/utils.h"
@@ -117,7 +118,7 @@ void CryptoCycle_init(
 __attribute__((always_inline))
 static inline void update(
     CryptoCycle_State_t* restrict state,
-    CryptoCycle_Item_t* restrict item)
+    const CryptoCycle_Item_t* restrict item)
 {
     memcpy(state->sixteens[2].bytes, item, sizeof *item);
     makeFuzzable(&state->hdr);
@@ -126,7 +127,7 @@ static inline void update(
 }
 void CryptoCycle_update(
     CryptoCycle_State_t* restrict state,
-    CryptoCycle_Item_t* restrict item)
+    const CryptoCycle_Item_t* restrict item)
 {
     update(state, item);
 }
@@ -177,7 +178,36 @@ void CryptoCycle_blockMineMulti(
             update(&pcStates[k], it[k]);
         }
     }
-    CryptoCycle_smul(&w->pcState);
+    CryptoCycle_smul(pcState);
+    for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
+        final(&pcStates[k]);
+    }
+}
+
+void CryptoCycle_annMineMulti(
+    CryptoCycle_State_t* pcStates,
+    const Buf32_t* hdrHash,
+    uint32_t nonceBase,
+    const CryptoCycle_Item_t* table,
+    int* itemNos
+) {
+    for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
+        init(&pcStates[k], hdrHash, nonceBase + k);
+    }
+    for (int i = 0; i < 4; i++) {
+        const CryptoCycle_Item_t* it[CryptoCycle_PAR_STATES];
+        for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
+            int itemNo = CryptoCycle_getItemNo(&pcStates[k]) % Announce_TABLE_SZ;
+            it[k] = &table[itemNo];
+            __builtin_prefetch(&table[itemNo]);
+            if (i == 3) {
+                itemNos[k] = itemNo;
+            }
+        }
+        for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
+            update(&pcStates[k], it[k]);
+        }
+    }
     for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
         final(&pcStates[k]);
     }

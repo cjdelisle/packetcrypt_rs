@@ -77,6 +77,7 @@ struct Worker_s {
 
     Announce_t ann;
     CryptoCycle_State_t state;
+    CryptoCycle_State_t states[CryptoCycle_PAR_STATES];
     PacketCrypt_ValidateCtx_t* vctx;
 
     AnnMiner_t* ctx;
@@ -154,6 +155,44 @@ static int populateTable2(Worker_t* w, Buf64_t* seed) {
     return 0;
 }
 
+#define HASHES_PER_CYCLE 16
+
+__attribute__((always_inline))
+static inline void searchOpt(Worker_t* restrict w) {
+    int nonce = w->softNonce;
+    uint32_t target = w->job.hah.annHdr.workBits;
+    for (int i = 0; i < HASHES_PER_CYCLE; i += CryptoCycle_PAR_STATES) {
+        int itemNos[CryptoCycle_PAR_STATES] = {0};
+        CryptoCycle_annMineMulti(
+            w->states,
+            &w->job.annHash1.thirtytwos[0],
+            nonce,
+            w->job.table,
+            itemNos
+        );
+        for (int i = 0; i < CryptoCycle_PAR_STATES; i++) {
+            if (!Work_check(w->states[i].bytes, target)) { continue; }
+            int n = nonce + i;
+            //if (w->ctx->test) { Hash_printHex(w->state.bytes, 32); }
+
+            Buf_OBJCPY(&w->ann.hdr, &w->job.hah.annHdr);
+            Buf_OBJCPY_LDST(w->ann.hdr.softNonce, &n);
+            Announce_Merkle_getBranch(&w->ann.merkleProof, itemNos[i], &w->job.merkle);
+            if (w->job.hah.annHdr.version > 0) {
+                Buf_OBJSET(w->ann.lastAnnPfx, 0);
+                Announce_crypt(&w->ann, &w->states[i]);
+                //Hash_eprintHex((uint8_t*)&w->ann, 1024);
+            } else {
+                Buf_OBJCPY_LDST(w->ann.lastAnnPfx, &w->job.table[itemNos[i]]);
+            }
+            w->ctx->ann_found(w->ctx->callback_ctx, (uint8_t*) &w->ann);
+        }
+        nonce += CryptoCycle_PAR_STATES;
+        //printf("itemNo %d\n", itemNo);
+    }
+    w->softNonce = nonce;
+}
+
 // 1 means success
 static int annHash(Worker_t* restrict w, uint32_t nonce) {
     CryptoCycle_init(&w->state, &w->job.annHash1.thirtytwos[0], nonce);
@@ -182,8 +221,6 @@ static int annHash(Worker_t* restrict w, uint32_t nonce) {
     //printf("itemNo %d\n", itemNo);
     return 1;
 }
-
-#define HASHES_PER_CYCLE 16
 
 static void search(Worker_t* restrict w)
 {
@@ -271,7 +308,8 @@ static void* thread(void* vworker) {
                 if (checkStop(worker)) { return NULL; }
             } while (x);
         }
-        search(worker);
+        //search(worker);
+        searchOpt(worker);
     }
 }
 
