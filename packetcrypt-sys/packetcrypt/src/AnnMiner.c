@@ -161,9 +161,7 @@ static int annHash(Worker_t* restrict w, uint32_t nonce) {
     for (int i = 0; i < 4; i++) {
         itemNo = (CryptoCycle_getItemNo(&w->state) % Announce_TABLE_SZ);
         CryptoCycle_Item_t* restrict it = &w->job.table[itemNo];
-        if (Util_unlikely(!CryptoCycle_update(&w->state, it))) {
-            return 0;
-        }
+        CryptoCycle_update(&w->state, it);
     }
     uint32_t target = w->job.hah.annHdr.workBits;
 

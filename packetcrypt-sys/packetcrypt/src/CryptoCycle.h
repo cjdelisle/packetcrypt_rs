@@ -165,9 +165,11 @@ typedef struct {
 #endif
 
 #define CryptoCycle_SETTER_GETTER(begin, count, setter, getter) \
+    __attribute__((always_inline)) \
     static inline int CryptoCycle_ ## getter (CryptoCycle_Header_t* restrict hdr) {             \
         return (CryptoCycle_LE(hdr->data)>>begin) & ((1u<<count)-1);                            \
     }                                                                                           \
+    __attribute__((always_inline)) \
     static inline void CryptoCycle_ ## setter \
         (CryptoCycle_Header_t* restrict hdr, uint32_t val) { \
         val &= (1u<<count) - 1;                                                                 \
@@ -187,8 +189,6 @@ CryptoCycle_SETTER_GETTER(25, 7, setVersion, getVersion)
 
 void CryptoCycle_makeFuzzable(CryptoCycle_Header_t* restrict hdr);
 
-void CryptoCycle_crypt(CryptoCycle_Header_t* restrict msg);
-
 typedef union {
     CryptoCycle_Header_t hdr;
     Buf_TYPES(2048);
@@ -206,13 +206,16 @@ typedef union {
 } CryptoCycle_Item_t;
 _Static_assert(sizeof(CryptoCycle_Item_t) == 1024, "");
 
+void CryptoCycle_crypt(CryptoCycle_State_t* restrict msg);
+
+__attribute__((always_inline))
 static inline uint64_t CryptoCycle_getItemNo(CryptoCycle_State_t* state) {
     return state->sixteens[1].longs[0];
 }
 
 void CryptoCycle_init(CryptoCycle_State_t* state, const Buf32_t* seed, uint64_t nonce);
 
-bool CryptoCycle_update(
+void CryptoCycle_update(
     CryptoCycle_State_t* restrict state,
     CryptoCycle_Item_t* restrict item);
 

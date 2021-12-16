@@ -53,7 +53,7 @@ int Announce_mkitem2(uint64_t num, CryptoCycle_Item_t* item,
     CryptoCycle_init(&state, seed, num);
     if (RandHash_interpret(prog, num, &state, 2)) { return -1; }
     CryptoCycle_makeFuzzable(&state.hdr);
-    CryptoCycle_crypt(&state.hdr);
+    CryptoCycle_crypt(&state);
     assert(!CryptoCycle_isFailed(&state.hdr));
     Buf_OBJCPY_LDST(item, &state);
     return 0;

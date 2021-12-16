@@ -149,7 +149,7 @@ static void mine(Worker_t* w)
                 uint64_t x = res.ann_mlocs[j] = w->g->hai.index[itnum];
                 assert(x < w->g->maxAnns);
                 CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &w->g->anns[x];
-                assert(CryptoCycle_update(&w->pcState, it));
+                CryptoCycle_update(&w->pcState, it);
             }
             CryptoCycle_smul(&w->pcState);
             CryptoCycle_final(&w->pcState);
@@ -387,7 +387,7 @@ void BlockMine_fakeMine(BlockMine_t* bm,
             assert(itnum < annCount);
             uint64_t x = res->ann_mlocs[j] = annIndexes[itnum];
             CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &ctx->g.anns[x];
-            assert(CryptoCycle_update(&pcState, it));
+            CryptoCycle_update(&pcState, it);
         }
         CryptoCycle_smul(&pcState);
         CryptoCycle_final(&pcState);
