@@ -108,6 +108,7 @@ impl<const ANNBUF_SZ: usize, const RANGES: usize> AnnBuf<ANNBUF_SZ, RANGES> {
         let divisor = u64::MAX / RANGES as u64;
         let mut pfx = ann_data[0].hash_pfx / divisor;
         let mut r = 0;
+        self.range_counts.0 = [0; RANGES];
         for ad in &ann_data[..last] {
             let this_pfx = ad.hash_pfx / divisor;
             if this_pfx != pfx {
