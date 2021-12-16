@@ -1,7 +1,7 @@
-use crate::types::{Hash,AnnData};
+use crate::types::{Hash,AnnData,HeightWork,ClassSet};
 use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ, BUF_RANGES};
 use crate::ann_buf::RangeCount;
-use crate::blkmine::{AnnChunk, HeightWork, Time};
+use crate::blkmine::{AnnChunk, Time};
 use crate::databuf::DataBuf;
 use crate::prooftree::ProofTree;
 use log::{debug, warn};
@@ -174,7 +174,7 @@ impl AnnStore {
 
     pub fn compute_tree(
         &self,
-        hwset: &[HeightWork],
+        cs: ClassSet,
         pt: &mut ProofTree,
         time: &mut Time,
     ) -> Result<(), &'static str> {
@@ -182,7 +182,7 @@ impl AnnStore {
             let m = self.m.read().unwrap();
             let mut set = Vec::new();
             for (hw, c) in m.classes.iter() {
-                if hwset.contains(hw) {
+                if cs.best_set.contains(hw) {
                     c.begin_mining();
                     let bufs = c.take_bufs();
                     set.push((c, bufs));
@@ -263,7 +263,7 @@ impl AnnStore {
         }
         //debug!("{}", time.next("compute_tree: read_ready_anns"));
         // compute the tree.
-        pt.compute(time)
+        pt.compute(time, cs)
     }
 }
 

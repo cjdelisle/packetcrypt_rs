@@ -1,13 +1,12 @@
-use crate::types::Hash;
+use crate::types::{Hash,HeightWork};
 use crate::ann_buf::AnnBuf;
-use crate::blkmine::HeightWork;
 use crate::prooftree;
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use std::mem;
 use std::sync::{Arc, Mutex, RwLock, atomic::AtomicBool, atomic::Ordering::Relaxed};
 
 pub const ANNBUF_SZ: usize = 32 * 1024;
-pub const BUF_RANGES: usize = 32;
+pub const BUF_RANGES: usize = 512;
 pub type AnnBufSz = AnnBuf<ANNBUF_SZ, BUF_RANGES>;
 
 struct HashTree {
@@ -22,7 +21,7 @@ impl HashTree {
         }
 
         let mut pf = self.origin.lock().unwrap();
-        if pf.root_hash == self.root_hash.map(|rh|rh.as_bytes()) {
+        if pf.locked.as_ref().map(|x|x.0) == self.root_hash.map(|rh|rh.as_bytes()) {
             pf.reset();
         }
         self.root_hash = None

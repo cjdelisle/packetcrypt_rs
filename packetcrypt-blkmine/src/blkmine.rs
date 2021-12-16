@@ -3,9 +3,11 @@ use crate::ann_store::AnnStore;
 use crate::blkminer::{BlkMiner, BlkResult, OnShare};
 use crate::prooftree::ProofTree;
 use crate::databuf::DataBuf;
+use crate::types::{HeightWork,ClassSet};
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use log::{debug, info, trace, warn};
+use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use packetcrypt_sys::difficulty::pc_get_effective_target;
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol;
@@ -122,12 +124,6 @@ impl GetAnn for bytes::Bytes {
     }
 }
 
-#[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone, Debug)]
-pub struct HeightWork {
-    pub block_height: i32,
-    pub work: u32,
-}
-
 pub struct AnnChunk<'a> {
     pub anns: &'a [&'a [u8]],
     pub indexes: &'a [u32],
@@ -228,15 +224,17 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
     }
 }
 
-struct ReloadedClasses {
-    ann_min_work: u32,
-    best_set: Vec<HeightWork>,
+fn class_set_min_effective_work(cs: &ClassSet, next_work: &protocol::Work) -> u32 {
+    cs.best_set.iter().map(|hw|{
+        let age = std::cmp::max(0, next_work.height - hw.block_height) as u32;
+        pc_degrade_announcement_target(hw.work, age)
+    }).max().unwrap()
 }
 
 /// Get all ready classes, already ranked by effective ann work, compute effective work target for each
 /// sub-set, and find the sub-set for which this resulting effective target is the highest.
-fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> Option<ReloadedClasses> {
-    let mut ready = bm.ann_store.classes(next_work.height);
+fn reload_classes(bm: &BlkMine, next_height: i32) -> Option<ClassSet> {
+    let mut ready = bm.ann_store.classes(next_height);
     ready.retain(|c| c.can_mine());
 
     // computes the cummulative counts of the anns within the classes.
@@ -249,18 +247,23 @@ fn reload_classes(bm: &BlkMine, next_work: &protocol::Work) -> Option<ReloadedCl
         .take_while(|&t| t < bm.max_mining as u64);
 
     // computes the effective work target, and find the sub-set of classes for which it is the highest.
-    let (best, _) = ready.iter().zip(counts).max_by_key(|&(ci, count)| {
-        pc_get_effective_target(next_work.share_target, ci.ann_effective_work, count)
+    let (best, count) = ready.iter().zip(counts).max_by_key(|&(ci, count)| {
+        pc_get_effective_target(0x1c160000, ci.ann_effective_work, count)
     })?;
 
-    Some(ReloadedClasses {
-        ann_min_work: best.ann_effective_work,
-        best_set: ready
-            .iter()
-            .take_while(|&ci| ci.hw != best.hw)
-            .chain(iter::once(best))
-            .map(|ci| ci.hw)
-            .collect(),
+    let best_set: Vec<HeightWork> = ready
+        .iter()
+        .take_while(|&ci| ci.hw != best.hw)
+        .chain(iter::once(best))
+        .map(|ci| ci.hw)
+        .collect();
+
+    let min_orig_work = best_set.iter().map(|hw|hw.work).max().unwrap();
+
+    Some(ClassSet {
+        min_orig_work,
+        best_set,
+        count,
     })
 }
 
@@ -332,6 +335,27 @@ impl Time {
     }
 }
 
+fn build_off_tree(bm: &BlkMine, next_height: i32) {
+    let mut time = Time::start();
+    let reload = if let Some(r) = reload_classes(bm, next_height) {
+        r
+    } else {
+        debug!("Not mining, no anns ready");
+        return;
+    };
+    debug!("Building tree for height {} in background ({}) classes", next_height, reload.best_set.len());
+    //debug!("{}", time.next("tree.lock()"));
+    let (tree, _) = get_tree(bm, false);
+    //debug!("{}", time.next("get_tree"));
+    let mut tree_l = tree.lock().unwrap();
+    tree_l.reset();
+    debug!("{}", time.next("Prepare"));
+    bm.ann_store
+        .compute_tree(reload, &mut tree_l, &mut time)
+        .unwrap();
+    debug!("{}", time.next("Background tree complete"));
+}
+
 fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
     let mut time = Time::start();
 
@@ -342,43 +366,54 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         .block(next_work.height - 1, next_work.header.hash_prev_block);
     //debug!("{}", time.next("ann_store.block"));
 
-    let reload;
-    if let Some(r) = reload_classes(bm, next_work) {
-        reload = r;
-    } else {
-        debug!("Not mining, no anns ready");
-        return;
-    }
-    //debug!("{}", time.next("reload_classes"));
-
     let (tree, tree_num) = get_tree(bm, false);
     //debug!("{}", time.next("get_tree"));
     let mut tree_l = tree.lock().unwrap();
 
     let (real_target, current_mining);
     {
-        debug!("Computing tree with {} classes", reload.best_set.len());
-        //debug!("{}", time.next("tree.lock()"));
-        tree_l.reset();
-        debug!("{}", time.next("Prepare"));
-        bm.ann_store
-            .compute_tree(&reload.best_set, &mut tree_l, &mut time)
-            .unwrap();
-        //debug!("{}", time.next("ann_store.compute_tree()"));
+        let mew = if let Some((_,cs)) = tree_l.locked.as_ref() {
+            let mew = class_set_min_effective_work(&cs, next_work);
+            if mew < u32::MAX {
+                debug!("Tree exists with ({}) classes, ({}) anns", cs.best_set.len(), cs.count);
+            }
+            mew
+        } else {
+            u32::MAX
+        };
+        let mew = if mew == u32::MAX {
+            let reload = if let Some(r) = reload_classes(bm, next_work.height) {
+                r
+            } else {
+                debug!("Not mining, no anns ready");
+                return;
+            };
+            debug!("No usable tree, must build one now ({}) classes", reload.best_set.len());
+            //debug!("{}", time.next("tree.lock()"));
+            tree_l.reset();
+            debug!("{}", time.next("Prepare"));
+            let mew = class_set_min_effective_work(&reload, next_work);
+            bm.ann_store
+                .compute_tree(reload, &mut tree_l, &mut time)
+                .unwrap();
+            //debug!("{}", time.next("ann_store.compute_tree()"));
+            mew
+        } else {
+            mew
+        };
 
         //debug!("Computing block header");
-        let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
+        let coinbase_commit = tree_l.get_commit(mew).unwrap();
         //debug!("{}", time.next("tree_l.get_commit()"));
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
         //debug!("{}", time.next("compute_block_header()"));
 
         let count = tree_l.index_table.len();
-        real_target =
-            pc_get_effective_target(next_work.share_target, reload.ann_min_work, count as u64);
+        real_target = pc_get_effective_target(next_work.share_target, mew, count as u64);
         //debug!("{}", time.next("pc_get_effective_target()"));
         current_mining = CurrentMining {
             count: count as u32,
-            ann_min_work: reload.ann_min_work,
+            ann_min_work: mew,
             using_tree: tree_num,
             mining_height: next_work.height,
             time_started_ms: util::now_ms(),
@@ -429,6 +464,8 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
         Ok(_) => (),
         Err(e) => warn!("Failed to validate PcP, maybe hardware issues? {}", e),
     };
+
+    build_off_tree(bm, next_work.height + 1);
 }
 
 pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
@@ -564,7 +601,7 @@ async fn stats_loop(bm: &BlkMine) {
                 let anns = util::pad_to(20, format!("anns: {} @ {}", cm.count, diff));
                 info!("{}{}{}{}", shr, hr, anns, dlst);
                 // Restart mining after 45s w/o a block
-                util::now_ms() - cm.time_started_ms > 45_000
+                util::now_ms() - cm.time_started_ms > 300_000
             }
         };
         if spare == 0 {

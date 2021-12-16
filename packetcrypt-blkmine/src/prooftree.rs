@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
 use crate::blkmine::Time;
 use crate::databuf::DataBuf;
+use crate::types::ClassSet;
 use bytes::BufMut;
 use log::debug;
 use packetcrypt_sys::*;
@@ -11,7 +12,7 @@ pub struct ProofTree {
     db: Arc<DataBuf>,
     tbl: Option<Vec<ProofTree_Entry_t>>,
     size: u32,
-    pub root_hash: Option<[u8; 32]>,
+    pub locked: Option<([u8; 32], ClassSet)>,
     //pub ann_data: Vec<AnnData>,
     pub index_table: Vec<u32>,
 }
@@ -42,7 +43,7 @@ impl ProofTree {
                 v
             }),
             size: 0,
-            root_hash: None,
+            locked: None,
             // ann_data: unsafe {
             //     let mut v = Vec::with_capacity(max_anns as usize);
             //     v.set_len(max_anns as usize);
@@ -54,11 +55,11 @@ impl ProofTree {
 
     pub fn reset(&mut self) {
         self.size = 0;
-        self.root_hash = None;
+        self.locked = None;
     }
 
-    pub fn compute(&mut self, time: &mut Time) -> Result<(), &'static str> {
-        if self.root_hash.is_some() {
+    pub fn compute(&mut self, time: &mut Time, class_set: ClassSet) -> Result<(), &'static str> {
+        if self.locked.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
         if self.index_table.len() == 0 {
@@ -188,13 +189,13 @@ impl ProofTree {
         debug!("{}", time.next("compute_tree: compute tree"));
 
         self.tbl = Some(tbl);
-        self.root_hash = Some(rh);
+        self.locked = Some((rh, class_set));
         self.size = self.index_table.len() as u32;
         Ok(())
     }
 
     pub fn get_commit(&self, ann_min_work: u32) -> Result<bytes::BytesMut, &'static str> {
-        let hash = if let Some(h) = self.root_hash.as_ref() {
+        let hash = if let Some((h,_)) = self.locked.as_ref() {
             h
         } else {
             return Err("Not in computed state, call compute() first");
@@ -208,7 +209,7 @@ impl ProofTree {
     }
 
     pub fn mk_proof(&mut self, ann_nums: &[u64; 4]) -> Result<bytes::BytesMut, &'static str> {
-        if self.root_hash.is_none() {
+        if self.locked.is_none() {
             return Err("Not in computed state, call compute() first");
         }
         for n in ann_nums {
@@ -219,7 +220,7 @@ impl ProofTree {
         Ok(unsafe {
             let proof = ProofTree_mkProof(self.tbl.as_deref_mut().unwrap().as_ptr(), 
                 (self.index_table.len() + 1) as u64,
-                self.root_hash.unwrap().as_ptr(),
+                self.locked.as_ref().unwrap().0.as_ptr(),
                 ann_nums.as_ptr(),
             );
             let mut out = bytes::BytesMut::with_capacity((*proof).size as usize);
