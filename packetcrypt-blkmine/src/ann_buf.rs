@@ -5,6 +5,22 @@ use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+#[derive(Clone)]
+pub struct RangeCount<const RANGES: usize>(pub [usize; RANGES]);
+
+impl<const RANGES: usize> std::ops::AddAssign for RangeCount<RANGES> {
+    fn add_assign(&mut self, other: Self) {
+        for (x,y) in self.0.iter_mut().zip(other.0) {
+            *x += y;
+        }
+    }
+}
+impl<const RANGES: usize> Default for RangeCount<RANGES> {
+    fn default() -> Self {
+        Self([0_usize; RANGES])
+    }
+}
+
 /// The purpose of AnnBuf is to be able to store and account for announcements in memory
 /// and efficiently generate sorted lists on demand.
 /// Every AnnBuf has a base address (in the big memory storage area).
@@ -22,8 +38,7 @@ pub struct AnnBuf<const ANNBUF_SZ: usize, const RANGES: usize> {
     /// first range is assumed 0-ranges[0]
     /// second range is ranges[0]-ranges[1]
     /// last range is ranges[n-1]-ranges[n]
-    /// ranges[n] is the length of this AnnBuf at time of lock
-    ranges: [usize; RANGES],
+    pub range_counts: RangeCount<RANGES>,
 
     locked: bool,
 }
@@ -38,7 +53,7 @@ impl<const ANNBUF_SZ: usize, const RANGES: usize> AnnBuf<ANNBUF_SZ, RANGES> {
             base_offset,
             next_ann_index: AtomicUsize::new(0),
             ann_data: [AnnData::default(); ANNBUF_SZ].into(),
-            ranges: [0; RANGES],
+            range_counts: RangeCount::default(),
             locked: false.into(),
         }
     }
@@ -93,15 +108,14 @@ impl<const ANNBUF_SZ: usize, const RANGES: usize> AnnBuf<ANNBUF_SZ, RANGES> {
         let divisor = u64::MAX / RANGES as u64;
         let mut pfx = ann_data[0].hash_pfx / divisor;
         let mut r = 0;
-        for (i, ad) in ann_data[..last].iter().enumerate() {
+        for ad in &ann_data[..last] {
             let this_pfx = ad.hash_pfx / divisor;
             if this_pfx != pfx {
-                self.ranges[r] = i;
                 pfx = this_pfx;
                 r += 1;
             }
+            self.range_counts.0[r] += 1;
         }
-        self.ranges[r] = last;
         self.locked = true
     }
 
@@ -111,42 +125,10 @@ impl<const ANNBUF_SZ: usize, const RANGES: usize> AnnBuf<ANNBUF_SZ, RANGES> {
         self.locked = false;
     }
 
-    fn range(&self, range: usize) -> (usize, usize) {
-        if range == 0 {
-            (0, self.ranges[0])
-        } else {
-            (self.ranges[range-1], self.ranges[range])
-        }
-    }
-
-    pub fn range_count(&self, range: usize) -> usize {
-        let (begin, end) = self.range(range);
-        end - begin
-    }
-
-    pub fn slice(&self, range: usize) -> &[AnnData] {
+    pub fn slice(&self, begin: usize, end: usize) -> &[AnnData] {
         assert!(self.locked);
-        let (begin, end) = self.range(range);
         let ptr = unsafe { &*self.ann_data.get() };
         &ptr[begin..end]        
-    }
-
-    pub fn iter<'a>(&'a self, range: usize) -> impl Iterator<Item = &AnnData> + 'a {
-        assert!(self.locked);
-        let (begin, end) = self.range(range);
-        let ptr = unsafe { &*self.ann_data.get() };
-        (begin..end).map(move |i| &ptr[i])
-    }
-
-    /// Read out the data from the buf into an array of prooftree::AnnData, which will be used
-    /// for building the final proof tree.
-    pub fn read_ready_anns(&self, out: &mut [AnnData]) {
-        assert!(self.locked);
-        let last = self.next_ann_index();
-        let ann_data = unsafe { &*self.ann_data.get() };
-        for (i, ad) in ann_data[0..last].iter().enumerate() {
-            out[i] = *ad;
-        }
     }
 
     pub fn next_ann_index(&self) -> usize {

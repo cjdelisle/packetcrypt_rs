@@ -1,10 +1,8 @@
-use crate::types::{Hash,AnnData};
+use crate::types::Hash;
 use crate::ann_buf::AnnBuf;
 use crate::blkmine::HeightWork;
 use crate::prooftree;
-use log::debug;
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
-use rayon::prelude::*;
 use std::mem;
 use std::sync::{Arc, Mutex, RwLock, atomic::AtomicBool, atomic::Ordering::Relaxed};
 
@@ -189,31 +187,6 @@ impl AnnClass {
     pub fn return_bufs(&self, mut v: Vec<Box<AnnBufSz>>) {
         let mut m = self.m.write().unwrap();
         m.bufs.extend(v.drain(..));
-    }
-
-    pub fn read_ready_anns(&self, mut out: &mut [AnnData]) {
-        let m = self.m.read().unwrap();
-        // split the out buffer into sub-buffers each of which has enough space to hold
-        // the number of bufs that were ready when tallied, which may be changing as we speak...
-        let mut v = Vec::with_capacity(m.bufs.len());
-        for b in &m.bufs {
-            let this = b.next_ann_index();
-            if this > out.len() {
-                debug!(
-                    "Avoided panic in class read: buf.len={} out.len={}",
-                    this,
-                    out.len()
-                );
-                break;
-            }
-            let (data, excess) = out.split_at_mut(this);
-            v.push((b, data));
-            out = excess;
-        }
-        // now that they're split, copy the hashes over in parallel.
-        v.into_par_iter().for_each(|(buf, out)| {
-            buf.read_ready_anns(out);
-        });
     }
 
     /// Get the effective "value" of these anns, result is a compact int

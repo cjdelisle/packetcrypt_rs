@@ -5,7 +5,6 @@ mod blkminer;
 mod prooftree;
 mod types;
 mod databuf;
-mod nway;
 
 pub mod bench;
 pub mod blkmine;
