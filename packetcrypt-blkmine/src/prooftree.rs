@@ -132,6 +132,9 @@ impl ProofTree {
         //unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
         //debug!("{} total {}", time.next("compute_tree: prepare2()"), total_anns_zero_included);
 
+        let mut blake2b_params = blake2b_simd::Params::new();
+        blake2b_params.hash_length(32);
+
         // Build the merkle tree
         let mut count_this_layer = total_anns_zero_included;
         let mut odx = count_this_layer;
@@ -143,12 +146,34 @@ impl ProofTree {
                 count_this_layer += 1;
                 odx += 1;
             }
-            (0..count_this_layer)
-                .into_par_iter()
-                .step_by(2)
-                .for_each(|i| unsafe {
-                    ProofTree_hashPair(tbl.as_ptr(), (odx + i / 2) as u64, (idx + i) as u64);
-                });
+
+            const THREAD_STEP_SZ: usize = 8192;
+            let (in_tbl, out_tbl) = tbl[idx..odx+count_this_layer/2].split_at_mut(odx);
+            let tbls = in_tbl.chunks(THREAD_STEP_SZ*2).zip(
+                out_tbl.chunks_mut(THREAD_STEP_SZ)
+            ).collect::<Vec<_>>();
+
+            tbls.into_par_iter().for_each(|(in_tbl, out_tbl)| {
+                use blake2b_simd::many::{HashManyJob, hash_many};
+                assert!(out_tbl.len() * 2 == in_tbl.len());
+                let mut jobs = in_tbl.chunks(2).map(|c| {
+                    HashManyJob::new(
+                        &blake2b_params,
+                        unsafe {
+                            std::slice::from_raw_parts(
+                                (&c[0] as *const ProofTree_Entry_t) as *const u8,
+                                std::mem::size_of::<ProofTree_Entry_t>() * 2,
+                            )
+                        },
+                    )
+                }).collect::<Vec<_>>();
+                hash_many(jobs.iter_mut());
+                for ((job, inc), out) in jobs.iter().zip(in_tbl.chunks(2)).zip(out_tbl.iter_mut()) {
+                    out.hash.copy_from_slice(job.to_hash().as_bytes());
+                    out.start = inc[0].start;
+                    out.end = inc[1].end;
+                }
+            });
             idx += count_this_layer;
             count_this_layer /= 2;
             odx += count_this_layer;
