@@ -85,6 +85,8 @@ struct Worker_s {
 
     uint32_t workerNum;
 
+    uintptr_t cycleTime;
+
     int softNonce;
     int softNonceMax;
 
@@ -161,6 +163,8 @@ __attribute__((always_inline))
 static inline void searchOpt(Worker_t* restrict w) {
     int nonce = w->softNonce;
     uint32_t target = w->job.hah.annHdr.workBits;
+    Time t;
+    Time_BEGIN(t);
     for (int i = 0; i < HASHES_PER_CYCLE; i += CryptoCycle_PAR_STATES) {
         int itemNos[CryptoCycle_PAR_STATES] = {0};
         CryptoCycle_annMineMulti(
@@ -190,6 +194,8 @@ static inline void searchOpt(Worker_t* restrict w) {
         nonce += CryptoCycle_PAR_STATES;
         //printf("itemNo %d\n", itemNo);
     }
+    Time_END(t);
+    w->cycleTime = Time_MICROS(t);
     w->softNonce = nonce;
 }
 
@@ -402,4 +408,21 @@ void AnnMiner_free(AnnMiner_t* ctx)
     }
 
     freeCtx(ctx);
+}
+
+double AnnMiner_hashesPerSecond(AnnMiner_t* ctx)
+{
+    uint64_t totalTime = 0;
+    int workerCount = 0;
+    for (int i = 0; i < ctx->numWorkers; i++) {
+        enum ThreadState ts = getState(ctx, &ctx->workers[i]);
+        if (ts != ThreadState_RUNNING) { continue; }
+        workerCount++;
+        totalTime += ctx->workers[i].cycleTime;
+    }
+    double hashes = (double) (workerCount * HASHES_PER_CYCLE); // total hashes done
+    hashes /= totalTime; // average hashes per microsecond - sequencial
+    hashes *= workerCount; // average hashes per microsecond - parallel (all threads run same time)
+    hashes *= 1000000; // average hashes per second
+    return hashes;
 }

@@ -99,6 +99,8 @@ fn main() {
         panic!("Could not find libsodium source code");
     }
 
+    cfg.compiler("clang");
+
     if cfg.is_flag_supported("-fno-plt").unwrap() {
         cfg.use_plt(false);
     }
