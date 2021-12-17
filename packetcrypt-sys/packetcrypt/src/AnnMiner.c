@@ -61,6 +61,8 @@ struct AnnMiner_s {
     void* callback_ctx;
     AnnMiner_Callback ann_found;
 
+    struct timeval startTime;
+
     pthread_mutex_t lock;
     pthread_cond_t cond;
 };
@@ -87,6 +89,7 @@ struct Worker_s {
     int softNonce;
     int softNonceMax;
 
+    _Atomic uintptr_t cycles;
     _Atomic enum ThreadState reqState;
     _Atomic enum ThreadState workerState;
 };
@@ -181,6 +184,7 @@ static int annHash(Worker_t* restrict w, uint32_t nonce) {
     } else {
         Buf_OBJCPY_LDST(w->ann.lastAnnPfx, &w->job.table[itemNo]);
     }
+    w->cycles++;
     //printf("itemNo %d\n", itemNo);
     return 1;
 }
@@ -259,6 +263,7 @@ static bool checkStop(Worker_t* worker) {
         }
         setState(worker, rts);
         pthread_cond_wait(&worker->ctx->cond, &worker->ctx->lock);
+        worker->cycles = 0;
     }
 }
 
@@ -321,6 +326,7 @@ void AnnMiner_start(AnnMiner_t* ctx, AnnMiner_Request_t* req, int version) {
     for (int i = 0; i < ctx->numWorkers; i++) {
         setRequestedState(ctx, &ctx->workers[i], ThreadState_RUNNING);
     }
+    gettimeofday(&ctx->startTime, NULL);
     pthread_cond_broadcast(&ctx->cond);
 
     ctx->active = true;
@@ -366,4 +372,23 @@ void AnnMiner_free(AnnMiner_t* ctx)
     }
 
     freeCtx(ctx);
+}
+
+double AnnMiner_hashesPerSecond(AnnMiner_t* ctx)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct timeval tv0 = ctx->startTime;
+    uint64_t micros = ((uint64_t)tv.tv_sec - tv0.tv_sec) * 1000000ull + tv.tv_usec - tv0.tv_usec;
+    ctx->startTime = tv;
+
+    uint64_t totalCycles = 0;
+    for (int i = 0; i < ctx->numWorkers; i++) {
+        totalCycles += ctx->workers[i].cycles;
+        ctx->workers[i].cycles = 0;
+    }
+    double hashes = (double) (totalCycles * HASHES_PER_CYCLE); // total hashes done
+    hashes /= (double) micros;
+    hashes *= 1000000.0;
+    return hashes;
 }
