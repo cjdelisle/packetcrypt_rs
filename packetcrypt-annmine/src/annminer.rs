@@ -85,3 +85,29 @@ pub fn start(
     };
     Ok(())
 }
+
+impl AnnMinerS {
+    pub fn new(miner_id: u32, workers: usize) -> (AnnMiner, UnboundedReceiver<AnnResult>) {
+        new(miner_id, workers)
+    }
+
+    pub fn start(
+        self: &AnnMiner,
+        parent_block_hash: [u8; 32],
+        parent_block_height: i32,
+        target: u32,
+        signing_key: Option<[u8; 32]>,
+    ) -> Result<()> {
+        start(
+            self,
+            parent_block_hash,
+            parent_block_height,
+            target,
+            signing_key,
+        )
+    }
+
+    pub fn hashes_per_second(self: &AnnMiner) -> f64 {
+        unsafe { packetcrypt_sys::AnnMiner_hashesPerSecond(*self.miner.lock().unwrap().get_mut()) }
+    }
+}
