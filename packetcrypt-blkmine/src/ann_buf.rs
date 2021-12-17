@@ -8,11 +8,20 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub struct RangeCount<const RANGES: usize>(pub [usize; RANGES]);
 
-impl<const RANGES: usize> std::ops::AddAssign for RangeCount<RANGES> {
-    fn add_assign(&mut self, other: Self) {
+impl<const RANGES: usize> RangeCount<RANGES> {
+    pub fn add(&mut self, other: &Self) {
         for (x,y) in self.0.iter_mut().zip(other.0) {
             *x += y;
         }
+    }
+}
+impl<const RANGES: usize> std::iter::Sum for RangeCount<RANGES> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        let mut out = RangeCount::default();
+        for rc in iter {
+            out.add(&rc);
+        }
+        out
     }
 }
 impl<const RANGES: usize> Default for RangeCount<RANGES> {

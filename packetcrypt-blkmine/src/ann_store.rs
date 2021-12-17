@@ -194,12 +194,13 @@ impl AnnStore {
             debug!("{}", time.next("compute_tree: take bufs"));
             let mut range_total = RangeCount::default();
             for (_, bufs) in &set {
-                range_total += bufs.par_iter().map(|b| {
-                    b.range_counts.clone()
-                }).reduce(RangeCount::default, |mut r1, r2| {
-                    r1 += r2;
-                    r1
-                });
+                range_total.add(&bufs.par_iter().map(|b|&b.range_counts).fold(
+                    RangeCount::default,
+                    |mut r1, r2|{
+                        r1.add(r2);
+                        r1
+                    }
+                ).sum());
             }
             debug!("{}", time.next("compute_tree: count ranges"));
 
