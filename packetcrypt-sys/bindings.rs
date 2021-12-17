@@ -601,6 +601,9 @@ extern "C" {
 extern "C" {
     pub fn AnnMiner_free(miner: *mut AnnMiner_t);
 }
+extern "C" {
+    pub fn AnnMiner_hashesPerSecond(ctx: *mut AnnMiner_t) -> f64;
+}
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct ProofTree_Entry_t {
