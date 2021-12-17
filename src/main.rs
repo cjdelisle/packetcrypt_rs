@@ -142,7 +142,10 @@ async fn bench_blk(max_mem: u64, threads: u32) -> Result<()> {
     const REPEAT: u32 = 10;
     const SAMPLING_MS: u64 = 5000;
     let bencher = packetcrypt_blkmine::bench::Bencher::new(REPEAT, SAMPLING_MS);
-    bencher.bench_blk(max_mem, threads).await
+    tokio::task::spawn_blocking(move || bencher.bench_blk(max_mem, threads))
+        .await
+        .unwrap()
+}
 
 /// Benchmark encryptions per second in ann mining.
 async fn bench_ann(threads: usize) -> Result<()> {
