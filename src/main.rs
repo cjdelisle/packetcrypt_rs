@@ -143,6 +143,15 @@ async fn bench_blk(max_mem: u64, threads: u32) -> Result<()> {
     const SAMPLING_MS: u64 = 5000;
     let bencher = packetcrypt_blkmine::bench::Bencher::new(REPEAT, SAMPLING_MS);
     bencher.bench_blk(max_mem, threads).await
+
+/// Benchmark encryptions per second in ann mining.
+async fn bench_ann(threads: usize) -> Result<()> {
+    const REPEAT: u32 = 10;
+    const SAMPLING_MS: u64 = 5000;
+    let bencher = packetcrypt_blkmine::bench::Bencher::new(REPEAT, SAMPLING_MS);
+    tokio::task::spawn_blocking(move || bencher.bench_ann(threads))
+        .await
+        .unwrap()
 }
 
 macro_rules! get_strs {
@@ -277,6 +286,9 @@ async fn async_main(matches: clap::ArgMatches<'_>) -> Result<()> {
             let max_mem = get_num!(blk, "memorysizemb", u64) * 1024 * 1024;
             let threads = get_num!(blk, "threads", u32);
             bench_blk(max_mem, threads).await?;
+        } else if let Some(ann) = bench.subcommand_matches("ann") {
+            let threads = get_num!(ann, "threads", usize);
+            bench_ann(threads).await?;
         }
     }
     Ok(())
@@ -538,7 +550,7 @@ async fn main() -> Result<()> {
         )
         .subcommand(
             SubCommand::with_name("bench")
-                .about("Benchmark the performance of block mining operations")
+                .about("Benchmark the performance of mining operations")
                 .setting(clap::AppSettings::ArgRequiredElseHelp)
                 .subcommand(
                     SubCommand::with_name("blk")
@@ -551,6 +563,18 @@ async fn main() -> Result<()> {
                             .default_value("4096")
                             .takes_value(true),
                     )
+                    .arg(
+                        Arg::with_name("threads")
+                            .short("t")
+                            .long("threads")
+                            .help("Number of threads to mine with")
+                            .default_value(&cpus_str)
+                            .takes_value(true),
+                    )
+                )
+                .subcommand(
+                    SubCommand::with_name("ann")
+                    .about("Benchmark the encryptions per second of an announcement mining")
                     .arg(
                         Arg::with_name("threads")
                             .short("t")
