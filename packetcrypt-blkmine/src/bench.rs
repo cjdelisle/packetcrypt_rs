@@ -23,7 +23,7 @@ impl Bencher {
         }
     }
 
-    pub async fn bench_blk(&self, max_mem: u64, threads: u32) -> Result<()> {
+    pub fn bench_blk(&self, max_mem: u64, threads: u32) -> Result<()> {
         println!("Starting benchmark");
         println!("mem: {}MB, threads: {}", max_mem / 1024 / 1024, threads);
         let block_miner = start_bench_blk(max_mem, threads)?;
