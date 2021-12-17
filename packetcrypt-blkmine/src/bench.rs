@@ -1,5 +1,6 @@
 use crate::blkminer::BlkMiner;
 use anyhow::Result;
+use packetcrypt_annmine::annminer::{AnnMiner, AnnMinerS};
 use packetcrypt_util::util;
 use rand::Rng;
 use sodiumoxide::crypto::stream::chacha20;
@@ -45,6 +46,32 @@ impl Bencher {
         block_miner.await_stop();
         Ok(())
     }
+
+    pub fn bench_ann(&self, threads: usize) -> Result<()> {
+        println!("Starting benchmark");
+        println!("threads: {}", threads);
+        let ann_miner = start_bench_ann(threads)?;
+
+        // waits a bit to let the miner kick in.
+        thread::sleep(Duration::from_millis(1000));
+        ann_miner.hashes_per_second(); // this resets the inner counter.
+
+        // we will just call this several times, and return their arithmetic average.
+        // there probably are more advanced/accurate algorithms, like discarding the outliers,
+        // using other kinds of average, etc., but we'll keep it simple.
+        let mut result = BenchBlk::default();
+        for i in 1..=self.repeats {
+            thread::sleep(self.sampling);
+            let partial = BenchBlk {
+                hashes_per_second: ann_miner.hashes_per_second(),
+                // other monitoring points in the future?
+            };
+            println!("{:2}. result: {}", i, partial);
+            result += partial;
+        }
+        println!("average: {}", result / self.repeats);
+        Ok(())
+    }
 }
 
 /// Assembles all the infrastructure needed to block mining, and starts it.
@@ -87,6 +114,18 @@ fn start_bench_blk(max_mem: u64, threads: u32) -> Result<BlkMiner> {
     println!("starting mining");
     block_miner.mine(&[0u8, 80], &lookup, 0x03000001, 0xc001); // 0xc001 is cool :)
     Ok(block_miner)
+}
+
+/// Assembles all the infrastructure needed to ann mining, and starts it.
+fn start_bench_ann(threads: usize) -> Result<AnnMiner> {
+    let (ann_miner, _recv) = AnnMinerS::new(123, threads);
+    println!("created miner");
+
+    // recv is ignored, which closes the channel, but the target below is impossible, so it won't ever win.
+
+    println!("starting mining");
+    ann_miner.start([0u8; 32], 123, 0x03000001, None)?;
+    Ok(ann_miner)
 }
 
 #[derive(Default)]
