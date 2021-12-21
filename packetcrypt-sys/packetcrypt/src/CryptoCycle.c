@@ -98,6 +98,20 @@ void CryptoCycle_crypt(CryptoCycle_State_t* restrict msg)
 }
 
 __attribute__((always_inline))
+static inline void init2(CryptoCycle_State_t* restrict state, const Buf32_t* header_hash, uint low_nonce)
+{
+    static const uint8_t* nonce = "PC_EXPND";
+    Buf_OBJSET(&state->sixtyfours[0], 0);
+    assert(!crypto_stream_chacha20_ietf_xor_ic(state->bytes, state->bytes, 64, nonce, 0, header_hash->bytes));
+    state->ints[0] = low_nonce;
+    state->ints[1] = 0;
+    CryptoCycle_makeFuzzable(&state->hdr);
+    assert(!crypto_stream_chacha20_ietf_xor_ic(
+        &state->bytes[1024], &state->bytes[1024], 1024,
+        nonce, 16, header_hash->bytes));
+}
+
+__attribute__((always_inline))
 static inline void init(
     CryptoCycle_State_t* restrict state,
     const Buf32_t* restrict seed,
