@@ -1,2 +1,2 @@
 pub mod annmine;
-mod annminer;
+pub mod annminer;
