@@ -49,7 +49,7 @@ static inline int getLengthAndTruncate(CryptoCycle_Header_t* restrict hdr)
 }
 
 __attribute__((always_inline))
-static inline void crypt(CryptoCycle_State_t* restrict msg)
+static inline void crypt(CryptoCycle_State_t* restrict msg, bool last)
 {
     if (CryptoCycle_getVersion(&msg->hdr) != 0 || CryptoCycle_isFailed(&msg->hdr)) {
         CryptoCycle_setFailed(&msg->hdr, 1);
@@ -65,8 +65,8 @@ static inline void crypt(CryptoCycle_State_t* restrict msg)
     }
 
     uint8_t* aead = &((uint8_t*)msg)[sizeof msg->hdr];
-    uint64_t aeadLen = CryptoCycle_getAddLen(&msg->hdr) * 16;
-    uint64_t msgLen = getLengthAndTruncate(&msg->hdr) * 16;
+    int aeadLen = CryptoCycle_getAddLen(&msg->hdr) * 16;
+    int msgLen = getLengthAndTruncate(&msg->hdr) * 16;
     int tzc = CryptoCycle_getTrailingZeros(&msg->hdr);
     int azc = CryptoCycle_getAdditionalZeros(&msg->hdr);
     uint8_t* msgContent = &aead[aeadLen];
@@ -74,12 +74,23 @@ static inline void crypt(CryptoCycle_State_t* restrict msg)
     int decrypt = CryptoCycle_isDecrypt(&msg->hdr);
     if (decrypt) {
         crypto_onetimeauth_poly1305_update(&state, aead, aeadLen+msgLen);
+        if (!last) {
+            uint8_t* annEnd = msg->thirtytwos[33].bytes;
+            if (&msgContent[msgLen] > annEnd) {
+                uint32_t iv = 1 + (annEnd - msgContent) / 64;
+                uint8_t* mc = &msgContent[(iv - 1) * 64];
+                int ml = msgLen - (iv-1) * 64;
+                crypto_stream_chacha20_ietf_xor_ic(mc, mc, ml, msg->hdr.nonce, iv, msg->hdr.key_high_or_auth);
+            }
+        } else {
+            crypto_stream_chacha20_ietf_xor_ic(
+                msgContent, msgContent, msgLen, msg->hdr.nonce, 1u, msg->hdr.key_high_or_auth);
+        }
     }
 
-    crypto_stream_chacha20_ietf_xor_ic(
-        msgContent, msgContent, msgLen, msg->hdr.nonce, 1U, msg->hdr.key_high_or_auth);
-
     if (!decrypt) {
+        crypto_stream_chacha20_ietf_xor_ic(
+            msgContent, msgContent, msgLen, msg->hdr.nonce, 1U, msg->hdr.key_high_or_auth);
         if (tzc) { memset(&msgContent[msgLen-tzc], 0, tzc); }
         crypto_onetimeauth_poly1305_update(&state, aead, aeadLen+msgLen);
     }
@@ -94,25 +105,28 @@ static inline void crypt(CryptoCycle_State_t* restrict msg)
 }
 void CryptoCycle_crypt(CryptoCycle_State_t* restrict msg)
 {
-    crypt(msg);
+    crypt(msg, true);
 }
 
 __attribute__((always_inline))
-static inline void init2(CryptoCycle_State_t* restrict state, const Buf32_t* header_hash, uint low_nonce)
+static inline void init(CryptoCycle_State_t* restrict state, const Buf32_t* header_hash, uint64_t low_nonce)
 {
-    static const uint8_t* nonce = "PC_EXPND";
+    const uint8_t* nonce = (uint8_t*) "\0\0\0\0PC_EXPND";
     Buf_OBJSET(&state->sixtyfours[0], 0);
-    assert(!crypto_stream_chacha20_ietf_xor_ic(state->bytes, state->bytes, 64, nonce, 0, header_hash->bytes));
+    assert(!crypto_stream_chacha20_ietf_xor_ic(
+        state->bytes, state->bytes, 64,
+        nonce, 0, header_hash->bytes));
     state->ints[0] = low_nonce;
     state->ints[1] = 0;
-    CryptoCycle_makeFuzzable(&state->hdr);
+    makeFuzzable(&state->hdr);
+    memset(&state->sixtyfours[16], 0, 1024);
     assert(!crypto_stream_chacha20_ietf_xor_ic(
-        &state->bytes[1024], &state->bytes[1024], 1024,
+        state->sixtyfours[16].bytes, state->sixtyfours[16].bytes, 1024,
         nonce, 16, header_hash->bytes));
 }
 
 __attribute__((always_inline))
-static inline void init(
+static inline void init0(
     CryptoCycle_State_t* restrict state,
     const Buf32_t* restrict seed,
     uint64_t nonce)
@@ -126,24 +140,25 @@ void CryptoCycle_init(
     const Buf32_t* restrict seed,
     uint64_t nonce)
 {
-    init(state, seed, nonce);
+    init0(state, seed, nonce);
 }
 
 __attribute__((always_inline))
 static inline void update(
     CryptoCycle_State_t* restrict state,
-    const CryptoCycle_Item_t* restrict item)
+    const CryptoCycle_Item_t* restrict item,
+    bool last)
 {
     memcpy(state->sixteens[2].bytes, item, sizeof *item);
     makeFuzzable(&state->hdr);
-    crypt(state);
+    crypt(state, last);
     assert(!CryptoCycle_isFailed(&state->hdr));
 }
 void CryptoCycle_update(
     CryptoCycle_State_t* restrict state,
     const CryptoCycle_Item_t* restrict item)
 {
-    update(state, item);
+    update(state, item, true);
 }
 
 __attribute__((always_inline))
@@ -189,7 +204,7 @@ void CryptoCycle_blockMineMulti(
             __builtin_prefetch(it[k]);
         }
         for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
-            update(&pcStates[k], it[k]);
+            update(&pcStates[k], it[k], j == 3);
         }
     }
     for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
@@ -221,7 +236,7 @@ void CryptoCycle_annMineMulti(
             }
         }
         for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
-            update(&pcStates[k], it[k]);
+            update(&pcStates[k], it[k], i == 3);
         }
     }
     for (int k = 0; k < CryptoCycle_PAR_STATES; k++) {
