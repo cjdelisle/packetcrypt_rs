@@ -197,47 +197,6 @@ static inline void searchOpt(Worker_t* restrict w) {
     w->softNonce = nonce;
 }
 
-// 1 means success
-static int annHash(Worker_t* restrict w, uint32_t nonce) {
-    CryptoCycle_init(&w->state, &w->job.annHash1.thirtytwos[0], nonce);
-    int itemNo = -1;
-    for (int i = 0; i < 4; i++) {
-        itemNo = (CryptoCycle_getItemNo(&w->state) % Announce_TABLE_SZ);
-        CryptoCycle_Item_t* restrict it = &w->job.table[itemNo];
-        CryptoCycle_update(&w->state, it);
-    }
-    uint32_t target = w->job.hah.annHdr.workBits;
-
-    CryptoCycle_final(&w->state);
-    if (!Work_check(w->state.bytes, target)) { return 0; }
-    //if (w->ctx->test) { Hash_printHex(w->state.bytes, 32); }
-
-    Buf_OBJCPY(&w->ann.hdr, &w->job.hah.annHdr);
-    Buf_OBJCPY_LDST(w->ann.hdr.softNonce, &nonce);
-    Announce_Merkle_getBranch(&w->ann.merkleProof, itemNo, &w->job.merkle);
-    if (w->job.hah.annHdr.version > 0) {
-        Buf_OBJSET(w->ann.lastAnnPfx, 0);
-        Announce_crypt(&w->ann, &w->state);
-        //Hash_eprintHex((uint8_t*)&w->ann, 1024);
-    } else {
-        Buf_OBJCPY_LDST(w->ann.lastAnnPfx, &w->job.table[itemNo]);
-    }
-    //printf("itemNo %d\n", itemNo);
-    return 1;
-}
-
-static void search(Worker_t* restrict w)
-{
-    int nonce = w->softNonce;
-    for (int i = 0; i < HASHES_PER_CYCLE; i++) {
-        if (Util_likely(!annHash(w, nonce++))) { continue; }
-        w->ctx->ann_found(w->ctx->callback_ctx, (uint8_t*) &w->ann);
-    }
-    w->softNonce = nonce;
-
-    return;
-}
-
 // If this returns non-zero then it failed, -1 means try again
 static int getNextJob(Worker_t* w) {
     uint32_t hn = w->job.hah.annHdr.hardNonce;
@@ -313,7 +272,6 @@ static void* thread(void* vworker) {
                 if (checkStop(worker)) { return NULL; }
             } while (x);
         }
-        //search(worker);
         searchOpt(worker);
     }
 }

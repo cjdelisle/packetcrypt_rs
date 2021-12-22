@@ -3,7 +3,7 @@ use anyhow::Result;
 use packetcrypt_annmine::annminer::{AnnMiner, AnnMinerS};
 use packetcrypt_util::util;
 use rand::Rng;
-use sodiumoxide::crypto::stream::chacha20;
+use packetcrypt_sys::sodiumoxide::crypto::stream::chacha20;
 use std::fmt::{Display, Formatter};
 use std::io::{self, Write};
 use std::ops::{AddAssign, Div};

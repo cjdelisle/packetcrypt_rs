@@ -1,4 +1,4 @@
-use sodiumoxide::crypto::generichash;
+use packetcrypt_sys::sodiumoxide::crypto::generichash;
 use std::convert::TryInto;
 use std::ops::Deref;
 

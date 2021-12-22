@@ -836,8 +836,8 @@ checksum = "12b8adadd720df158f4d70dfe7ccc6adb0472d7c55ca83445f6a5ab3e36f8fb6"
 
 [[package]]
 name = "libsodium-sys"
-version = "0.2.6"
-source = "git+https://github.com/cjdelisle/sodiumoxide?rev=76dc0e6e587b8c8a4bb193ebba9f8ae8f090b81b#76dc0e6e587b8c8a4bb193ebba9f8ae8f090b81b"
+version = "0.2.7"
+source = "git+https://github.com/pkteer/sodiumoxide?rev=e8ff5b300b356a1007f97072d136e6bd4c59e830#e8ff5b300b356a1007f97072d136e6bd4c59e830"
 dependencies = [
  "cc",
  "libc",
@@ -1126,7 +1126,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "sodiumoxide",
  "tokio",
 ]
 
@@ -1713,8 +1712,8 @@ dependencies = [
 
 [[package]]
 name = "sodiumoxide"
-version = "0.2.6"
-source = "git+https://github.com/cjdelisle/sodiumoxide?rev=76dc0e6e587b8c8a4bb193ebba9f8ae8f090b81b#76dc0e6e587b8c8a4bb193ebba9f8ae8f090b81b"
+version = "0.2.7"
+source = "git+https://github.com/pkteer/sodiumoxide?rev=e8ff5b300b356a1007f97072d136e6bd4c59e830#e8ff5b300b356a1007f97072d136e6bd4c59e830"
 dependencies = [
  "ed25519",
  "libc",
