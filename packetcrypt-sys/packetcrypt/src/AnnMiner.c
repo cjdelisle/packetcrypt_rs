@@ -184,7 +184,6 @@ static int annHash(Worker_t* restrict w, uint32_t nonce) {
     } else {
         Buf_OBJCPY_LDST(w->ann.lastAnnPfx, &w->job.table[itemNo]);
     }
-    w->cycles++;
     //printf("itemNo %d\n", itemNo);
     return 1;
 }
@@ -198,6 +197,7 @@ static void search(Worker_t* restrict w)
         if (Util_likely(!annHash(w, nonce++))) { continue; }
         w->ctx->ann_found(w->ctx->callback_ctx, (uint8_t*) &w->ann);
     }
+    w->cycles++;
     w->softNonce = nonce;
 
     return;
