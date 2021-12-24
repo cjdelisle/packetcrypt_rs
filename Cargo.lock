@@ -63,6 +63,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
+name = "arrayvec"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
+
+[[package]]
 name = "as-slice"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -131,7 +137,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afa748e348ad3be8263be728124b24a24f268266f6f5d58af9d75f6a40b5c587"
 dependencies = [
  "arrayref",
- "arrayvec",
+ "arrayvec 0.5.2",
+ "constant_time_eq",
+]
+
+[[package]]
+name = "blake2b_simd"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72936ee4afc7f8f736d1c38383b56480b5497b4617b4a77bdbf1d2ababc76127"
+dependencies = [
+ "arrayref",
+ "arrayvec 0.7.2",
  "constant_time_eq",
 ]
 
@@ -490,6 +507,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "getrandom"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7fcd999463524c52659517fe2cea98493cfe485d10565e7b0fb07dbba7ad2753"
+dependencies = [
+ "cfg-if 1.0.0",
+ "libc",
+ "wasi 0.10.0+wasi-snapshot-preview1",
+]
+
+[[package]]
 name = "gimli"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -808,8 +836,8 @@ checksum = "12b8adadd720df158f4d70dfe7ccc6adb0472d7c55ca83445f6a5ab3e36f8fb6"
 
 [[package]]
 name = "libsodium-sys"
-version = "0.2.6"
-source = "git+https://github.com/cjdelisle/sodiumoxide?rev=76dc0e6e587b8c8a4bb193ebba9f8ae8f090b81b#76dc0e6e587b8c8a4bb193ebba9f8ae8f090b81b"
+version = "0.2.7"
+source = "git+https://github.com/pkteer/sodiumoxide?rev=220ef651665fad5fca706aa3f275e56c28c9a3c6#220ef651665fad5fca706aa3f275e56c28c9a3c6"
 dependencies = [
  "cc",
  "libc",
@@ -1022,7 +1050,7 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "packetcrypt"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1084,13 +1112,16 @@ name = "packetcrypt-blkmine"
 version = "0.4.0"
 dependencies = [
  "anyhow",
+ "blake2b_simd 1.0.0",
  "bytes 0.5.6",
  "hex",
  "hex-literal",
  "log",
+ "packetcrypt-annmine",
  "packetcrypt-sprayer",
  "packetcrypt-sys",
  "packetcrypt-util",
+ "rand 0.8.4",
  "rayon",
  "reqwest",
  "serde",
@@ -1146,14 +1177,14 @@ name = "packetcrypt-util"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "blake2b_simd",
+ "blake2b_simd 0.5.11",
  "bytes 0.5.6",
  "crossbeam-channel 0.4.4",
  "env_logger",
  "hex",
  "log",
  "nix",
- "rand",
+ "rand 0.7.3",
  "regex",
  "reqwest",
  "serde",
@@ -1307,11 +1338,23 @@ version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
 dependencies = [
- "getrandom",
+ "getrandom 0.1.16",
  "libc",
- "rand_chacha",
- "rand_core",
- "rand_hc",
+ "rand_chacha 0.2.2",
+ "rand_core 0.5.1",
+ "rand_hc 0.2.0",
+]
+
+[[package]]
+name = "rand"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e7573632e6454cf6b99d7aac4ccca54be06da05aca2ef7423d22d27d4d4bcd8"
+dependencies = [
+ "libc",
+ "rand_chacha 0.3.1",
+ "rand_core 0.6.3",
+ "rand_hc 0.3.1",
 ]
 
 [[package]]
@@ -1321,7 +1364,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4c8ed856279c9737206bf725bf36935d8666ead7aa69b52be55af369d193402"
 dependencies = [
  "ppv-lite86",
- "rand_core",
+ "rand_core 0.5.1",
+]
+
+[[package]]
+name = "rand_chacha"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.6.3",
 ]
 
 [[package]]
@@ -1330,7 +1383,16 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
 dependencies = [
- "getrandom",
+ "getrandom 0.1.16",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d34f1408f55294453790c48b2f1ebbb1c5b4b7563eb1f418bcfcfdbb06ebb4e7"
+dependencies = [
+ "getrandom 0.2.3",
 ]
 
 [[package]]
@@ -1339,7 +1401,16 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
- "rand_core",
+ "rand_core 0.5.1",
+]
+
+[[package]]
+name = "rand_hc"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d51e9f596de227fda2ea6c84607f5558e196eeaf43c986b724ba4fb8fdf497e7"
+dependencies = [
+ "rand_core 0.6.3",
 ]
 
 [[package]]
@@ -1641,8 +1712,8 @@ dependencies = [
 
 [[package]]
 name = "sodiumoxide"
-version = "0.2.6"
-source = "git+https://github.com/cjdelisle/sodiumoxide?rev=76dc0e6e587b8c8a4bb193ebba9f8ae8f090b81b#76dc0e6e587b8c8a4bb193ebba9f8ae8f090b81b"
+version = "0.2.7"
+source = "git+https://github.com/pkteer/sodiumoxide?rev=220ef651665fad5fca706aa3f275e56c28c9a3c6#220ef651665fad5fca706aa3f275e56c28c9a3c6"
 dependencies = [
  "ed25519",
  "libc",

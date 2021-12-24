@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
+use crate::ann_store::AnnStore;
 use crate::blkminer::{BlkMiner, BlkResult, OnShare};
-use crate::downloader;
-use crate::prooftree::{self, ProofTree};
+use crate::prooftree::ProofTree;
+use crate::databuf::DataBuf;
+use crate::types::{HeightWork,ClassSet};
 use anyhow::{bail, Result};
 use bytes::BufMut;
 use log::{debug, info, trace, warn};
-use packetcrypt_sys::difficulty::{pc_degrade_announcement_target, pc_get_effective_target};
+use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
+use packetcrypt_sys::difficulty::pc_get_effective_target;
 use packetcrypt_util::poolclient::{self, PoolClient, PoolUpdate};
 use packetcrypt_util::protocol;
 use packetcrypt_util::{hash, util};
 use rayon::prelude::*;
-use std::cmp::max;
+use std::iter;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub struct BlkArgs {
     pub payment_addr: String,
@@ -27,35 +30,6 @@ pub struct BlkArgs {
     pub uploaders: usize,
     pub handler_pass: String,
     pub spray_cfg: Option<packetcrypt_sprayer::Config>,
-}
-
-struct FreeInfo {
-    // Number of anns at this location
-    ann_count: u32,
-
-    // Location of the ann in the memory slab
-    mloc: u32,
-}
-
-#[derive(Clone, Default)]
-struct AnnInfo {
-    // Parent block height for this batch of anns
-    parent_block_height: i32,
-
-    // Work for this batch
-    ann_min_work: u32,
-
-    // Effective work for this batch, temporary and used when sorting active_infos
-    ann_effective_work: u32,
-
-    // Number of anns or ann slots at this memory location
-    ann_count: u32,
-
-    // Location of the ann in the memory slab
-    mloc: u32,
-
-    // Hashes of anns, empty if this represents a block of free space
-    hashes: Vec<[u8; 32]>,
 }
 
 #[derive(Default, Clone)]
@@ -79,22 +53,14 @@ struct CurrentWork {
 
 pub struct BlkMineS {
     // Memory location where the actual announcements are stored
-    block_miner: BlkMiner,
+    block_miner: Arc<BlkMiner>,
 
-    // Free space and discards from last mining lock
-    inactive_infos: Mutex<Vec<AnnInfo>>,
-
-    // Newly added, not yet selected for mining
-    new_infos: Mutex<Vec<AnnInfo>>,
-
-    // Currently in use mining (do not touch these anns)
-    active_infos: Mutex<Vec<AnnInfo>>,
+    // The new specialized announcement store
+    ann_store: AnnStore,
 
     trees: [Mutex<ProofTree>; 2],
 
     current_mining: Mutex<Option<CurrentMining>>,
-
-    downloaders: tokio::sync::Mutex<Vec<downloader::Downloader<BlkMine>>>,
 
     current_work: Mutex<Option<CurrentWork>>,
 
@@ -145,61 +111,6 @@ fn get_current_mining(bm: &BlkMine) -> Option<CurrentMining> {
     out
 }
 
-// Reclaims free space or poor quality AnnInfos which are not currently being mined
-// This might not return the number of free items you want, it can even return 0
-// if there is no space available.
-fn get_free(bm: &BlkMine, mut count: u32) -> Vec<FreeInfo> {
-    let mut inactive_l = bm.inactive_infos.lock().unwrap();
-    let mut out = Vec::new();
-    //debug!("Get {} free from {} inactives", count, inactive_l.len());
-    loop {
-        if count == 0 {
-            return out;
-        }
-        out.push(if let Some(mut ai) = inactive_l.pop() {
-            if ai.ann_count > count {
-                // Split the AnnInfo, taking the low mloc's and leaving the high ones
-                let fi = FreeInfo {
-                    ann_count: count,
-                    mloc: ai.mloc,
-                };
-                ai.mloc += count;
-                ai.ann_count -= count;
-                if ai.hashes.len() > count as usize {
-                    // remove the first n hashes so that the AnnInfo returned
-                    // is still valid
-                    ai.hashes.drain(0..(count as usize)).count();
-                }
-                inactive_l.push(ai);
-                count = 0;
-                fi
-            } else {
-                count -= ai.ann_count;
-                FreeInfo {
-                    ann_count: ai.ann_count,
-                    mloc: ai.mloc,
-                }
-            }
-        } else {
-            return out;
-        });
-    }
-}
-
-struct AnnStats {
-    parent_block_height: i32,
-    ann_min_work: u32,
-    hash: [u8; 32],
-}
-fn get_ann_stats(b: &[u8]) -> AnnStats {
-    let hash = hash::compress32(b);
-    AnnStats {
-        parent_block_height: packetcrypt_sys::parent_block_height(b),
-        ann_min_work: packetcrypt_sys::work_bits(b),
-        hash,
-    }
-}
-
 trait GetAnn {
     fn get_ann(&self, num: usize) -> &[u8];
     fn ann_count(&self) -> usize;
@@ -213,68 +124,11 @@ impl GetAnn for bytes::Bytes {
     }
 }
 
-fn mk_ann_info(anns: &impl GetAnn, mut free: Vec<FreeInfo>) -> Vec<AnnInfo> {
-    let mut out = Vec::with_capacity(anns.ann_count());
-    let mut ann_i = 0;
-    let mut maybe_fi = free.pop();
-    let mut maybe_ai: Option<AnnInfo> = None;
-    loop {
-        let mloc = if let Some(fi) = &mut maybe_fi {
-            if fi.ann_count == 0 {
-                maybe_fi = free.pop();
-                continue;
-            } else {
-                fi.ann_count -= 1;
-                fi.mloc += 1;
-                fi.mloc - 1
-            }
-        } else {
-            // Ran out of free space
-            if let Some(ai) = maybe_ai {
-                out.push(ai);
-            }
-            return out;
-        };
-        let stats = get_ann_stats(anns.get_ann(ann_i));
-        ann_i += 1;
-        maybe_ai = {
-            let mut next_ai = None;
-            if let Some(mut ai) = maybe_ai {
-                if ai.ann_min_work == stats.ann_min_work
-                    && ai.parent_block_height == stats.parent_block_height
-                    && mloc == ai.mloc + ai.ann_count
-                {
-                    ai.ann_count += 1;
-                    ai.hashes.push(stats.hash);
-                    next_ai = Some(ai)
-                } else {
-                    out.push(ai);
-                }
-            }
-            if next_ai.is_none() {
-                next_ai = Some(AnnInfo {
-                    parent_block_height: stats.parent_block_height,
-                    ann_min_work: stats.ann_min_work,
-                    ann_effective_work: u32::MAX,
-                    ann_count: 1,
-                    hashes: vec![stats.hash],
-                    mloc,
-                })
-            }
-            next_ai
-        };
-    }
+pub struct AnnChunk<'a> {
+    pub anns: &'a [&'a [u8]],
+    pub indexes: &'a [u32],
 }
 
-#[derive(PartialEq, Eq)]
-struct HeightWork {
-    block_height: i32,
-    work: u32,
-}
-struct AnnChunk<'a> {
-    anns: &'a [&'a [u8]],
-    indexes: &'a [u32],
-}
 impl<'a> GetAnn for AnnChunk<'a> {
     fn get_ann(&self, num: usize) -> &[u8] {
         self.anns[self.indexes[num] as usize]
@@ -284,42 +138,18 @@ impl<'a> GetAnn for AnnChunk<'a> {
     }
 }
 
-fn on_anns(bm: &BlkMine, ac: AnnChunk) {
-    // Try to get unused space to place them
-    let free = get_free(bm, ac.indexes.len() as u32);
-
-    // generate ann infos from them
-    let num_frees = free.len();
-    let mut info = mk_ann_info(&ac, free);
-
-    // place anns in the data buffer
-    let mut ann_i = 0;
-    for r in &info {
-        for i in 0..r.ann_count {
-            bm.block_miner.put_ann(r.mloc + i, ac.get_ann(ann_i));
-            ann_i += 1;
-        }
-    }
-
-    // place the ann infos, this is what will make it possible to use the data
-    let num_infos = info.len();
-    bm.new_infos.lock().unwrap().append(&mut info);
+fn on_anns2(bm: &BlkMine, hw: HeightWork, ac: AnnChunk) {
+    let total = bm.ann_store.push_anns(hw, &ac);
 
     // Stats
-    let count = ac.ann_count();
-    if ann_i != count {
-        trace!(
-            "Out of slab space, could only store {} of {} anns",
-            ann_i,
-            count
+    if total < ac.indexes.len() {
+        info!(
+            "Out of slab space, could only store {} out of {} anns",
+            total,
+            ac.indexes.len()
         );
     }
-    trace!(
-        "Loaded {} ANNS - {} frees, {} infos",
-        ann_i,
-        num_frees,
-        num_infos
-    );
+    trace!("Loaded {} ANNS", total);
 }
 
 impl packetcrypt_sprayer::OnAnns for BlkMine {
@@ -338,27 +168,19 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
                 index: i,
             });
         }
-        v.sort_by(|a, b| {
-            if a.hw.block_height != b.hw.block_height {
-                b.hw.block_height.cmp(&a.hw.block_height)
-            } else if a.hw.work != b.hw.work {
-                a.hw.work.cmp(&b.hw.work)
-            } else {
-                std::cmp::Ordering::Equal
-            }
-        });
+        v.par_sort_unstable_by_key(|a| a.hw);
 
         let mut indexes: Vec<u32> = Vec::with_capacity(anns.len());
         let mut height_work: Option<HeightWork> = None;
         for ai in v {
-            let hw = match &height_work {
+            let hw = match height_work {
                 None => {
                     indexes.push(ai.index);
                     height_work = Some(ai.hw);
                     continue;
                 }
                 Some(hw) => {
-                    if hw == &ai.hw {
+                    if hw == ai.hw {
                         indexes.push(ai.index);
                         continue;
                     }
@@ -371,8 +193,9 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
                 hw.block_height,
                 packetcrypt_sys::difficulty::tar_to_diff(hw.work)
             );
-            on_anns(
+            on_anns2(
                 self,
+                hw,
                 AnnChunk {
                     anns,
                     indexes: &indexes[..],
@@ -382,164 +205,66 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
             indexes.push(ai.index);
             height_work = Some(ai.hw);
         }
-    }
-}
-
-impl downloader::OnAnns for BlkMine {
-    fn on_anns(&self, anns: bytes::Bytes, url: &str) {
-        // Get the number of anns
-        let count = if anns.len() % 1024 == 0 {
-            anns.len() / 1024
-        } else {
-            info!(
-                "Anns [{}] had unexpected length [{}] (not a multiple of 1024)",
-                url,
-                anns.len()
-            );
-            return;
-        } as u32;
-
-        let stats = get_ann_stats(&anns[0..1024]);
-        {
-            let cw_l = self.current_work.lock().unwrap();
-            match &*cw_l {
-                Some(cw) => {
-                    let age = max(0, cw.work.height - stats.parent_block_height) as u32;
-                    let ann_effective_work =
-                        pc_degrade_announcement_target(stats.ann_min_work, age);
-                    if age > 3 && ann_effective_work == 0xffffffff {
-                        debug!("Discarding {} because it is already out of date", url);
-                        return;
-                    }
-                }
-                None => (),
-            }
-        }
-
-        // Try to get unused space to place them
-        let free = get_free(self, count);
-
-        // generate ann infos from them
-        let num_frees = free.len();
-        let mut info = mk_ann_info(&anns, free);
-
-        // place anns in the data buffer
-        let mut ann_index = 0;
-        let mut count_landed = 0;
-        for r in &info {
-            for i in 0..r.ann_count {
-                self.block_miner
-                    .put_ann(r.mloc + i, &anns[ann_index..(ann_index + 1024)]);
-                ann_index += 1024;
-                count_landed += 1;
-            }
-        }
-
-        // place the ann infos, this is what will make it possible to use the data
-        let num_infos = info.len();
-        self.new_infos.lock().unwrap().append(&mut info);
-
-        // Stats
-        if count_landed != count {
-            debug!(
-                "Out of slab space, could only store {} of {} anns from req {}",
-                count_landed, count, url
-            );
-        }
-        trace!(
-            "Loaded {} ANNS - {} frees, {} infos",
-            count_landed,
-            num_frees,
-            num_infos
-        );
-    }
-}
-
-struct ReloadAnns {
-    ann_min_work: u32,
-}
-fn reload_anns(
-    bm: &BlkMine,
-    next_work: &protocol::Work,
-    active_l: &mut Vec<AnnInfo>,
-) -> ReloadAnns {
-    // Collect all of the active infos, inactive infos and new infos
-    // compute effective work for everything
-    // place discards into inactive, accepted into active, leave new as empty
-
-    // Lets avoid unlocking inactive until we've re-added entries to it because
-    // otherwise a call to on_anns will have no free work
-    let mut inactive_l = bm.inactive_infos.lock().unwrap();
-    let mut new_l = bm.new_infos.lock().unwrap();
-
-    let mut v = Vec::with_capacity(inactive_l.len() + new_l.len() + active_l.len());
-    v.append(&mut inactive_l);
-    v.append(&mut new_l);
-    v.append(active_l);
-    for ai in &mut v {
-        if ai.hashes.is_empty() {
-            // This is the free space marker
-            ai.ann_effective_work = u32::MAX;
-        } else {
-            let age = max(0, next_work.height - ai.parent_block_height) as u32;
-            ai.ann_effective_work = pc_degrade_announcement_target(ai.ann_min_work, age);
+        if let Some(hw) = height_work {
             trace!(
-                "computed effective work of ann {:#x} with age {} -> {:#x}",
-                ai.ann_min_work,
-                age,
-                ai.ann_effective_work
+                "Batch of {} anns {} @ {}",
+                indexes.len(),
+                hw.block_height,
+                packetcrypt_sys::difficulty::tar_to_diff(hw.work)
+            );
+            on_anns2(
+                self,
+                hw,
+                AnnChunk {
+                    anns,
+                    indexes: &indexes[..],
+                },
             );
         }
     }
-    debug!("reload_anns() processing {} ann files", v.len());
-    // Sort by effective work, lowest numbers (most work) first
-    v.sort_by(|a, b| a.ann_effective_work.cmp(&b.ann_effective_work));
+}
 
-    // Get the best subset
-    let mut best_aew = 0xffffffff;
-    let mut best_tar = 0;
-    let mut best_i = 0;
-    let mut sum_count = 0;
-    for (i, elem) in (0..).zip(v.iter()) {
-        if elem.ann_effective_work == 0xffffffff {
-            break;
-        }
-        sum_count += elem.ann_count;
-        let tar = pc_get_effective_target(
-            next_work.share_target,
-            elem.ann_effective_work,
-            sum_count as u64,
-        );
-        trace!(
-            "reload_anns() try {}/{:#x}",
-            sum_count,
-            elem.ann_effective_work
-        );
-        if tar > best_tar {
-            best_tar = tar;
-            best_i = i;
-            best_aew = elem.ann_effective_work;
-        }
-        if sum_count >= bm.max_mining {
-            break;
-        }
-    }
-    //debug!("Best target is {}, best_i {}", best_tar, best_i);
+fn class_set_min_effective_work(cs: &ClassSet, next_work: &protocol::Work) -> u32 {
+    cs.best_set.iter().map(|hw|{
+        let age = std::cmp::max(0, next_work.height - hw.block_height) as u32;
+        pc_degrade_announcement_target(hw.work, age)
+    }).max().unwrap()
+}
 
-    for (i, elem) in (0..).zip(v.drain(..)) {
-        if i >= best_i {
-            inactive_l.push(elem);
-        } else {
-            active_l.push(elem);
-        }
-    }
-    // This is important because if we keep inactive sorted
-    inactive_l.sort_by(|b, a| a.parent_block_height.cmp(&b.parent_block_height));
-    //debug!("active_l.len() -> {}", active_l.len());
+/// Get all ready classes, already ranked by effective ann work, compute effective work target for each
+/// sub-set, and find the sub-set for which this resulting effective target is the highest.
+fn reload_classes(bm: &BlkMine, next_height: i32) -> Option<ClassSet> {
+    let mut ready = bm.ann_store.classes(next_height);
+    ready.retain(|c| c.can_mine());
 
-    ReloadAnns {
-        ann_min_work: best_aew,
-    }
+    // computes the cummulative counts of the anns within the classes.
+    let counts = ready
+        .iter()
+        .scan(0u64, |acc, ci| {
+            *acc += ci.ann_count as u64;
+            Some(*acc)
+        })
+        .take_while(|&t| t < bm.max_mining as u64);
+
+    // computes the effective work target, and find the sub-set of classes for which it is the highest.
+    let (best, count) = ready.iter().zip(counts).max_by_key(|&(ci, count)| {
+        pc_get_effective_target(0x1c160000, ci.ann_effective_work, count)
+    })?;
+
+    let best_set: Vec<HeightWork> = ready
+        .iter()
+        .take_while(|&ci| ci.hw != best.hw)
+        .chain(iter::once(best))
+        .map(|ci| ci.hw)
+        .collect();
+
+    let min_orig_work = best_set.iter().map(|hw|hw.work).max().unwrap();
+
+    Some(ClassSet {
+        min_orig_work,
+        best_set,
+        count,
+    })
 }
 
 const COINBASE_COMMIT_LEN: usize = 50;
@@ -579,80 +304,144 @@ fn compute_block_header(next_work: &protocol::Work, commit: &[u8]) -> bytes::Byt
     bh
 }
 
-fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
-    bm.block_miner.stop();
-    let (index_table, real_target, current_mining) = {
-        let (tree, tree_num) = get_tree(bm, false);
-        let mut tree_l = tree.lock().unwrap();
-        let (reload, mut data) = {
-            let mut active_l = bm.active_infos.lock().unwrap();
-            let reload = reload_anns(bm, next_work, &mut active_l);
-            debug!("Inserting in tree");
-            tree_l.reset();
-            let data = active_l
-                .par_iter()
-                .map(|ai| {
-                    //debug!("active_l has {} hashes", ai.hashes.len());
-                    let mut out: Vec<prooftree::AnnData> = Vec::with_capacity(ai.hashes.len());
-                    for (h, i) in ai.hashes.iter().zip(0..) {
-                        let mloc = ai.mloc + i;
-                        assert!(mloc < bm.block_miner.max_anns);
-                        out.push(prooftree::AnnData {
-                            hash: *h,
-                            mloc,
-                            index: 0,
-                        });
-                    }
-                    out
-                })
-                .flatten()
-                .collect::<Vec<_>>();
-            if data.is_empty() {
-                bm.block_miner.stop();
+pub struct Time {
+    t0: Instant,
+    tp: Instant,
+}
+impl Time {
+    const PADDING: usize = 40;
+    pub fn start() -> Time {
+        let t = Instant::now();
+        Time { t0: t, tp: t }
+    }
+    pub fn next(&mut self, name: &str) -> String {
+        let t = Instant::now();
+        let ms = (t - self.tp).as_millis();
+        self.tp = t;
+        format!(
+            "{} : {}ms",
+            &util::pad_to(Self::PADDING, name.to_string()),
+            ms
+        )
+    }
+    pub fn total(&self, name: &str) -> String {
+        let t = Instant::now();
+        let ms = (t - self.t0).as_millis();
+        format!(
+            "{} : {}ms",
+            &util::pad_to(Self::PADDING, name.to_string()),
+            ms
+        )
+    }
+}
+
+fn build_off_tree(bm: &BlkMine, next_height: i32) {
+    let mut time = Time::start();
+    let reload = if let Some(r) = reload_classes(bm, next_height) {
+        r
+    } else {
+        debug!("Not mining, no anns ready");
+        return;
+    };
+    debug!("Building tree for height {} in background ({}) classes", next_height, reload.best_set.len());
+    //debug!("{}", time.next("tree.lock()"));
+    let (tree, _) = get_tree(bm, false);
+    //debug!("{}", time.next("get_tree"));
+    let mut tree_l = tree.lock().unwrap();
+    tree_l.reset();
+    debug!("{}", time.next("Prepare"));
+    bm.ann_store
+        .compute_tree(reload, &mut tree_l, &mut time)
+        .unwrap();
+    debug!("{}", time.next("Background tree complete"));
+}
+
+fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
+    let mut time = Time::start();
+
+    bm.block_miner.request_stop();
+    //debug!("{}", time.next("lock_miner.stop"));
+
+    bm.ann_store
+        .block(next_work.height - 1, next_work.header.hash_prev_block);
+    //debug!("{}", time.next("ann_store.block"));
+
+    let (tree, tree_num) = get_tree(bm, false);
+    //debug!("{}", time.next("get_tree"));
+    let mut tree_l = tree.lock().unwrap();
+
+    let (real_target, current_mining);
+    {
+        let mew = if let Some((_,cs)) = tree_l.locked.as_ref() {
+            let mew = class_set_min_effective_work(&cs, next_work);
+            if mew < u32::MAX {
+                debug!("Tree exists with ({}) classes, ({}) anns", cs.best_set.len(), cs.count);
+            }
+            mew
+        } else {
+            u32::MAX
+        };
+        let mew = if mew == u32::MAX {
+            let reload = if let Some(r) = reload_classes(bm, next_work.height) {
+                r
+            } else {
                 debug!("Not mining, no anns ready");
                 return;
-            }
-            (reload, data)
+            };
+            debug!("No usable tree, must build one now ({}) classes", reload.best_set.len());
+            //debug!("{}", time.next("tree.lock()"));
+            tree_l.reset();
+            debug!("{}", time.next("Prepare"));
+            let mew = class_set_min_effective_work(&reload, next_work);
+            bm.ann_store
+                .compute_tree(reload, &mut tree_l, &mut time)
+                .unwrap();
+            //debug!("{}", time.next("ann_store.compute_tree()"));
+            mew
+        } else {
+            mew
         };
-        debug!("Computing tree");
-        let index_table = tree_l.compute(&mut data).unwrap();
-        debug!("Computing block header");
-        let coinbase_commit = tree_l.get_commit(reload.ann_min_work).unwrap();
+
+        //debug!("Computing block header");
+        let coinbase_commit = tree_l.get_commit(mew).unwrap();
+        //debug!("{}", time.next("tree_l.get_commit()"));
         let block_header = compute_block_header(next_work, &coinbase_commit[..]);
-        let real_target = pc_get_effective_target(
-            next_work.share_target,
-            reload.ann_min_work,
-            index_table.len() as u64,
-        );
-        let count = index_table.len() as u32;
-        (
-            index_table,
-            real_target,
-            CurrentMining {
-                count,
-                ann_min_work: reload.ann_min_work,
-                using_tree: tree_num,
-                mining_height: next_work.height,
-                time_started_ms: util::now_ms(),
-                coinbase_commit,
-                block_header,
-                shares: 0,
-            },
-        )
+        //debug!("{}", time.next("compute_block_header()"));
+
+        let count = tree_l.index_table.len();
+        real_target = pc_get_effective_target(next_work.share_target, mew, count as u64);
+        //debug!("{}", time.next("pc_get_effective_target()"));
+        current_mining = CurrentMining {
+            count: count as u32,
+            ann_min_work: mew,
+            using_tree: tree_num,
+            mining_height: next_work.height,
+            time_started_ms: util::now_ms(),
+            coinbase_commit,
+            block_header,
+            shares: 0,
+        };
     };
+
+    //debug!("{}", time.next("Create Block Header"));
+
+    bm.block_miner.await_stop();
+    debug!("{}", time.next("block_miner.await_stop()"));
 
     // Self-test
     let br = bm
         .block_miner
-        .fake_mine(&current_mining.block_header[..], &index_table[..]);
+        .fake_mine(&current_mining.block_header[..], &tree_l.index_table[..]);
 
-    debug!("Start mining...");
+    //debug!("Start mining...");
     bm.block_miner.mine(
         &current_mining.block_header[..],
-        &index_table[..],
+        &tree_l.index_table[..],
         real_target,
         0,
     );
+    //debug!("{}", time.next("block_miner.mine()"));
+
     trace!(
         "Mining with header {}",
         hex::encode(&current_mining.block_header)
@@ -660,9 +449,14 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
     debug!(
         "Mining {} with {} @ {}",
         next_work.height,
-        index_table.len(),
+        tree_l.index_table.len(),
         packetcrypt_sys::difficulty::tar_to_diff(current_mining.ann_min_work),
     );
+
+    drop(tree_l);
+
+    debug!("{}", time.total("total time spent:"));
+
     bm.current_mining.lock().unwrap().replace(current_mining);
 
     // Validate self-test
@@ -670,11 +464,13 @@ fn on_work(bm: &BlkMine, next_work: &protocol::Work) {
         Ok(_) => (),
         Err(e) => warn!("Failed to validate PcP, maybe hardware issues? {}", e),
     };
+
+    build_off_tree(bm, next_work.height + 1);
 }
 
 pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
     let pcli = poolclient::new(&ba.pool_master, 1, 1);
-    let block_miner = BlkMiner::new(ba.max_mem as u64, ba.threads as u32)?;
+    let block_miner = Arc::new(BlkMiner::new(ba.max_mem as u64, ba.threads as u32)?);
     let max_anns = block_miner.max_anns;
     let spray = if let Some(sc) = &ba.spray_cfg {
         Some(packetcrypt_sprayer::Sprayer::new(sc)?)
@@ -682,23 +478,14 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
         None
     };
     let (send, recv) = tokio::sync::mpsc::unbounded_channel();
+    let db = Arc::new(DataBuf::new(Arc::clone(&block_miner)));
     let bm = BlkMine(Arc::new(BlkMineS {
-        block_miner,
-        inactive_infos: Mutex::new(vec![AnnInfo {
-            parent_block_height: 0,
-            ann_min_work: 0,
-            ann_effective_work: 0,
-            ann_count: max_anns,
-            mloc: 0,
-            hashes: Vec::new(),
-        }]),
-        new_infos: Mutex::new(Vec::new()),
-        active_infos: Mutex::new(Vec::new()),
+        block_miner: Arc::clone(&block_miner),
+        ann_store: AnnStore::new(Arc::clone(&db)),
         trees: [
-            Mutex::new(ProofTree::new(max_anns)),
-            Mutex::new(ProofTree::new(max_anns)),
+            Mutex::new(ProofTree::new(max_anns, Arc::clone(&db))),
+            Mutex::new(ProofTree::new(max_anns, db)),
         ],
-        downloaders: tokio::sync::Mutex::new(Vec::new()),
         current_mining: Mutex::new(None),
         current_work: Mutex::new(None),
         max_mining: ((1.0 - ba.min_free_space) * max_anns as f64) as u32,
@@ -711,48 +498,6 @@ pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
     }));
     bm.block_miner.set_handler(bm.clone());
     Ok(bm)
-}
-
-async fn downloader_loop(bm: &BlkMine) {
-    let mut chan = poolclient::update_chan(&bm.pcli).await;
-    let mut urls: Vec<String> = Vec::new();
-    loop {
-        let upd = match chan.recv().await {
-            Ok(x) => x,
-            Err(e) => {
-                info!("Error recv from pool client channel {}", e);
-                util::sleep_ms(5_000).await;
-                continue;
-            }
-        };
-        if upd.conf.download_ann_urls != urls {
-            if !urls.is_empty() {
-                info!(
-                    "Change of ann handler list {:?} -> {:?}",
-                    urls, upd.conf.download_ann_urls
-                )
-            } else {
-                info!("Got ann handler list {:?}", upd.conf.download_ann_urls)
-            }
-            let mut downloaders = bm.downloaders.lock().await.drain(..).collect::<Vec<_>>();
-            for d in downloaders.drain(..) {
-                downloader::stop(&d).await;
-            }
-            let pass = if !bm.ba.handler_pass.is_empty() {
-                Some(bm.ba.handler_pass.clone())
-            } else {
-                None
-            };
-            for url in &upd.conf.download_ann_urls {
-                let dl =
-                    downloader::new(bm.ba.downloader_count, url.to_owned(), bm, pass.clone()).await;
-                downloader::start(&dl).await.unwrap();
-                downloaders.push(dl);
-            }
-            bm.downloaders.lock().await.append(&mut downloaders);
-            urls = upd.conf.download_ann_urls;
-        }
-    }
 }
 
 async fn update_work_cycle(bm: &BlkMine, chan: &mut tokio::sync::broadcast::Receiver<PoolUpdate>) {
@@ -784,7 +529,7 @@ async fn update_work_cycle(bm: &BlkMine, chan: &mut tokio::sync::broadcast::Rece
         work: work.clone(),
         conf: update.conf.clone(),
     });
-    on_work(bm, &work);
+    on_work2(bm, &work);
 }
 
 async fn update_work_loop(bm: &BlkMine) {
@@ -796,18 +541,30 @@ async fn update_work_loop(bm: &BlkMine) {
 
 async fn stats_loop(bm: &BlkMine) {
     loop {
-        let unused = bm.inactive_infos.lock().unwrap().len();
-        let ready = bm.new_infos.lock().unwrap().len();
-        let mut downloaded: Vec<usize> = Vec::new();
-        let mut downloading: Vec<usize> = Vec::new();
-        let mut queued: Vec<usize> = Vec::new();
-        for dl in bm.downloaders.lock().await.iter() {
-            let st = downloader::stats(dl, true).await;
-            downloaded.push(st.downloaded);
-            downloading.push(st.downloading);
-            queued.push(st.queued);
-        }
-        let spr = util::pad_to(27, format!("spare: {} rdy: {} ", unused, ready));
+        let (rdy, spare, cls, imm) = {
+            let cw_l = bm.current_work.lock().unwrap();
+            if let Some(w) = &*cw_l {
+                let classes = bm.ann_store.classes(w.work.height);
+                let (mut rdy, mut spr, mut cls, mut imm) = (0_isize, 0_isize, 0_isize, 0_isize);
+                for c in classes {
+                    cls += 1;
+                    if c.can_mine() {
+                        rdy += c.ann_count as isize;
+                    } else if c.immature {
+                        imm += c.ann_count as isize;
+                    } else {
+                        spr += crate::ann_class::ANNBUF_SZ as isize;
+                    }
+                }
+                (rdy, spr, cls, imm)
+            } else {
+                (-1, -1, -1, -1)
+            }
+        };
+        let spr = util::pad_to(
+            27,
+            format!("rdy: {} spr: {} imm: {} cls: {}", rdy, spare, imm, cls),
+        );
         let dlst = if let Some(spray) = &bm.spray {
             let st = spray.get_peer_stats();
             let v = st
@@ -817,9 +574,7 @@ async fn stats_loop(bm: &BlkMine) {
                 .join(", ");
             format!(" {} <- [ {} ]", spr, v)
         } else {
-            let got = util::pad_to(19, format!("<- got: {:?} ", downloaded));
-            let get = util::pad_to(19, format!("<- get: {:?} ", downloading));
-            format!(" {} {} {} <- q: {:?}", spr, got, get, queued)
+            format!(" {} <- <sprayer disabled>", spr)
         };
         let start_mining = match get_current_mining(bm) {
             None => {
@@ -846,16 +601,16 @@ async fn stats_loop(bm: &BlkMine) {
                 let anns = util::pad_to(20, format!("anns: {} @ {}", cm.count, diff));
                 info!("{}{}{}{}", shr, hr, anns, dlst);
                 // Restart mining after 45s w/o a block
-                util::now_ms() - cm.time_started_ms > 45_000
+                util::now_ms() - cm.time_started_ms > 300_000
             }
         };
-        if unused == 0 {
+        if spare == 0 {
             info!("Out of buffer space, increasing --memorysizemb will improve efficiency");
         }
         // We relock every time if unused space is zero, in order to
         // keep fresh anns flowing in.
         #[allow(clippy::never_loop)] // yes, it's for the break statements.
-        if start_mining || unused == 0 {
+        if start_mining {
             loop {
                 let work = {
                     let cw_l = bm.current_work.lock().unwrap();
@@ -866,8 +621,8 @@ async fn stats_loop(bm: &BlkMine) {
                         break;
                     }
                 };
-                on_work(bm, &work);
-                debug!("Launched miner");
+                on_work2(bm, &work);
+                //debug!("Launched miner");
                 break;
             }
         }
@@ -1150,8 +905,7 @@ impl BlkMine {
             spray.set_handler(self.clone());
             spray.start();
         } else {
-            let a = self.clone();
-            tokio::spawn(async move { downloader_loop(&a).await });
+            warn!("Sprayer disabled.")
         }
         {
             let a = self.clone();

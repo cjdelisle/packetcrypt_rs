@@ -1,141 +1,201 @@
 // SPDX-License-Identifier: (LGPL-2.1-only OR LGPL-3.0-only)
+use crate::blkmine::Time;
+use crate::databuf::DataBuf;
+use crate::types::ClassSet;
 use bytes::BufMut;
 use log::debug;
 use packetcrypt_sys::*;
 use rayon::prelude::*;
-use std::convert::TryInto;
-
-pub struct AnnData {
-    pub hash: [u8; 32],
-    pub mloc: u32,
-    pub index: u32,
-}
-impl AnnData {
-    fn hash_pfx(&self) -> u64 {
-        u64::from_le_bytes(self.hash[0..8].try_into().unwrap())
-    }
-}
+use std::sync::Arc;
 
 pub struct ProofTree {
-    raw: *mut ProofTree_t,
-    capacity: u32,
+    db: Arc<DataBuf>,
+    tbl: Option<Vec<ProofTree_Entry_t>>,
     size: u32,
-    root_hash: Option<[u8; 32]>,
+    pub locked: Option<([u8; 32], ClassSet)>,
+    //pub ann_data: Vec<AnnData>,
+    pub index_table: Vec<u32>,
 }
+
 unsafe impl Send for ProofTree {}
 unsafe impl Sync for ProofTree {}
-impl Drop for ProofTree {
-    fn drop(&mut self) {
-        unsafe {
-            ProofTree_destroy(self.raw);
-        }
-    }
-}
 
 static FFF_ENTRY: ProofTree_Entry_t = ProofTree_Entry_t {
     hash: [0xff_u8; 32],
     start: 0xffffffffffffffff,
     end: 0xffffffffffffffff,
 };
-fn fff_entry() -> *const ProofTree_Entry_t {
-    &FFF_ENTRY as *const ProofTree_Entry_t
-}
+static ZERO_ENTRY: ProofTree_Entry_t = ProofTree_Entry_t {
+    hash: [0; 32],
+    start: 0,
+    end: 0,
+};
 
 impl ProofTree {
-    pub fn new(max_anns: u32) -> ProofTree {
+    pub fn new(max_anns: u32, db: Arc<DataBuf>) -> ProofTree {
+        //let raw_tree = unsafe { ProofTree_create(max_anns) };
+        let tbl_sz = unsafe { PacketCryptProof_entryCount(max_anns as u64) } as usize;
         ProofTree {
-            raw: unsafe { ProofTree_create(max_anns) },
+            db,
+            tbl: Some(unsafe {
+                let mut v = Vec::with_capacity(tbl_sz);
+                v.set_len(tbl_sz);
+                v
+            }),
             size: 0,
-            capacity: max_anns,
-            root_hash: None,
+            locked: None,
+            // ann_data: unsafe {
+            //     let mut v = Vec::with_capacity(max_anns as usize);
+            //     v.set_len(max_anns as usize);
+            //     v
+            // },
+            index_table: Vec::with_capacity(max_anns as usize),
         }
     }
+
     pub fn reset(&mut self) {
         self.size = 0;
-        self.root_hash = None;
+        self.locked = None;
     }
-    pub fn compute(&mut self, data: &mut [AnnData]) -> Result<Vec<u32>, &'static str> {
-        if self.root_hash.is_some() {
+
+    pub fn compute(&mut self, time: &mut Time, class_set: ClassSet) -> Result<(), &'static str> {
+        if self.locked.is_some() {
             return Err("tree is in computed state, call reset() first");
         }
-        if data.is_empty() {
+        if self.index_table.len() == 0 {
             return Err("no anns, cannot compute tree");
         }
-        if data.len() > self.capacity as usize {
-            return Err("too many anns");
-        }
 
-        // Sort the data items
-        data.par_sort_by(|a, b| a.hash_pfx().cmp(&b.hash_pfx()));
-
-        // Create the index table
-        let mut out = Vec::with_capacity(self.size as usize);
-        let mut last_pfx = 0;
-        for d in data.iter_mut() {
-            let pfx = d.hash_pfx();
-            // Deduplicate and insert in the index table
-            #[allow(clippy::comparison_chain)]
-            if pfx > last_pfx {
-                out.push(d.mloc);
-                // careful to skip entry 0 which is the 0-entry
-                d.index = out.len() as u32;
-                last_pfx = pfx;
-            } else if pfx == last_pfx {
-                //debug!("Drop ann with index {:#x}", pfx);
-                d.index = 0;
-            } else {
-                panic!("list not sorted {:#x} < {:#x}", pfx, last_pfx);
+        let mut tbl = self.tbl.take().unwrap();
+        //for (i, ent) in tbl[1..self.index_table.len()+1]
+        
+        const CHUNK_SZ: usize = 256;
+        let mut tbl_s = &mut tbl[1..];
+        let mut slots = Vec::with_capacity(tbl_s.len() / CHUNK_SZ);
+        for i in (0..).step_by(CHUNK_SZ) {
+            if (self.index_table.len()+1) <= i + CHUNK_SZ + 3 {
+                slots.push(tbl_s);
+                break;
             }
+            let (data, excess) = tbl_s.split_at_mut(CHUNK_SZ);
+            slots.push(data);
+            tbl_s = excess;
         }
-        debug!("Loaded {} out of {} anns", out.len(), data.len());
-
-        // Copy the data to the location
-        data.par_iter().for_each(|d| {
-            if d.index == 0 {
-                // Removed in dedupe stage
+        let num_slots = slots.len();
+        slots.par_iter_mut().enumerate().for_each(|(block_num, chunk)| {
+            let i = block_num * CHUNK_SZ;
+            if block_num == num_slots - 1 {
+                // last chunk, special treatment
+                for ((ent, i), mloc) in chunk.iter_mut().zip(i..).zip(self.index_table[i..].iter()) {
+                    let mloc = *mloc as usize;
+                    let hash = self.db.get_hash(mloc);
+                    ent.hash = hash.as_bytes();
+                    ent.start = hash.to_u64();
+                    ent.end = if i+1 < self.index_table.len() {
+                        self.db.get_hash_pfx(self.index_table[i+1] as usize)
+                    } else {
+                        u64::MAX
+                    };
+                    if ent.end <= ent.start {
+                        panic!("ent.end <= ent.start as mloc: {}\n", mloc);
+                    }
+                }
                 return;
             }
-            let e = ProofTree_Entry_t {
-                hash: d.hash,
-                start: d.hash_pfx(),
-                end: 0,
-            };
-            unsafe { ProofTree_putEntry(self.raw, d.index, &e as *const ProofTree_Entry_t) };
-        });
+            assert_eq!(chunk.len(), CHUNK_SZ);
+            let mut mloc = self.index_table[i] as usize;
+            let mut hash = self.db.get_hash(mloc);
+            let mut mloc_plus1 = self.index_table[i+1] as usize;
+            let mut hash_plus1 = self.db.get_hash(mloc_plus1);
+            for (i, (ent, mloc_plus2)) in chunk.iter_mut().zip(self.index_table[i+2..].iter()).enumerate() {
+                let mloc_plus2 = *mloc_plus2 as usize;
+                self.db.prefetch_hash(mloc_plus2);
+                ent.hash = hash.as_bytes();
+                ent.start = hash.to_u64();
+                ent.end = hash_plus1.to_u64();
+                if ent.end <= ent.start {
+                    panic!("ent.end {:#x} <= ent.start {:#x} as mloc: {}, mloc+1: {} - {}\n",
+                        ent.end, ent.start, mloc, mloc_plus1, i);
+                }
+                hash = hash_plus1;
+                mloc = mloc_plus1;
 
-        let total_anns_zero_included = out.len() + 1;
-        unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
+                mloc_plus1 = mloc_plus2;
+                hash_plus1 = self.db.get_hash(mloc_plus2);
+            }
+        });
+        debug!("{}", time.next("compute_tree: putEntry()"));
+
+        let total_anns_zero_included = self.index_table.len() + 1;
+        tbl[0] = ZERO_ENTRY;
+        tbl[0].end = tbl[1].start;
+        assert!(tbl[0].end > tbl[0].start);
+        //unsafe { ProofTree_prepare2(self.raw, total_anns_zero_included as u64) };
+        //debug!("{} total {}", time.next("compute_tree: prepare2()"), total_anns_zero_included);
+
+        let mut blake2b_params = blake2b_simd::Params::new();
+        blake2b_params.hash_length(32);
 
         // Build the merkle tree
         let mut count_this_layer = total_anns_zero_included;
         let mut odx = count_this_layer;
         let mut idx = 0;
         while count_this_layer > 1 {
+            assert!(tbl[odx-1].end == u64::MAX);
             if (count_this_layer & 1) != 0 {
-                unsafe { ProofTree_putEntry(self.raw, odx as u32, fff_entry()) };
+                tbl[odx] = FFF_ENTRY;
                 count_this_layer += 1;
                 odx += 1;
             }
-            (0..count_this_layer)
-                .into_par_iter()
-                .step_by(2)
-                .for_each(|i| unsafe {
-                    ProofTree_hashPair(self.raw, (odx + i / 2) as u64, (idx + i) as u64);
-                });
+
+            const THREAD_STEP_SZ: usize = 8192;
+            let (in_tbl, out_tbl) = tbl[idx..odx+count_this_layer/2].split_at_mut(odx-idx);
+            let tbls = in_tbl.chunks(THREAD_STEP_SZ*2).zip(
+                out_tbl.chunks_mut(THREAD_STEP_SZ)
+            ).collect::<Vec<_>>();
+
+            tbls.into_par_iter().for_each(|(in_tbl, out_tbl)| {
+                use blake2b_simd::many::{HashManyJob, hash_many};
+                assert!(out_tbl.len() * 2 == in_tbl.len());
+                let mut jobs = in_tbl.chunks(2).map(|c| {
+                    HashManyJob::new(
+                        &blake2b_params,
+                        unsafe {
+                            std::slice::from_raw_parts(
+                                (&c[0] as *const ProofTree_Entry_t) as *const u8,
+                                std::mem::size_of::<ProofTree_Entry_t>() * 2,
+                            )
+                        },
+                    )
+                }).collect::<Vec<_>>();
+                hash_many(jobs.iter_mut());
+                for ((job, inc), out) in jobs.iter().zip(in_tbl.chunks(2)).zip(out_tbl.iter_mut()) {
+                    out.hash.copy_from_slice(job.to_hash().as_bytes());
+                    out.start = inc[0].start;
+                    out.end = inc[1].end;
+                }
+            });
             idx += count_this_layer;
             count_this_layer /= 2;
             odx += count_this_layer;
         }
         assert!(idx + 1 == odx);
+        assert!(tbl[idx].start == 0 && tbl[idx].end == u64::MAX);
         let mut rh = [0u8; 32];
-        assert!(odx as u64 == unsafe { ProofTree_complete(self.raw, rh.as_mut_ptr()) });
+        assert!(odx as u64 == unsafe {
+            ProofTree_complete2(tbl.as_ptr(), total_anns_zero_included as u64, rh.as_mut_ptr())
+        });
+        //assert!(odx as u64 == unsafe { ProofTree_complete(self.raw, rh.as_mut_ptr()) });
+        debug!("{}", time.next("compute_tree: compute tree"));
 
-        self.root_hash = Some(rh);
-        self.size = out.len() as u32;
-        Ok(out)
+        self.tbl = Some(tbl);
+        self.locked = Some((rh, class_set));
+        self.size = self.index_table.len() as u32;
+        Ok(())
     }
+
     pub fn get_commit(&self, ann_min_work: u32) -> Result<bytes::BytesMut, &'static str> {
-        let hash = if let Some(h) = self.root_hash.as_ref() {
+        let hash = if let Some((h,_)) = self.locked.as_ref() {
             h
         } else {
             return Err("Not in computed state, call compute() first");
@@ -147,8 +207,9 @@ impl ProofTree {
         out.put_u64_le(self.size as u64);
         Ok(out)
     }
+
     pub fn mk_proof(&mut self, ann_nums: &[u64; 4]) -> Result<bytes::BytesMut, &'static str> {
-        if self.root_hash.is_none() {
+        if self.locked.is_none() {
             return Err("Not in computed state, call compute() first");
         }
         for n in ann_nums {
@@ -157,7 +218,11 @@ impl ProofTree {
             }
         }
         Ok(unsafe {
-            let proof = ProofTree_mkProof(self.raw, ann_nums.as_ptr());
+            let proof = ProofTree_mkProof(self.tbl.as_deref_mut().unwrap().as_ptr(), 
+                (self.index_table.len() + 1) as u64,
+                self.locked.as_ref().unwrap().0.as_ptr(),
+                ann_nums.as_ptr(),
+            );
             let mut out = bytes::BytesMut::with_capacity((*proof).size as usize);
             let sl = std::slice::from_raw_parts((*proof).data, (*proof).size as usize);
             out.put(sl);

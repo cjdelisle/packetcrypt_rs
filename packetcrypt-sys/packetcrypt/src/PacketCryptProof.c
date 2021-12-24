@@ -127,24 +127,25 @@ static void freeProofBig(PacketCryptProof_Big_t* pcpb)
 }
 
 static PacketCryptProof_Big_t* mkProofBig(
-    const PacketCryptProof_Tree_t* _tree,
+    const Entry_t* entries,
+    uint64_t entryCountZeroIncl,
+    const Buf32_t* root,
     const uint64_t annNumbers[static PacketCrypt_NUM_ANNS]
 ) {
-    const Tree_t* tree = (const Tree_t*) _tree;
     PacketCryptProof_Big_t* out = malloc(sizeof(PacketCryptProof_Big_t));
     assert(out);
-    out->totalAnns = tree->totalAnns;
-    const int bh = BRANCH_HEIGHT(tree);
+    out->totalAnns = entryCountZeroIncl;
+    const int bh = Util_log2ceil(entryCountZeroIncl);
     for (int i = 0; i < PacketCrypt_NUM_ANNS; i++) {
         uint64_t offset = out->annNumbers[i] = annNumbers[i];
         uint64_t base = 0;
-        uint64_t count = tree->totalAnns;
+        uint64_t count = entryCountZeroIncl;
         Entry_t* br = out->branches[i] = malloc(sizeof(Entry_t) * bh);
         assert(out->branches[i]);
         DEBUGF("***\n");
         for (int j = 0; j < bh; j++) {
             uint64_t num = base + offset;
-            Buf_OBJCPY(&br[j], &tree->entries[num^1]);
+            Buf_OBJCPY(&br[j], &entries[num^1]);
             DEBUG_OBJ(&br[j]);
             offset >>= 1;
             count += count & 1;
@@ -152,17 +153,17 @@ static PacketCryptProof_Big_t* mkProofBig(
             count = count >> 1;
         }
     }
-    DEBUG_OBJ(&tree->root);
+    // DEBUG_OBJ(&tree->root);
 
     Buf32_t testRoot;
     const Buf32_t* annHashes[4] = {
-        &tree->entries[annNumbers[0]].hash,
-        &tree->entries[annNumbers[1]].hash,
-        &tree->entries[annNumbers[2]].hash,
-        &tree->entries[annNumbers[3]].hash
+        &entries[annNumbers[0]].hash,
+        &entries[annNumbers[1]].hash,
+        &entries[annNumbers[2]].hash,
+        &entries[annNumbers[3]].hash
     };
     hashBig(&testRoot, out, annHashes);
-    assert(!Buf_OBJCMP(&testRoot, &tree->root));
+    assert(!Buf_OBJCMP(&testRoot, root));
 
     return out;
 }
@@ -420,16 +421,18 @@ int PacketCryptProof_hashProof(
 
 uint8_t* PacketCryptProof_mkProof(
     int* sizeOut,
-    const PacketCryptProof_Tree_t* tree,
+    const Entry_t* entryTable,
+    const uint64_t entryCountZeroIncl,
+    const Buf32_t* root,
     const uint64_t annNumbers[static PacketCrypt_NUM_ANNS]
 ) {
     uint64_t annNumbers2[PacketCrypt_NUM_ANNS];
     const Entry_t* announces[PacketCrypt_NUM_ANNS];
     for (int i = 0; i < PacketCrypt_NUM_ANNS; i++) {
         annNumbers2[i] = annNumbers[i] + 1;
-        announces[i] = &tree->entries[annNumbers[i]];
+        announces[i] = &entryTable[annNumbers[i] + 1];
     }
-    PacketCryptProof_Big_t* big = mkProofBig(tree, annNumbers2);
+    PacketCryptProof_Big_t* big = mkProofBig(entryTable, entryCountZeroIncl, root, annNumbers2);
     uint8_t* ret = compress(sizeOut, big, announces);
     freeProofBig(big);
 

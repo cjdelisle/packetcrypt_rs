@@ -29,6 +29,12 @@ pub async fn sleep_ms(ms: u64) {
     tokio::time::delay_for(Duration::from_millis(ms)).await;
 }
 
+pub fn prefetch<T>(t: &T) {
+    let p = t as *const T as *const i8;
+    #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
+    unsafe { core::arch::x86_64::_mm_prefetch::<{ core::arch::x86_64::_MM_HINT_T0 }>(p) }
+}
+
 pub fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)

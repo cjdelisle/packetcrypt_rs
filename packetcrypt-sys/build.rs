@@ -58,6 +58,7 @@ fn main() {
             .header("bindings.h")
             .clang_args(&["-I", "packetcrypt/include"])
             .generate_comments(false)
+            .derive_default(true)
             .whitelist_function(".*")
             .whitelist_type("ExportMe")
             .generate()
@@ -98,6 +99,10 @@ fn main() {
         panic!("Could not find libsodium source code");
     }
 
+    if let Ok(pc_cc) = env::var("PC_CC") {
+        cfg.compiler(pc_cc);
+    }
+
     if cfg.is_flag_supported("-fno-plt").unwrap() {
         cfg.use_plt(false);
     }
@@ -133,4 +138,5 @@ fn main() {
     println!("cargo:root={}", dst.display());
     println!("cargo:include={}", dst.join("include").display());
     println!("cargo:rerun-if-changed={}", env::current_dir().unwrap().to_string_lossy());
+    println!("cargo:rerun-if-env-changed=PC_CC");
 }

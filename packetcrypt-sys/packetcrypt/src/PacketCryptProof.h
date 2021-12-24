@@ -44,7 +44,9 @@ void PacketCryptProof_freeTree(PacketCryptProof_Tree_t* bm);
 // sizeOut is assigned to the length, freeable using free()
 uint8_t* PacketCryptProof_mkProof(
     int* sizeOut,
-    const PacketCryptProof_Tree_t* tree,
+    const Entry_t* entryTable,
+    const uint64_t annCount,
+    const Buf32_t* root,
     const uint64_t annNumbers[static PacketCrypt_NUM_ANNS]
 );
 

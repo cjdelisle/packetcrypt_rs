@@ -61,6 +61,8 @@ struct AnnMiner_s {
     void* callback_ctx;
     AnnMiner_Callback ann_found;
 
+    struct timeval startTime;
+
     pthread_mutex_t lock;
     pthread_cond_t cond;
 };
@@ -77,6 +79,7 @@ struct Worker_s {
 
     Announce_t ann;
     CryptoCycle_State_t state;
+    CryptoCycle_State_t states[CryptoCycle_PAR_STATES];
     PacketCrypt_ValidateCtx_t* vctx;
 
     AnnMiner_t* ctx;
@@ -87,6 +90,7 @@ struct Worker_s {
     int softNonce;
     int softNonceMax;
 
+    _Atomic uintptr_t cycles;
     _Atomic enum ThreadState reqState;
     _Atomic enum ThreadState workerState;
 };
@@ -154,49 +158,43 @@ static int populateTable2(Worker_t* w, Buf64_t* seed) {
     return 0;
 }
 
-// 1 means success
-static int annHash(Worker_t* restrict w, uint32_t nonce) {
-    CryptoCycle_init(&w->state, &w->job.annHash1.thirtytwos[0], nonce);
-    int itemNo = -1;
-    for (int i = 0; i < 4; i++) {
-        itemNo = (CryptoCycle_getItemNo(&w->state) % Announce_TABLE_SZ);
-        CryptoCycle_Item_t* restrict it = &w->job.table[itemNo];
-        if (Util_unlikely(!CryptoCycle_update(&w->state, it))) {
-            return 0;
-        }
-    }
-    uint32_t target = w->job.hah.annHdr.workBits;
-
-    CryptoCycle_final(&w->state);
-    if (!Work_check(w->state.bytes, target)) { return 0; }
-    //if (w->ctx->test) { Hash_printHex(w->state.bytes, 32); }
-
-    Buf_OBJCPY(&w->ann.hdr, &w->job.hah.annHdr);
-    Buf_OBJCPY_LDST(w->ann.hdr.softNonce, &nonce);
-    Announce_Merkle_getBranch(&w->ann.merkleProof, itemNo, &w->job.merkle);
-    if (w->job.hah.annHdr.version > 0) {
-        Buf_OBJSET(w->ann.lastAnnPfx, 0);
-        Announce_crypt(&w->ann, &w->state);
-        //Hash_eprintHex((uint8_t*)&w->ann, 1024);
-    } else {
-        Buf_OBJCPY_LDST(w->ann.lastAnnPfx, &w->job.table[itemNo]);
-    }
-    //printf("itemNo %d\n", itemNo);
-    return 1;
-}
-
 #define HASHES_PER_CYCLE 16
 
-static void search(Worker_t* restrict w)
-{
+__attribute__((always_inline))
+static inline void searchOpt(Worker_t* restrict w) {
     int nonce = w->softNonce;
-    for (int i = 0; i < HASHES_PER_CYCLE; i++) {
-        if (Util_likely(!annHash(w, nonce++))) { continue; }
-        w->ctx->ann_found(w->ctx->callback_ctx, (uint8_t*) &w->ann);
-    }
-    w->softNonce = nonce;
+    uint32_t target = w->job.hah.annHdr.workBits;
+    for (int i = 0; i < HASHES_PER_CYCLE; i += CryptoCycle_PAR_STATES) {
+        int itemNos[CryptoCycle_PAR_STATES] = {0};
+        CryptoCycle_annMineMulti(
+            w->states,
+            &w->job.annHash1.thirtytwos[0],
+            nonce,
+            w->job.table,
+            itemNos
+        );
+        for (int i = 0; i < CryptoCycle_PAR_STATES; i++) {
+            if (!Work_check(w->states[i].bytes, target)) { continue; }
+            int n = nonce + i;
+            //if (w->ctx->test) { Hash_printHex(w->state.bytes, 32); }
 
-    return;
+            Buf_OBJCPY(&w->ann.hdr, &w->job.hah.annHdr);
+            Buf_OBJCPY_LDST(w->ann.hdr.softNonce, &n);
+            Announce_Merkle_getBranch(&w->ann.merkleProof, itemNos[i], &w->job.merkle);
+            if (w->job.hah.annHdr.version > 0) {
+                Buf_OBJSET(w->ann.lastAnnPfx, 0);
+                Announce_crypt(&w->ann, &w->states[i]);
+                //Hash_eprintHex((uint8_t*)&w->ann, 1024);
+            } else {
+                Buf_OBJCPY_LDST(w->ann.lastAnnPfx, &w->job.table[itemNos[i]]);
+            }
+            w->ctx->ann_found(w->ctx->callback_ctx, (uint8_t*) &w->ann);
+        }
+        nonce += CryptoCycle_PAR_STATES;
+        //printf("itemNo %d\n", itemNo);
+    }
+    w->cycles++;
+    w->softNonce = nonce;
 }
 
 // If this returns non-zero then it failed, -1 means try again
@@ -259,6 +257,7 @@ static bool checkStop(Worker_t* worker) {
         }
         setState(worker, rts);
         pthread_cond_wait(&worker->ctx->cond, &worker->ctx->lock);
+        worker->cycles = 0;
     }
 }
 
@@ -273,7 +272,7 @@ static void* thread(void* vworker) {
                 if (checkStop(worker)) { return NULL; }
             } while (x);
         }
-        search(worker);
+        searchOpt(worker);
     }
 }
 
@@ -321,6 +320,7 @@ void AnnMiner_start(AnnMiner_t* ctx, AnnMiner_Request_t* req, int version) {
     for (int i = 0; i < ctx->numWorkers; i++) {
         setRequestedState(ctx, &ctx->workers[i], ThreadState_RUNNING);
     }
+    gettimeofday(&ctx->startTime, NULL);
     pthread_cond_broadcast(&ctx->cond);
 
     ctx->active = true;
@@ -366,4 +366,23 @@ void AnnMiner_free(AnnMiner_t* ctx)
     }
 
     freeCtx(ctx);
+}
+
+double AnnMiner_hashesPerSecond(AnnMiner_t* ctx)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct timeval tv0 = ctx->startTime;
+    uint64_t micros = ((uint64_t)tv.tv_sec - tv0.tv_sec) * 1000000ull + tv.tv_usec - tv0.tv_usec;
+    ctx->startTime = tv;
+
+    uint64_t totalCycles = 0;
+    for (int i = 0; i < ctx->numWorkers; i++) {
+        totalCycles += ctx->workers[i].cycles;
+        ctx->workers[i].cycles = 0;
+    }
+    double hashes = (double) (totalCycles * HASHES_PER_CYCLE); // total hashes done
+    hashes /= (double) micros;
+    hashes *= 1000000.0;
+    return hashes;
 }

@@ -43,7 +43,6 @@ pub unsafe extern "C" fn on_ann_found(vctx: *mut c_void, ann: *mut u8) {
 }
 
 pub fn new(miner_id: u32, workers: usize) -> (AnnMiner, UnboundedReceiver<AnnResult>) {
-    packetcrypt_sys::init();
     let (send_ann, recv_ann) = tokio::sync::mpsc::unbounded_channel();
     let mut cbc = Box::new(CallbackCtx { send_ann });
     let ptr = (&mut *cbc as *mut CallbackCtx) as *mut c_void;
@@ -85,4 +84,30 @@ pub fn start(
         packetcrypt_sys::AnnMiner_start(*miner.miner.lock().unwrap().get_mut(), ptr, ANN_VERSION)
     };
     Ok(())
+}
+
+impl AnnMinerS {
+    pub fn new(miner_id: u32, workers: usize) -> (AnnMiner, UnboundedReceiver<AnnResult>) {
+        new(miner_id, workers)
+    }
+
+    pub fn start(
+        self: &AnnMiner,
+        parent_block_hash: [u8; 32],
+        parent_block_height: i32,
+        target: u32,
+        signing_key: Option<[u8; 32]>,
+    ) -> Result<()> {
+        start(
+            self,
+            parent_block_hash,
+            parent_block_height,
+            target,
+            signing_key,
+        )
+    }
+
+    pub fn hashes_per_second(self: &AnnMiner) -> f64 {
+        unsafe { packetcrypt_sys::AnnMiner_hashesPerSecond(*self.miner.lock().unwrap().get_mut()) }
+    }
 }
