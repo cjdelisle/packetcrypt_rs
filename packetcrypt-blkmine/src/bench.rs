@@ -3,7 +3,7 @@ use anyhow::Result;
 use packetcrypt_annmine::annminer::{AnnMiner, AnnMinerS};
 use packetcrypt_util::util;
 use rand::Rng;
-use sodiumoxide::crypto::stream::chacha20;
+use packetcrypt_sys::sodiumoxide::crypto::stream::chacha20;
 use std::fmt::{Display, Formatter};
 use std::io::{self, Write};
 use std::ops::{AddAssign, Div};
@@ -113,6 +113,7 @@ fn start_bench_blk(max_mem: u64, threads: u32) -> Result<BlkMiner> {
 
     println!("starting mining");
     block_miner.mine(&[0u8, 80], &lookup, 0x03000001, 0xc001); // 0xc001 is cool :)
+    Box::new(lookup).leak();
     Ok(block_miner)
 }
 

@@ -1,15 +1,13 @@
-use crate::types::{Hash,AnnData};
+use crate::types::{Hash,HeightWork};
 use crate::ann_buf::AnnBuf;
-use crate::blkmine::HeightWork;
 use crate::prooftree;
-use log::{debug, warn};
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
-use rayon::prelude::*;
 use std::mem;
 use std::sync::{Arc, Mutex, RwLock, atomic::AtomicBool, atomic::Ordering::Relaxed};
 
 pub const ANNBUF_SZ: usize = 32 * 1024;
-pub type AnnBufSz = AnnBuf<ANNBUF_SZ>;
+pub const BUF_RANGES: usize = 512;
+pub type AnnBufSz = AnnBuf<ANNBUF_SZ, BUF_RANGES>;
 
 struct HashTree {
     origin: Arc<Mutex<prooftree::ProofTree>>,
@@ -23,7 +21,7 @@ impl HashTree {
         }
 
         let mut pf = self.origin.lock().unwrap();
-        if pf.root_hash == self.root_hash.map(|rh|rh.as_bytes()) {
+        if pf.locked.as_ref().map(|x|x.0) == self.root_hash.map(|rh|rh.as_bytes()) {
             pf.reset();
         }
         self.root_hash = None
@@ -170,10 +168,8 @@ impl AnnClass {
         self.mining.store(false, Relaxed);
     }
 
-    pub fn begin_mining(&self) -> usize {
+    pub fn begin_mining(&self) {
         self.mining.store(true, Relaxed);
-        let m = self.m.read().unwrap();
-        m.bufs.iter().map(|b| b.next_ann_index()).sum()
     }
 
     pub fn ready_anns_bufs(&self) -> (usize, usize) {
@@ -182,29 +178,14 @@ impl AnnClass {
         (anns, m.bufs.len())
     }
 
-    pub fn read_ready_anns(&self, mut out: &mut [AnnData]) {
-        let m = self.m.read().unwrap();
-        // split the out buffer into sub-buffers each of which has enough space to hold
-        // the number of bufs that were ready when tallied, which may be changing as we speak...
-        let mut v = Vec::with_capacity(m.bufs.len());
-        for b in &m.bufs {
-            let this = b.next_ann_index();
-            if this > out.len() {
-                debug!(
-                    "Avoided panic in class read: buf.len={} out.len={}",
-                    this,
-                    out.len()
-                );
-                break;
-            }
-            let (data, excess) = out.split_at_mut(this);
-            v.push((b, data));
-            out = excess;
-        }
-        // now that they're split, copy the hashes over in parallel.
-        v.into_par_iter().for_each(|(buf, out)| {
-            buf.read_ready_anns(out);
-        });
+    pub fn take_bufs(&self) -> Vec<Box<AnnBufSz>> {
+        let mut m = self.m.write().unwrap();
+        m.bufs.drain(..).collect::<Vec<_>>()
+    }
+
+    pub fn return_bufs(&self, mut v: Vec<Box<AnnBufSz>>) {
+        let mut m = self.m.write().unwrap();
+        m.bufs.extend(v.drain(..));
     }
 
     /// Get the effective "value" of these anns, result is a compact int

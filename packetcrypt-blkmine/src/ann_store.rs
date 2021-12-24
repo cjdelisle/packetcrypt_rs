@@ -1,6 +1,7 @@
-use crate::types::Hash;
-use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ};
-use crate::blkmine::{AnnChunk, HeightWork, Time};
+use crate::types::{Hash,AnnData,HeightWork,ClassSet};
+use crate::ann_class::{AnnBufSz, AnnClass, ANNBUF_SZ, BUF_RANGES};
+use crate::ann_buf::RangeCount;
+use crate::blkmine::{AnnChunk, Time};
 use crate::databuf::DataBuf;
 use crate::prooftree::ProofTree;
 use log::{debug, warn};
@@ -173,37 +174,97 @@ impl AnnStore {
 
     pub fn compute_tree(
         &self,
-        hwset: &[HeightWork],
+        cs: ClassSet,
         pt: &mut ProofTree,
         time: &mut Time,
     ) -> Result<(), &'static str> {
-        let m = self.m.read().unwrap();
-        let mut set = Vec::new();
-        for (hw, c) in m.classes.iter() {
-            if hwset.contains(hw) {
-                set.push((c, c.begin_mining(), None));
-            } else {
-                c.stop_mining();
+        {
+            let m = self.m.read().unwrap();
+            let mut set = Vec::new();
+            for (hw, c) in m.classes.iter() {
+                if cs.best_set.contains(hw) {
+                    c.begin_mining();
+                    let bufs = c.take_bufs();
+                    set.push((c, bufs));
+                } else {
+                    c.stop_mining();
+                }
             }
-        }
-        let total_anns = set.iter().map(|(_, r, _)| r).sum();
 
-        // split the out buffer into sub-buffers for each class according to
-        // how many anns they had ready, which may be changing as we speak...
-        let mut out = &mut pt.ann_data[..];
-        for (_, this, dst) in &mut set {
-            let (data, excess) = out.split_at_mut(*this);
-            *dst = Some(data);
-            out = excess;
+            debug!("{}", time.next("compute_tree: take bufs"));
+            let mut range_total = RangeCount::default();
+            for (_, bufs) in &set {
+                range_total.add(&bufs.par_iter().map(|b|&b.range_counts).fold(
+                    RangeCount::default,
+                    |mut r1, r2|{
+                        r1.add(r2);
+                        r1
+                    }
+                ).sum());
+            }
+            debug!("{}", time.next("compute_tree: count ranges"));
+
+            let mut infos: Vec<AnnData> = {
+                let total = range_total.0.iter().sum();
+                let mut v = Vec::with_capacity(total);
+                unsafe { v.set_len(total) };
+                v
+            };
+            let markers = (0..BUF_RANGES).map(|_|AtomicUsize::new(0)).collect::<Vec<_>>();
+            let mut offset = 0;
+            for (i, r) in range_total.0.iter().enumerate() {
+                markers[i].store(offset, Ordering::Relaxed);
+                offset += r;
+            }
+            for (_, bufs) in &set {
+                bufs.par_iter().for_each(|b| {
+                    let mut boff = 0;
+                    for i in 0..BUF_RANGES {
+                        let c = b.range_counts.0[i];
+                        let idx = markers[i].fetch_add(c, Ordering::Relaxed);
+                        unsafe {
+                            (*(&infos as *const Vec<AnnData> as *mut Vec<AnnData>))[idx..idx+c].copy_from_slice(
+                                b.slice(boff, boff+c)
+                            );
+                        }
+                        boff += c;
+                    }
+                });
+            }
+            debug!("{}", time.next("compute_tree: copy infos"));
+
+            let mut infos1 = &mut infos[..];
+            let mut info_bufs = Vec::with_capacity(BUF_RANGES);
+            for &r in range_total.0.iter() {
+                let (buf, rem) = infos1.split_at_mut(r);
+                info_bufs.push(buf);
+                infos1 = rem;
+            }
+            info_bufs.into_par_iter().for_each(|buf| {
+                buf.sort_unstable_by_key(|a| a.hash_pfx);
+            });
+            debug!("{}", time.next("compute_tree: sort bufs"));
+
+            let mut last = 0;
+            pt.index_table.clear();
+            for ad in infos {
+                if ad.hash_pfx > last {
+                    pt.index_table.push(ad.mloc as u32);
+                    last = ad.hash_pfx;
+                } else if ad.hash_pfx < last {
+                    panic!("hash prefix went backwards!");
+                }
+            }
+            debug!("{}", time.next("compute_tree: make index table"));
+
+            for (c, bufs) in set {
+                c.return_bufs(bufs);
+            }
+            debug!("{}", time.next("compute_tree: return bufs"));
         }
-        //debug!("{}", time.next("compute_tree: prepare"));
-        // now that they're split, copy the hashes over in parallel.
-        set.into_par_iter().for_each(|(c, _, dst)| {
-            c.read_ready_anns(dst.unwrap());
-        });
-        debug!("{}", time.next("compute_tree: read_ready_anns"));
+        //debug!("{}", time.next("compute_tree: read_ready_anns"));
         // compute the tree.
-        pt.compute(total_anns, time)
+        pt.compute(time, cs)
     }
 }
 

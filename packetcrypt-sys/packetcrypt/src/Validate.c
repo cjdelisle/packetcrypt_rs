@@ -59,9 +59,7 @@ int Validate_checkAnn(
     for (int i = 0; i < 4; i++) {
         itemNo = (CryptoCycle_getItemNo(&state) % Announce_TABLE_SZ);
         Announce_mkitem2(itemNo, &item, &v1Seed[0].thirtytwos[1], vctx);
-        if (!CryptoCycle_update(&state, &item)) {
-            return Validate_checkAnn_INVAL;
-        }
+        CryptoCycle_update(&state, &item);
     }
 
     CryptoCycle_final(&state);
@@ -133,7 +131,7 @@ static int checkPcHash(uint64_t indexesOut[PacketCrypt_NUM_ANNS],
         // This gets modded over the total anns in PacketCryptProof_hashProof()
         indexesOut[j] = CryptoCycle_getItemNo(&pcState);
         CryptoCycle_Item_t* it = (CryptoCycle_Item_t*) &hap->announcements[j];
-        if (Util_unlikely(!CryptoCycle_update(&pcState, it))) { return -1; }
+        CryptoCycle_update(&pcState, it);
     }
     CryptoCycle_smul(&pcState);
     CryptoCycle_final(&pcState);

@@ -30,7 +30,7 @@ jobs:
         run: echo "RELEASE_NAME=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
       - name: Install packages
-        run: sudo apt-get install bash build-essential curl jq gcc git make musl-tools
+        run: sudo apt-get install bash build-essential curl jq clang gcc git make musl-tools
 
       - name: Set up Ruby 2.6
         uses: ruby/setup-ruby@v1

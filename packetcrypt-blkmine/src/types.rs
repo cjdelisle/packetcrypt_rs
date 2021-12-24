@@ -1,8 +1,8 @@
-use sodiumoxide::crypto::generichash;
+use packetcrypt_sys::sodiumoxide::crypto::generichash;
 use std::convert::TryInto;
 use std::ops::Deref;
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AnnData {
     pub hash_pfx: u64,
     pub mloc: usize,
@@ -57,4 +57,17 @@ impl Deref for Hash {
     fn deref(&self) -> &Self::Target {
         &self.0
     }
+}
+
+#[derive(PartialEq, Eq, Ord, PartialOrd, Copy, Clone, Debug)]
+pub struct HeightWork {
+    pub block_height: i32,
+    pub work: u32,
+}
+
+#[derive(PartialEq, Eq, Ord, PartialOrd, Clone, Debug)]
+pub struct ClassSet {
+    pub min_orig_work: u32,
+    pub count: u64,
+    pub best_set: Vec<HeightWork>,
 }
