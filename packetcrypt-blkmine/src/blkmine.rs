@@ -143,7 +143,7 @@ fn on_anns2(bm: &BlkMine, hw: HeightWork, ac: AnnChunk) {
 
     // Stats
     if total < ac.indexes.len() {
-        info!(
+        trace!(
             "Out of slab space, could only store {} out of {} anns",
             total,
             ac.indexes.len()

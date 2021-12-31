@@ -4,7 +4,7 @@ use crate::ann_buf::RangeCount;
 use crate::blkmine::{AnnChunk, Time};
 use crate::databuf::DataBuf;
 use crate::prooftree::ProofTree;
-use log::{debug, warn};
+use log::{debug, warn, trace};
 use packetcrypt_sys::difficulty::pc_degrade_announcement_target;
 use rayon::prelude::*;
 use std::cell::RefCell;
@@ -194,13 +194,16 @@ impl AnnStore {
             debug!("{}", time.next("compute_tree: take bufs"));
             let mut range_total = RangeCount::default();
             for (_, bufs) in &set {
-                range_total.add(&bufs.par_iter().map(|b|&b.range_counts).fold(
-                    RangeCount::default,
+                let v = bufs.par_iter().map(|b|&b.range_counts).fold(
+                    ||{Box::new(RangeCount::default())},
                     |mut r1, r2|{
                         r1.add(r2);
                         r1
                     }
-                ).sum());
+                ).collect::<Vec<_>>();
+                for r in &v {
+                    range_total.add(r);
+                }
             }
             debug!("{}", time.next("compute_tree: count ranges"));
 
@@ -324,7 +327,7 @@ fn steal_non_mining_buf<'a>(m: &'a AnnStoreMut) -> Option<Box<AnnBufSz>> {
             return Some(buf);
         }
     }
-    warn!(
+    trace!(
         "Unable to get a buffer: classes: [{}], too_new: [{}] mining: [{}], empty: [{}]",
         class_count, too_new, mining_count, empty_count
     );
