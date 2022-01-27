@@ -16,7 +16,7 @@ name = "packetcrypt_sys"
 
 [dependencies]
 packetcrypt-util = { version = "0.4", path = "../packetcrypt-util" }
-sodiumoxide = { git = "https://github.com/pkteer/sodiumoxide", rev = "bcf318353ab5650855d544ba78d52caf9083955d", default-features = false, features = ["std"] }
+sodiumoxide = { git = "https://github.com/pkteer/sodiumoxide", rev = "bb8042fc25f458147bbf74de78cf69dcd8d481aa", default-features = false, features = ["std"] }
 bytes = "0.5.4"
 num-bigint = { version = "0.3" }
 num-traits = { version = "0.2" }

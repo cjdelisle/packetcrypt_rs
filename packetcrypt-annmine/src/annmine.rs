@@ -278,6 +278,17 @@ fn submit_anns(
     if tip.anns.len() == 0 {
         return;
     }
+    use reqwest::Url;
+    if let Ok(url) = Url::parse(&h.url) {
+        if url.scheme() == "http" || url.scheme() == "https" {
+            if let Some(domain) = url.domain() {
+                if domain == "invalid" {
+                    p.rejected_anns.fetch_add(tip.anns.len(), Ordering::Relaxed);
+                    return;
+                }
+            }
+        }
+    }
     let mut queue = h.queue.lock().unwrap();
     trace!("Queue {} anns at {} for {}, {} batches currently queued", tip.anns.len(), tip.parent_block_height, h.url, queue.len());
     if queue.len() >= UPLOAD_CHANNEL_LEN {
