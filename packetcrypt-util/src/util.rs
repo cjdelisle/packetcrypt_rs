@@ -30,9 +30,9 @@ pub async fn sleep_ms(ms: u64) {
 }
 
 pub fn prefetch<T>(t: &T) {
-    let p = t as *const T as *const i8;
+    let _p = t as *const T as *const i8;
     #[cfg(all(target_arch = "x86_64", target_feature = "sse"))]
-    unsafe { core::arch::x86_64::_mm_prefetch::<{ core::arch::x86_64::_MM_HINT_T0 }>(p) }
+    unsafe { core::arch::x86_64::_mm_prefetch::<{ core::arch::x86_64::_MM_HINT_T0 }>(_p) }
 }
 
 pub fn now_ms() -> u64 {
