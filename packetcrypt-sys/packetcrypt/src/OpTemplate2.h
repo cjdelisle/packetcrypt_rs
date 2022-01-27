@@ -51,21 +51,8 @@
 #define CTZ16_IMPL(a) ((a) ? __builtin_ctz(a) : 16)
 #define CTZ32_IMPL(a) ((a) ? __builtin_ctz(a) : 32)
 
-#if __SIZEOF_LONG__ == 8
-    #define POPCOUNT64_IMPL(a) __builtin_popcountl(a)
-    #define CLZ64_IMPL(a) ((a) ? __builtin_clzl(a) : 64)
-    #define CTZ64_IMPL(a) ((a) ? __builtin_clzl(a) : 64)
-#elif __SIZEOF_LONG_LONG__ == 8
-    #define POPCOUNT64_IMPL(a) __builtin_popcountll(a)
-    #define CLZ64_IMPL(a) ((a) ? __builtin_clzll(a) : 64)
-    #define CTZ64_IMPL(a) ((a) ? __builtin_ctzll(a) : 64)
-#else
-    #error "unknown size of 64 bit register"
-#endif
-
 #define BSWAP16_IMPL(a) __builtin_bswap16(a)
 #define BSWAP32_IMPL(a) __builtin_bswap32(a)
-#define BSWAP64_IMPL(a) __builtin_bswap64(a)
 
 #endif // ndef GOLANG
 
@@ -376,50 +363,14 @@ FOP(ctz,       { return uint32(CTZ32_IMPL(a)); }) MKOP(CTZ, ctz)
 #undef FOP
 #undef MKOP
 
-#define FOP(name, impl) MKFUN1(uint64_t, name ## 64, uint64_t, a, impl)
-#define MKOP(NAME, name) MKSOP_64(NAME ## 64, name ## 64)
-FOP(popcnt,    { return uint64(POPCOUNT64_IMPL(a)); }) MKOP(POPCNT, popcnt)
-FOP(clz,       { return uint64(CLZ64_IMPL(a)); }) MKOP(CLZ, clz)
-FOP(bswap,     { return BSWAP64_IMPL(a); }) MKOP(BSWAP, bswap)
-FOP(ctz,       { return uint64(CTZ64_IMPL(a)); }) MKOP(CTZ, ctz)
-#undef FOP
-#undef MKOP
-
-/*
-#define OP1(out, in) var(uint32_t, out, (in)); DEBUGF("%s -> %08x\n", #in, out)
-#define OP2(outA, outB, in) \
-    var(uint32_t, outA, 0); \
-    var(uint32_t, outB, 0); \
-    SCOPE({ \
-        var(uint64_t, tmp, (in); \
-        outA = uint32(tmp); \
-        outB = uint32(tmp >> 32); \
-    })
-#define OP4(outA, outB, outC, outD, in) \
-    var(uint32_t, outA, 0); \
-    var(uint32_t, outB, 0); \
-    var(uint32_t, outC, 0); \
-    var(uint32_t, outD, 0); \
-    SCOPE({ \
-        var(uint128, tmp, (in)); \
-        outA = U128_0(tmp); \
-        outB = U128_1(tmp); \
-        outC = U128_2(tmp); \
-        outD = U128_3(tmp); \
-    })
-*/
-
 // comm -3 ./basic_defines.txt ot2_defines.txt | sed 's/^.*#define \([^ (]*\).*$/#undef \1/'
 #undef BSWAP16_IMPL
 #undef BSWAP32_IMPL
-#undef BSWAP64_IMPL
 #undef CLZ16_IMPL
 #undef CLZ32_IMPL
-#undef CLZ64_IMPL
 #undef CLZ8_IMPL
 #undef CTZ16_IMPL
 #undef CTZ32_IMPL
-#undef CTZ64_IMPL
 #undef CTZ8_IMPL
 #undef DEBUGF
 #undef MK128
@@ -444,7 +395,6 @@ FOP(ctz,       { return uint64(CTZ64_IMPL(a)); }) MKOP(CTZ, ctz)
 #undef OP4
 #undef POPCOUNT16_IMPL
 #undef POPCOUNT32_IMPL
-#undef POPCOUNT64_IMPL
 #undef POPCOUNT8_IMPL
 #undef POPCOUNT_IMPL
 #undef SCOPE
