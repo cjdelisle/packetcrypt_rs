@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::collections::VecDeque;
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver};
+use serde::{Deserialize};
 
 const RECENT_WORK_BUF: usize = 8;
 const MAX_ANN_BATCH_SIZE: usize = 1024;
@@ -81,6 +82,16 @@ pub struct AnnMineCfg {
     pub pay_to: String,
     pub upload_timeout: usize,
     pub mine_old_anns: i32,
+}
+
+#[derive(Deserialize)]
+pub struct AnnMineExternalConfig {
+    pub pools: Option<Vec<String>>,
+    pub threads: Option<usize>,
+    pub payment_addr: Option<String>,
+    pub uploaders: Option<usize>,
+    pub upload_timeout: Option<usize>,
+    pub mine_old_anns: Option<i32>,
 }
 
 const UPLOAD_CHANNEL_LEN: usize = 100;
