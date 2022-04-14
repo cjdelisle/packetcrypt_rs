@@ -93,6 +93,18 @@ pub struct AnnMineExternalConfig {
     pub upload_timeout: Option<usize>,
     pub mine_old_anns: Option<i32>,
 }
+impl AnnMineExternalConfig {
+    pub fn print(&self) {
+        println!("\n================ Configuration ================");
+        println!("      Pay Addrress: {}", self.payment_addr.clone().unwrap());
+        println!("           Pool(s): {}", self.pools.clone().unwrap().join("\n                    "));
+        println!("           Threads: {}", self.threads.unwrap());
+        println!("         Uploaders: {}", self.uploaders.unwrap());
+        println!("  Uploader Timeout: {}", self.upload_timeout.unwrap());
+        println!("     Mine Old Anns: {}", self.mine_old_anns.unwrap());
+        println!("===============================================\n");
+    }
+}
 
 const UPLOAD_CHANNEL_LEN: usize = 100;
 

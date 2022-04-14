@@ -120,17 +120,19 @@ async fn ann_load_config(
     mine_old_anns: i32,
     config_json_path: String
 ) -> Result<annmine::AnnMineExternalConfig> {
+    let defaults = CliParamDefault { ..Default::default() };
+
     let mut config = annmine::AnnMineExternalConfig {
-        pools: Some(pools),
+        pools: Some(pools.clone()),
         threads: Some(threads),
-        payment_addr: Some(payment_addr),
+        payment_addr: Some(payment_addr.clone()),
         uploaders: Some(uploaders),
         upload_timeout: Some(upload_timeout),
         mine_old_anns: Some(mine_old_anns),
     };
 
     if !config_json_path.is_empty() {
-        let cfg: annmine::AnnMineExternalConfig;
+        //let cfg: annmine::AnnMineExternalConfig;
         let json: String;
 
         if config_json_path.contains("http://") || config_json_path.contains("https://") {
@@ -146,34 +148,45 @@ async fn ann_load_config(
             json = tokio::fs::read_to_string(file).await.ok().expect("Could not read file");
         }
 
-        cfg = match serde_json::from_str::<annmine::AnnMineExternalConfig>(json.as_str()){
+        match serde_json::from_str::<annmine::AnnMineExternalConfig>(json.as_str()){
             Result::Ok(parsed) => {
-                if let Some(p) = parsed.pools {
-                    config.pools = Some(p);
-                }
-                if let Some(t) = parsed.threads {
-                    config.threads = Some(t);
-                }
-                if let Some(a) = parsed.payment_addr {
-                    config.payment_addr = Some(a);
-                } 
-                if let Some(u) = parsed.uploaders {
-                    config.uploaders = Some(u);
-                }
-                if let Some(ut) = parsed.upload_timeout {
-                    config.upload_timeout = Some(ut);
-                } 
-                if let Some(m) = parsed.mine_old_anns {
-                    config.mine_old_anns = Some(m);
-                }
 
-                config
+                if pools.len() == 0 {
+                    if let Some(p) = parsed.pools {
+                        config.pools = Some(p);
+                    }
+                }
+                if threads == defaults.ann_threads {
+                    if let Some(t) = parsed.threads {
+                        config.threads = Some(t);
+                    }
+                }
+                if payment_addr == defaults.ann_payment_addr {
+                    if let Some(a) = parsed.payment_addr {
+                        config.payment_addr = Some(a);
+                    } 
+                }
+                if uploaders == defaults.ann_uploaders {
+                    if let Some(u) = parsed.uploaders {
+                        config.uploaders = Some(u);
+                    }
+                }
+                if upload_timeout != defaults.ann_upload_timeout {
+                    if let Some(ut) = parsed.upload_timeout {
+                        config.upload_timeout = Some(ut);
+                    } 
+                }
+                if mine_old_anns != defaults.ann_mine_old {
+                    if let Some(m) = parsed.mine_old_anns {
+                        config.mine_old_anns = Some(m);
+                    }
+                }
             },
             Result::Err(err) => {panic!("Unable to parse config.json {}", err)}
         };
-
-        return Ok(cfg) 
     }
+
+    config.print();
 
     Ok(config)
 }
@@ -390,9 +403,34 @@ fn version() -> &'static str {
     }
 }
 
+struct CliParamDefault {
+    ann_threads: usize,
+    ann_uploaders: usize,
+    ann_payment_addr: String,
+    ann_upload_timeout: usize,
+    ann_mine_old: i32,
+}
+impl Default for CliParamDefault {
+    fn default() -> CliParamDefault {
+        CliParamDefault {
+            ann_threads: num_cpus::get(),
+            ann_uploaders: 10,
+            ann_payment_addr: String::from(DEFAULT_ADDR),
+            ann_upload_timeout: 30,
+            ann_mine_old: -1
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cpus_str = format!("{}", num_cpus::get());
+    let defaults = CliParamDefault { ..Default::default() };
+    let cpus_str = defaults.ann_threads.to_string();  //format!("{}", num_cpus::get());
+    let ann_uploaders = defaults.ann_uploaders.to_string();
+    let ann_upload_timeout = defaults.ann_upload_timeout.to_string();
+    let ann_payment_addr = defaults.ann_payment_addr.to_string();
+    let ann_mine_old = defaults.ann_mine_old.to_string();
+
     let matches = App::new("packetcrypt")
         .version(version())
         .author("Caleb James DeLisle <cjd@cjdns.fr>")
@@ -439,7 +477,7 @@ async fn main() -> Result<()> {
                         .short("U")
                         .long("uploaders")
                         .help("Max concurrent uploads (per pool handler)")
-                        .default_value("10")
+                        .default_value(&ann_uploaders)
                         .takes_value(true),
                 )
                 .arg(
@@ -447,7 +485,7 @@ async fn main() -> Result<()> {
                         .short("T")
                         .long("uploadtimeout")
                         .help("How long to wait for a reply before aborting an upload")
-                        .default_value("30")
+                        .default_value(&ann_upload_timeout)
                         .takes_value(true),
                 )
                 .arg(
@@ -455,14 +493,14 @@ async fn main() -> Result<()> {
                         .short("p")
                         .long("paymentaddr")
                         .help("Address to request payment for mining")
-                        .default_value(DEFAULT_ADDR),
+                        .default_value(&ann_payment_addr),
                 )
                 .arg(
                     Arg::with_name("mineold")
                         .short("m")
                         .long("mineold")
                         .help("how many blocks old to mine annoucements, -1 to let the pool decide")
-                        .default_value("-1"),
+                        .default_value(&ann_mine_old),
                 )
                 .arg(
                     Arg::with_name("pools")
