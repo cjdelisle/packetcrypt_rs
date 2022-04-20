@@ -171,12 +171,12 @@ async fn ann_load_config(
                         config.uploaders = Some(u);
                     }
                 }
-                if upload_timeout != defaults.ann_upload_timeout {
+                if upload_timeout == defaults.ann_upload_timeout {
                     if let Some(ut) = parsed.upload_timeout {
                         config.upload_timeout = Some(ut);
                     } 
                 }
-                if mine_old_anns != defaults.ann_mine_old {
+                if mine_old_anns == defaults.ann_mine_old {
                     if let Some(m) = parsed.mine_old_anns {
                         config.mine_old_anns = Some(m);
                     }
