@@ -2,7 +2,7 @@
 
 function build() {
   cd "${GITHUB_WORKSPACE}" || exit
-  PC_CC=clang cargo build --release --features portable --target=x86_64-unknown-linux-musl
+  PC_CC=clang cargo build --release --features jemalloc --features portable --target=x86_64-unknown-linux-musl
 
   mkdir "${GITHUB_WORKSPACE}/bin"
 

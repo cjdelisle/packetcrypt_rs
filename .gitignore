@@ -6,4 +6,5 @@ target
 /datastore
 *\.pkg
 *\.rpm
-
+.DS_Store
+.DS_Store?
