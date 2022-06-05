@@ -539,7 +539,7 @@ async fn stats_loop(am: &AnnMine) {
                     ((if total > 0 {
                         accepted as f32 / total as f32
                     } else {
-                        1.0
+                        0.0
                     }) * 100.0) as u32,
                 ));
             }
