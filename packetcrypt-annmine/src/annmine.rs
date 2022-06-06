@@ -96,7 +96,7 @@ pub struct AnnMineExternalConfig {
 impl AnnMineExternalConfig {
     pub fn print(&self) {
         println!("\n================ Configuration ================");
-        println!("      Pay Addrress: {}", self.payment_addr.clone().unwrap());
+        println!("       Pay Address: {}", self.payment_addr.clone().unwrap());
         println!("           Pool(s): {}", self.pools.clone().unwrap().join("\n                    "));
         println!("           Threads: {}", self.threads.unwrap());
         println!("         Uploaders: {}", self.uploaders.unwrap());
@@ -182,7 +182,7 @@ fn update_work_cycle(am: &AnnMine, p: &Arc<Pool>, update: PoolUpdate) -> Vec<Arc
             let h = &pm.handlers[i];
             if !update.conf.submit_ann_urls.contains(&h.url) {
                 info!(
-                    "Dropping handler {} because it is nolonger in the pool",
+                    "Dropping handler {} because it is no longer in the pool",
                     h.url
                 );
                 out.push(pm.handlers.remove(i));
