@@ -525,23 +525,32 @@ async fn stats_loop(am: &AnnMine) {
             let mut accepted_rejected_over_anns = Vec::new();
             let mut rate = Vec::new();
             for p in &am.pools {
-                let lost = p.lost_anns.swap(0, Ordering::Relaxed);
-                lost_anns.push(format!("{}", lost));
-                let inflight = p.inflight_anns.load(Ordering::Relaxed);
-                inflight_anns.push(format!("{}", inflight));
-                let accepted = p.accepted_anns.swap(0, Ordering::Relaxed);
-                let rejected = p.rejected_anns.swap(0, Ordering::Relaxed);
-                let over = p.overload_anns.swap(0, Ordering::Relaxed);
-                accepted_rejected_over_anns.push(format!("{}/{}/{}", accepted, rejected, over));
-                let total = lost + over + rejected + accepted;
-                rate.push(format!(
-                    "{}%",
-                    ((if total > 0 {
-                        accepted as f32 / total as f32
-                    } else {
-                        0.0
-                    }) * 100.0) as u32,
-                ));
+                let pm = p.m.lock().unwrap();
+                let hcount = pm.handlers.len() as u64;
+                if hcount == 0 { // no handlers available, so no anns were sent
+                    lost_anns.push(format!("{}", 0));
+                    inflight_anns.push(format!("{}", 0));
+                    accepted_rejected_over_anns.push(format!("{}/{}/{}",0,0,0));
+                    rate.push(format!("{}%", 0));
+                } else {
+                    let lost = p.lost_anns.swap(0, Ordering::Relaxed);
+                    lost_anns.push(format!("{}", lost));
+                    let inflight = p.inflight_anns.load(Ordering::Relaxed);
+                    inflight_anns.push(format!("{}", inflight));
+                    let accepted = p.accepted_anns.swap(0, Ordering::Relaxed);
+                    let rejected = p.rejected_anns.swap(0, Ordering::Relaxed);
+                    let over = p.overload_anns.swap(0, Ordering::Relaxed);
+                    accepted_rejected_over_anns.push(format!("{}/{}/{}", accepted, rejected, over));
+                    let total = lost + over + rejected + accepted;
+                    rate.push(format!(
+                        "{}%",
+                        ((if total > 0 {
+                            accepted as f32 / total as f32
+                        } else {
+                            1.0
+                        }) * 100.0) as u32,
+                    ));
+                }
             }
 
             if kbps > 0.0 {
