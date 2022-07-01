@@ -145,7 +145,7 @@ static void mineOpt(Worker_t* w)
             CryptoCycle_blockMineMulti(
                 w->pcStates,
                 &hdrHash,
-                lowNonce + i,
+                lowNonce,
                 w->g->annCount,
                 w->g->hai.index,
                 (const CryptoCycle_Item_t *) w->g->anns,
@@ -157,14 +157,14 @@ static void mineOpt(Worker_t* w)
                 if (NOISY_LOG_SHARES) {
                     printf("share / %u / %u\n", hdr.nonce, lowNonce);
                     printf("effective target %x\n", w->g->effectiveTarget);
-                    for (int k = 0; k < 80; k++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
+                    for (int k = 0; k < 80; k++) { printf("%02x", ((uint8_t*)&hdr)[k]); }
                     printf("\n");
-                    for (int k = 0; k < 32; k++) { printf("%02x", hdrHash.bytes[i]); }
+                    for (int k = 0; k < 32; k++) { printf("%02x", hdrHash.bytes[k]); }
                     printf("\n");
                     for (int k = 0; k < 4; k++) {
                         uint64_t loc = res[j].ann_mlocs[k];
                         uint64_t lloc = res[j].ann_llocs[k];
-                        printf("%llu (%llu) - ", (long long unsigned) lloc, (long long unsigned) loc);
+                        printf("%llu - ", (long long unsigned) lloc);
                         for (int kk = 0; kk < 32; kk++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[kk]); }
                         printf("\n");
                     }
@@ -176,8 +176,8 @@ static void mineOpt(Worker_t* w)
                 if (w->g->cb) {
                     w->g->cb(&res[j], w->g->cbc);
                 }
-                w->lowNonce = lowNonce;
             }
+            lowNonce += CryptoCycle_PAR_STATES;
         }
         Time_END(t);
         w->hashesPerSecond = ((HASHES_PER_CYCLE * 1024) / (Time_MICROS(t) / 1024));
