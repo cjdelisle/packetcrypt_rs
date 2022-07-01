@@ -208,12 +208,13 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
             height_work = Some(ai.hw);
         }
         if let Some(hw) = height_work {
-            trace!(
-                "Batch of {} anns {} @ {}",
-                indexes.len(),
-                hw.block_height,
-                packetcrypt_sys::difficulty::tar_to_diff(hw.work)
-            );
+            // Too much noise
+            // trace!(
+            //     "Batch of {} anns {} @ {}",
+            //     indexes.len(),
+            //     hw.block_height,
+            //     packetcrypt_sys::difficulty::tar_to_diff(hw.work)
+            // );
             on_anns2(
                 self,
                 hw,
