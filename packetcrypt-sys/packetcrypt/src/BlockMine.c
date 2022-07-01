@@ -164,7 +164,7 @@ static void mineOpt(Worker_t* w)
                     for (int j = 0; j < 4; j++) {
                         uint64_t loc = res[j].ann_mlocs[j];
                         uint64_t lloc = res[j].ann_llocs[j];
-                        printf("%llu - ", (long long unsigned) loc, (long long unsigned) lloc);
+                        printf("%llu (%llu) - ", (long long unsigned) loc, (long long unsigned) lloc);
                         for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
                         printf("\n");
                     }
