@@ -122,7 +122,7 @@ struct Worker_s {
 
 #define HASHES_PER_CYCLE 2000
 
-#define NOISY_LOG_SHARES 0
+#define NOISY_LOG_SHARES 1
 
 // Worker
 static void mineOpt(Worker_t* w)
@@ -163,7 +163,8 @@ static void mineOpt(Worker_t* w)
                     printf("\n");
                     for (int j = 0; j < 4; j++) {
                         uint64_t loc = res[j].ann_mlocs[j];
-                        printf("%llu - ", (long long unsigned) loc);
+                        uint64_t lloc = res[j].ann_llocs[j];
+                        printf("%llu - ", (long long unsigned) loc, (long long unsigned) lloc);
                         for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
                         printf("\n");
                     }
