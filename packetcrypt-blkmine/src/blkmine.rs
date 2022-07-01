@@ -149,7 +149,8 @@ fn on_anns2(bm: &BlkMine, hw: HeightWork, ac: AnnChunk) {
             ac.indexes.len()
         );
     }
-    trace!("Loaded {} ANNS", total);
+    // MY EARS!
+    // trace!("Loaded {} ANNS", total);
 }
 
 impl packetcrypt_sprayer::OnAnns for BlkMine {
@@ -187,12 +188,13 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
                     hw
                 }
             };
-            trace!(
-                "Batch of {} anns {} @ {}",
-                indexes.len(),
-                hw.block_height,
-                packetcrypt_sys::difficulty::tar_to_diff(hw.work)
-            );
+            // MY EARS!
+            // trace!(
+            //     "Batch of {} anns {} @ {}",
+            //     indexes.len(),
+            //     hw.block_height,
+            //     packetcrypt_sys::difficulty::tar_to_diff(hw.work)
+            // );
             on_anns2(
                 self,
                 hw,
