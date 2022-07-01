@@ -155,7 +155,7 @@ static void mineOpt(Worker_t* w)
                 if (!Work_check(w->pcStates[j].bytes, w->g->effectiveTarget)) { continue; }
 
                 if (NOISY_LOG_SHARES) {
-                    printf("share / %u / %u\n", hdr.nonce, lowNonce);
+                    printf("share / %u / %u\n", hdr.nonce, lowNonce + j);
                     printf("effective target %x\n", w->g->effectiveTarget);
                     for (int k = 0; k < 80; k++) { printf("%02x", ((uint8_t*)&hdr)[k]); }
                     printf("\n");
@@ -170,7 +170,7 @@ static void mineOpt(Worker_t* w)
                     }
                 }
 
-                res[j].low_nonce = lowNonce;
+                res[j].low_nonce = lowNonce + j;
                 res[j].high_nonce = hdr.nonce;
                 //Buf_OBJCPY(&res.hdr, &hdr);
                 if (w->g->cb) {
