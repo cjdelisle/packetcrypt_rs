@@ -157,15 +157,15 @@ static void mineOpt(Worker_t* w)
                 if (NOISY_LOG_SHARES) {
                     printf("share / %u / %u\n", hdr.nonce, lowNonce);
                     printf("effective target %x\n", w->g->effectiveTarget);
-                    for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
+                    for (int k = 0; k < 80; k++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
                     printf("\n");
-                    for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
+                    for (int k = 0; k < 32; k++) { printf("%02x", hdrHash.bytes[i]); }
                     printf("\n");
-                    for (int j = 0; j < 4; j++) {
-                        uint64_t loc = res[j].ann_mlocs[j];
-                        uint64_t lloc = res[j].ann_llocs[j];
-                        printf("%llu (%llu) - ", (long long unsigned) loc, (long long unsigned) lloc);
-                        for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
+                    for (int k = 0; k < 4; k++) {
+                        uint64_t loc = res[j].ann_mlocs[k];
+                        uint64_t lloc = res[j].ann_llocs[k];
+                        printf("%llu (%llu) - ", (long long unsigned) lloc, (long long unsigned) loc);
+                        for (int kk = 0; kk < 32; kk++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[kk]); }
                         printf("\n");
                     }
                 }
