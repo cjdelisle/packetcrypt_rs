@@ -53,6 +53,10 @@ impl ProofTree {
         }
     }
 
+    pub fn size(&self) -> u32 {
+        self.size
+    }
+
     pub fn reset(&mut self) {
         self.size = 0;
         self.locked = None;
