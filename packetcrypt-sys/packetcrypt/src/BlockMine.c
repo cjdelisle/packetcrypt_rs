@@ -122,7 +122,7 @@ struct Worker_s {
 
 #define HASHES_PER_CYCLE 2000
 
-#define NOISY_LOG_SHARES 1
+#define NOISY_LOG_SHARES 0
 
 // Worker
 static void mineOpt(Worker_t* w)
