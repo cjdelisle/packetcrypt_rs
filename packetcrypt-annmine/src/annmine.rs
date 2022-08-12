@@ -168,7 +168,7 @@ fn update_work_cycle(am: &AnnMine, p: &Arc<Pool>, update: PoolUpdate) -> Vec<Arc
     };
 
     if p.primary {
-    	pm.currently_mining = top - mine_old;
+        pm.currently_mining = top - mine_old;
     }
 
     // We're synced to the tip, begin mining (or start mining new anns)
