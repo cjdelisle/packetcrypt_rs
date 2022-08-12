@@ -160,12 +160,16 @@ fn update_work_cycle(am: &AnnMine, p: &Arc<Pool>, update: PoolUpdate) -> Vec<Arc
         top = max(bi.header.height, top);
         pm.recent_work[(bi.header.height as usize) % RECENT_WORK_BUF] = Some(bi);
     }
+
     let mine_old = if am.cfg.mine_old_anns > -1 {
         am.cfg.mine_old_anns
     } else {
         update.conf.mine_old_anns as i32
     };
-    pm.currently_mining = max(pm.currently_mining, top - mine_old);
+
+    if p.primary {
+        pm.currently_mining = top - mine_old;
+    }
 
     // We're synced to the tip, begin mining (or start mining new anns)
     let job = if let Some(x) = pm.recent_work[(pm.currently_mining as usize) % RECENT_WORK_BUF] {
