@@ -145,7 +145,7 @@ static void mineOpt(Worker_t* w)
             CryptoCycle_blockMineMulti(
                 w->pcStates,
                 &hdrHash,
-                lowNonce + i,
+                lowNonce,
                 w->g->annCount,
                 w->g->hai.index,
                 (const CryptoCycle_Item_t *) w->g->anns,
@@ -155,28 +155,29 @@ static void mineOpt(Worker_t* w)
                 if (!Work_check(w->pcStates[j].bytes, w->g->effectiveTarget)) { continue; }
 
                 if (NOISY_LOG_SHARES) {
-                    printf("share / %u / %u\n", hdr.nonce, lowNonce);
+                    printf("share / %u / %u\n", hdr.nonce, lowNonce + j);
                     printf("effective target %x\n", w->g->effectiveTarget);
-                    for (int i = 0; i < 80; i++) { printf("%02x", ((uint8_t*)&hdr)[i]); }
+                    for (int k = 0; k < 80; k++) { printf("%02x", ((uint8_t*)&hdr)[k]); }
                     printf("\n");
-                    for (int i = 0; i < 32; i++) { printf("%02x", hdrHash.bytes[i]); }
+                    for (int k = 0; k < 32; k++) { printf("%02x", hdrHash.bytes[k]); }
                     printf("\n");
-                    for (int j = 0; j < 4; j++) {
-                        uint64_t loc = res[j].ann_mlocs[j];
-                        printf("%llu - ", (long long unsigned) loc);
-                        for (int i = 0; i < 32; i++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[i]); }
+                    for (int k = 0; k < 4; k++) {
+                        uint64_t loc = res[j].ann_mlocs[k];
+                        uint64_t lloc = res[j].ann_llocs[k];
+                        printf("%llu - ", (long long unsigned) lloc);
+                        for (int kk = 0; kk < 32; kk++) { printf("%02x", ((uint8_t*)&w->g->anns[loc])[kk]); }
                         printf("\n");
                     }
                 }
 
-                res[j].low_nonce = lowNonce;
+                res[j].low_nonce = lowNonce + j;
                 res[j].high_nonce = hdr.nonce;
                 //Buf_OBJCPY(&res.hdr, &hdr);
                 if (w->g->cb) {
                     w->g->cb(&res[j], w->g->cbc);
                 }
-                w->lowNonce = lowNonce;
             }
+            lowNonce += CryptoCycle_PAR_STATES;
         }
         Time_END(t);
         w->hashesPerSecond = ((HASHES_PER_CYCLE * 1024) / (Time_MICROS(t) / 1024));

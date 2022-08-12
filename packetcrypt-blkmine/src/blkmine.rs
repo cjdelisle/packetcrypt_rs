@@ -149,7 +149,8 @@ fn on_anns2(bm: &BlkMine, hw: HeightWork, ac: AnnChunk) {
             ac.indexes.len()
         );
     }
-    trace!("Loaded {} ANNS", total);
+    // MY EARS!
+    // trace!("Loaded {} ANNS", total);
 }
 
 impl packetcrypt_sprayer::OnAnns for BlkMine {
@@ -187,12 +188,13 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
                     hw
                 }
             };
-            trace!(
-                "Batch of {} anns {} @ {}",
-                indexes.len(),
-                hw.block_height,
-                packetcrypt_sys::difficulty::tar_to_diff(hw.work)
-            );
+            // MY EARS!
+            // trace!(
+            //     "Batch of {} anns {} @ {}",
+            //     indexes.len(),
+            //     hw.block_height,
+            //     packetcrypt_sys::difficulty::tar_to_diff(hw.work)
+            // );
             on_anns2(
                 self,
                 hw,
@@ -206,12 +208,13 @@ impl packetcrypt_sprayer::OnAnns for BlkMine {
             height_work = Some(ai.hw);
         }
         if let Some(hw) = height_work {
-            trace!(
-                "Batch of {} anns {} @ {}",
-                indexes.len(),
-                hw.block_height,
-                packetcrypt_sys::difficulty::tar_to_diff(hw.work)
-            );
+            // Too much noise
+            // trace!(
+            //     "Batch of {} anns {} @ {}",
+            //     indexes.len(),
+            //     hw.block_height,
+            //     packetcrypt_sys::difficulty::tar_to_diff(hw.work)
+            // );
             on_anns2(
                 self,
                 hw,
@@ -707,19 +710,19 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
     };
 
     // Get the proof tree
-    let pb = {
+    let (pb, tree_size) = {
         let mut tree_l = get_tree(bm, true).0.lock().unwrap();
         let mut llocs64 = [0u64; 4];
         for (i, x) in (0..).zip(share.ann_llocs.iter()) {
             llocs64[i] = *x as u64;
         }
-        match tree_l.mk_proof(&llocs64) {
+        (match tree_l.mk_proof(&llocs64) {
             Ok(b) => b,
             // TODO(cjd): "Ann number out of range" every so often, random big number
             Err(e) => bail!("Mystery error - tree.mk_proof() -> {}", e),
-        }
-    }
-    .freeze();
+        }, tree_l.size())
+    };
+    let pb = pb.freeze();
 
     // Get the 4 anns
     let anns = (0..4)
@@ -730,7 +733,7 @@ fn make_share(bm: &BlkMine, share: BlkResult, dry_run: bool) -> Result<Share> {
         })
         .collect::<Vec<_>>();
 
-    trace!("Got share / {} / {}", share.high_nonce, share.low_nonce);
+    trace!("Got share / {} / {} (tree_size: {})", share.high_nonce, share.low_nonce, tree_size);
     trace!("{}", hex::encode(&header_and_proof));
     trace!("{}", hex::encode(hash::compress32(&header_and_proof)));
     trace!("{}", hex::encode(&coinbase_commit));
