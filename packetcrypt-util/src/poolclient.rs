@@ -8,6 +8,8 @@ use tokio::sync::broadcast;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::RwLock;
 use anyhow::{format_err, Result};
+use reqwest::header::{HeaderMap, HeaderValue};
+use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct PoolClientM {
@@ -28,6 +30,10 @@ pub type PoolClient = Arc<PoolClientS>;
 
 pub fn new(url: &str, history_depth: i32, poll_seconds: u64) -> PoolClient {
     let (tx, _) = broadcast::channel::<PoolUpdate>(32);
+
+    let mut client_headers = HeaderMap::new();
+    client_headers.insert("x-pc-sid", HeaderValue::from_str(&Uuid::new_v4().simple().to_string()).unwrap());
+
     Arc::new(PoolClientS {
         m: RwLock::new(PoolClientM {
             mc: None,
@@ -39,6 +45,7 @@ pub fn new(url: &str, history_depth: i32, poll_seconds: u64) -> PoolClient {
         history_depth,
         client: reqwest::ClientBuilder::new()
             .user_agent(format!("packetcrypt_rs {}", util::version()))
+            .default_headers(client_headers)
             .build()
             .unwrap(),
     })
