@@ -94,19 +94,17 @@ async fn discover_block(pcli: &PoolClient, height: i32, hash: &[u8; 32], blkinfo
         let text = match get_url_text(pcli, &url).await {
             Err(e) => {
                 warn!(
-                    "Failed to make request to {} because {:?} retry in 5 seconds",
+                    "Failed to make request to {} because {:?}",
                     &url, e
                 );
-                util::sleep_ms(5000).await;
-                continue;
+                return None;
             }
             Ok(r) => r,
         };
         let bi = match serde_json::from_str::<BlockInfo>(text.as_str()) {
             Err(e) => {
                 info!("Failed to deserialize block info {:?} {:?}", text, e);
-                util::sleep_ms(5000).await;
-                continue;
+                return None;
             }
             Ok(r) => r,
         };
