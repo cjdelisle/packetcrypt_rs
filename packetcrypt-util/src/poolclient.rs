@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::Receiver;
 use tokio::sync::RwLock;
+use anyhow::{format_err, Result};
 
 #[derive(Debug)]
 pub struct PoolClientM {
@@ -21,6 +22,7 @@ pub struct PoolClientS {
     poll_seconds: u64,
     notify: broadcast::Sender<PoolUpdate>,
     history_depth: i32,
+    client: reqwest::Client,
 }
 pub type PoolClient = Arc<PoolClientS>;
 
@@ -35,6 +37,9 @@ pub fn new(url: &str, history_depth: i32, poll_seconds: u64) -> PoolClient {
         url: String::from(url),
         notify: tx,
         history_depth,
+        client: reqwest::ClientBuilder::new()
+            .build()
+            .unwrap(),
     })
 }
 
@@ -50,6 +55,14 @@ pub async fn update_chan(pcli: &PoolClient) -> Receiver<PoolUpdate> {
 
 fn fmt_blk(hash: &[u8; 32], height: i32) -> String {
     format!("{} @ {}", hex::encode(&hash[..]), height)
+}
+
+async fn get_url_text(pcli: &PoolClient, url: &str) -> Result<String> {
+    let res = pcli.client.get(url).send().await?;
+    match res.status() {
+        reqwest::StatusCode::OK => Ok(res.text().await?),
+        st => Err(format_err!("Status code was {:?}", st)),
+    }
 }
 
 async fn discover_block(pcli: &PoolClient, height: i32, hash: &[u8; 32]) -> Option<BlockInfo> {
@@ -70,7 +83,7 @@ async fn discover_block(pcli: &PoolClient, height: i32, hash: &[u8; 32]) -> Opti
     }
     let url = format!("{}/blkinfo_{}.json", pcli.url, hex::encode(&hash[..]));
     loop {
-        let text = match util::get_url_text(&url).await {
+        let text = match get_url_text(pcli, &url).await {
             Err(e) => {
                 warn!(
                     "Failed to make request to {} because {:?} retry in 5 seconds",
@@ -123,7 +136,7 @@ async fn discover_blocks(pcli: &PoolClient, height: i32, hash: &[u8; 32]) -> Vec
 async fn cfg_loop(pcli: &PoolClient) {
     loop {
         let url = format!("{}/config.json", pcli.url);
-        let text = match util::get_url_text(&url).await {
+        let text = match get_url_text(pcli, &url).await {
             Err(e) => {
                 warn!(
                     "Failed to make request to {} because {:?} retry in 5 seconds",

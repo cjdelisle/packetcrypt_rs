@@ -82,14 +82,6 @@ pub async fn get_url_bin(url: &str) -> Result<bytes::Bytes> {
     }
 }
 
-pub async fn get_url_text(url: &str) -> Result<String> {
-    let res = reqwest::get(url).await?;
-    match res.status() {
-        reqwest::StatusCode::OK => Ok(res.text().await?),
-        st => Err(format_err!("Status code was {:?}", st)),
-    }
-}
-
 pub async fn tokio_bcast_to_crossbeam<T, S>(
     name: S,
     mut tokio_recv: Receiver<T>,
