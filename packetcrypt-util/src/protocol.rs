@@ -97,6 +97,7 @@ pub struct MasterConf {
     pub ann_versions: Vec<u8>,
     pub mine_old_anns: u32,
     pub ann_target: Option<u32>,
+    pub blkinfo_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]

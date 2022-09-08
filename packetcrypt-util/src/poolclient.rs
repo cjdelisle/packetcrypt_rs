@@ -73,7 +73,7 @@ async fn get_url_text(pcli: &PoolClient, url: &str) -> Result<String> {
     }
 }
 
-async fn discover_block(pcli: &PoolClient, height: i32, hash: &[u8; 32]) -> Option<BlockInfo> {
+async fn discover_block(pcli: &PoolClient, height: i32, hash: &[u8; 32], blkinfo_url: &str) -> Option<BlockInfo> {
     if let Some(bi) = pcli.m.read().await.chain.get(&height) {
         if &bi.header.hash == hash {
             debug!("We already know about block [{}]", fmt_blk(hash, height));
@@ -89,7 +89,7 @@ async fn discover_block(pcli: &PoolClient, height: i32, hash: &[u8; 32]) -> Opti
     } else {
         //debug!("New block [{}]", fmt_blk(&hash, height));
     }
-    let url = format!("{}/blkinfo_{}.json", pcli.url, hex::encode(&hash[..]));
+    let url = format!("{}/blkinfo_{}.json", blkinfo_url, hex::encode(&hash[..]));
     loop {
         let text = match get_url_text(pcli, &url).await {
             Err(e) => {
@@ -122,12 +122,12 @@ async fn discover_block(pcli: &PoolClient, height: i32, hash: &[u8; 32]) -> Opti
 // This takes a newly discovered block and returns a vector of blocks which have
 // been changed. It calls the pool master iteratively in order to back-fill any
 // blocks which are incorrect and it updates the local state appropriately.
-async fn discover_blocks(pcli: &PoolClient, height: i32, hash: &[u8; 32]) -> Vec<BlockInfo> {
+async fn discover_blocks(pcli: &PoolClient, height: i32, hash: &[u8; 32], blkinfo_url: &str) -> Vec<BlockInfo> {
     let mut out: Vec<BlockInfo> = Vec::new();
     let mut xhash = *hash;
     let mut xheight = height;
     loop {
-        if let Some(bi) = discover_block(pcli, xheight, &xhash).await {
+        if let Some(bi) = discover_block(pcli, xheight, &xhash, &blkinfo_url).await {
             if bi.header.height <= height - pcli.history_depth {
                 // We've backfilled enough history
                 return out;
@@ -183,7 +183,8 @@ async fn cfg_loop(pcli: &PoolClient) {
                 true
             }
         } {
-            let update_blocks = discover_blocks(pcli, conf.current_height - 1, &tip_hash).await;
+            let blkinfo_url = conf.blkinfo_url.clone().unwrap_or(pcli.url.clone());
+            let update_blocks = discover_blocks(pcli, conf.current_height - 1, &tip_hash, &blkinfo_url).await;
             let mut pc = pcli.m.write().await;
             pc.mc = Some(conf.clone());
             if let Err(_) = pcli.notify.send(PoolUpdate {
