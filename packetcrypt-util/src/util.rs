@@ -308,3 +308,16 @@ pub fn pad_to(len: usize, mut x: String) -> String {
     }
     x
 }
+
+pub fn version() -> &'static str {
+    let out = git_version::git_version!(
+        args = ["--tags", "--dirty=-dirty", "--broken"],
+        fallback = "out-of-tree"
+    );
+    if let Some(v) = out.strip_prefix("packetcrypt-v") {
+        &v
+    } else {
+        &out
+    }
+}
+

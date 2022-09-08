@@ -12,7 +12,6 @@ PacketCrypt proof of work algorithm
 hex-literal = "0.3"
 
 [dependencies]
-git-version = "0.3"
 tokio = { version = "0.2", features = ["macros","sync","fs","signal","rt-threaded"], default-features = false }
 toml = "0.5"
 anyhow = "1.0"

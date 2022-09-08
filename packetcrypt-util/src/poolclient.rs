@@ -38,6 +38,7 @@ pub fn new(url: &str, history_depth: i32, poll_seconds: u64) -> PoolClient {
         notify: tx,
         history_depth,
         client: reqwest::ClientBuilder::new()
+            .user_agent(format!("packetcrypt_rs {}", util::version()))
             .build()
             .unwrap(),
     })

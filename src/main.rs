@@ -391,18 +391,6 @@ async fn async_main(matches: clap::ArgMatches<'_>) -> Result<()> {
     Ok(())
 }
 
-fn version() -> &'static str {
-    let out = git_version::git_version!(
-        args = ["--tags", "--dirty=-dirty", "--broken"],
-        fallback = "out-of-tree"
-    );
-    if let Some(v) = out.strip_prefix("packetcrypt-v") {
-        &v
-    } else {
-        &out
-    }
-}
-
 struct CliParamDefault {
     ann_threads: usize,
     ann_uploaders: usize,
@@ -432,7 +420,7 @@ async fn main() -> Result<()> {
     let ann_mine_old = defaults.ann_mine_old.to_string();
 
     let matches = App::new("packetcrypt")
-        .version(version())
+        .version(util::version())
         .author("Caleb James DeLisle <cjd@cjdns.fr>")
         .about("Bandwidth hard proof of work algorithm")
         .setting(clap::AppSettings::ArgRequiredElseHelp)

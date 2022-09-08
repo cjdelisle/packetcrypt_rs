@@ -24,3 +24,5 @@ hex = "0.4"
 serde-hex = "0.1"
 socket2 = "0.3"
 nix = "0.20"
+git-version = "0.3"
+
