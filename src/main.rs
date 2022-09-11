@@ -69,7 +69,7 @@ async fn ah_main(config: &str, handler: &str) -> Result<()> {
         bail!("{} is not defined in the config file [{}]", handler, config);
     };
 
-    let pc = poolclient::new(&cfg.master_url, 6, 5);
+    let pc = poolclient::new(&cfg.master_url, 6, 5, true);
 
     let pmc = paymakerclient::new(
         &pc,

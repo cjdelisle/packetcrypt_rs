@@ -472,7 +472,7 @@ fn on_work2(bm: &BlkMine, next_work: &protocol::Work) {
 }
 
 pub async fn new(ba: BlkArgs) -> Result<BlkMine> {
-    let pcli = poolclient::new(&ba.pool_master, 1, 1);
+    let pcli = poolclient::new(&ba.pool_master, 1, 1, true);
     let block_miner = Arc::new(BlkMiner::new(ba.max_mem as u64, ba.threads as u32)?);
     let max_anns = block_miner.max_anns;
     let spray = if let Some(sc) = &ba.spray_cfg {

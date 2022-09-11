@@ -123,7 +123,7 @@ pub async fn new(cfg: AnnMineCfg) -> Result<AnnMine> {
                     recent_work: [None; RECENT_WORK_BUF],
                     handlers: Vec::new(),
                 }),
-                pcli: poolclient::new(x, PREFETCH_HISTORY_DEPTH, 5),
+                pcli: poolclient::new(x, PREFETCH_HISTORY_DEPTH, 5, i == 0),
                 inflight_anns: AtomicUsize::new(0),
                 lost_anns: AtomicUsize::new(0),
                 accepted_anns: AtomicUsize::new(0),

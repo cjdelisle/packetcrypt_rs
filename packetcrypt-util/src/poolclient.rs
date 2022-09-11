@@ -25,10 +25,11 @@ pub struct PoolClientS {
     notify: broadcast::Sender<PoolUpdate>,
     history_depth: i32,
     client: reqwest::Client,
+    download_blkinfo: bool,
 }
 pub type PoolClient = Arc<PoolClientS>;
 
-pub fn new(url: &str, history_depth: i32, poll_seconds: u64) -> PoolClient {
+pub fn new(url: &str, history_depth: i32, poll_seconds: u64, download_blkinfo: bool) -> PoolClient {
     let (tx, _) = broadcast::channel::<PoolUpdate>(32);
 
     let mut client_headers = HeaderMap::new();
@@ -48,6 +49,7 @@ pub fn new(url: &str, history_depth: i32, poll_seconds: u64) -> PoolClient {
             .default_headers(client_headers)
             .build()
             .unwrap(),
+        download_blkinfo: download_blkinfo,
     })
 }
 
@@ -122,6 +124,9 @@ async fn discover_block(pcli: &PoolClient, height: i32, hash: &[u8; 32], blkinfo
 // blocks which are incorrect and it updates the local state appropriately.
 async fn discover_blocks(pcli: &PoolClient, height: i32, hash: &[u8; 32], blkinfo_url: &str) -> Vec<BlockInfo> {
     let mut out: Vec<BlockInfo> = Vec::new();
+    if !pcli.download_blkinfo {
+        return out;
+    }
     let mut xhash = *hash;
     let mut xheight = height;
     loop {
