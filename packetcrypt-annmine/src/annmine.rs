@@ -149,35 +149,7 @@ pub async fn new(cfg: AnnMineCfg) -> Result<AnnMine> {
 
 fn update_work_cycle(am: &AnnMine, p: &Arc<Pool>, update: PoolUpdate) -> Vec<Arc<Handler>> {
     let mut pm = p.m.lock().unwrap();
-    let mut top = 0;
-    for bi in update.update_blocks {
-        if let Some(rw) = pm.recent_work[(bi.header.height as usize) % RECENT_WORK_BUF].as_ref() {
-            if rw.header.height > bi.header.height {
-                // Old
-                return Vec::new();
-            }
-        }
-        top = max(bi.header.height, top);
-        pm.recent_work[(bi.header.height as usize) % RECENT_WORK_BUF] = Some(bi);
-    }
 
-    let mine_old = if am.cfg.mine_old_anns > -1 {
-        am.cfg.mine_old_anns
-    } else {
-        update.conf.mine_old_anns as i32
-    };
-
-    if p.primary {
-        pm.currently_mining = top - mine_old;
-    }
-
-    // We're synced to the tip, begin mining (or start mining new anns)
-    let job = if let Some(x) = pm.recent_work[(pm.currently_mining as usize) % RECENT_WORK_BUF] {
-        x
-    } else {
-        // We don't have the work yet
-        return Vec::new();
-    };
     let mut changes = false;
     let mut out = Vec::new();
     {
@@ -207,7 +179,7 @@ fn update_work_cycle(am: &AnnMine, p: &Arc<Pool>, update: PoolUpdate) -> Vec<Arc
             queue: queue,
             tip: Mutex::new(AnnBatch {
                 create_time: util::now_ms(),
-                parent_block_height: job.header.height,
+                parent_block_height: 0,
                 anns: Vec::new(),
             }),
             url: Arc::new(url.clone()),
@@ -242,10 +214,38 @@ fn update_work_cycle(am: &AnnMine, p: &Arc<Pool>, update: PoolUpdate) -> Vec<Arc
         pm.handlers = new_handlers;
     }
 
+    let mut top = 0;
+    for bi in update.update_blocks {
+        if let Some(rw) = pm.recent_work[(bi.header.height as usize) % RECENT_WORK_BUF].as_ref() {
+            if rw.header.height > bi.header.height {
+                // Old
+                continue;
+            }
+        }
+        top = max(bi.header.height, top);
+        pm.recent_work[(bi.header.height as usize) % RECENT_WORK_BUF] = Some(bi);
+    }
+
+    let mine_old = if am.cfg.mine_old_anns > -1 {
+        am.cfg.mine_old_anns
+    } else {
+        update.conf.mine_old_anns as i32
+    };
+
+    pm.currently_mining = top - mine_old;
+
     if !p.primary {
         // got an update from a secondary pool
         return out;
     }
+
+    // We're synced to the tip, begin mining (or start mining new anns)
+    let job = if let Some(x) = pm.recent_work[(pm.currently_mining as usize) % RECENT_WORK_BUF] {
+        x
+    } else {
+        // We don't have the work yet
+        return Vec::new();
+    };
 
     let ann_target = if let Some(ann_target) = update.conf.ann_target {
         ann_target
