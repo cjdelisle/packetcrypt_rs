@@ -114,7 +114,7 @@ fn main() {
     }
 
     if cfg!(feature = "jit") {
-        println!("[!] Experimental JIT enabled for RandHash");
+        println!("cargo:warning=[!] Experimental JIT enabled for RandHash");
 
         cfg.define("JIT_ENABLED", "1")
             .file("packetcrypt/src/JIT/JIT.posix64.c");
