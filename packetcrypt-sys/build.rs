@@ -113,7 +113,14 @@ fn main() {
         println!("cargo:warning=march=native is enabled, this build is non-portable");
     }
 
-    cfg.include("packetcrypt/include")
+    if cfg!(feature = "jit") {
+        println!("[!] Experimental JIT enabled for RandHash");
+
+        cfg.define("JIT_ENABLED", "1")
+            .file("packetcrypt/src/JIT/JIT.posix64.c");
+    }
+
+    dbg!(cfg.include("packetcrypt/include")
         .include("packetcrypt/src")
         .flag("-Wno-implicit-function-declaration")
         .file("packetcrypt/src/Validate.c")
@@ -130,7 +137,7 @@ fn main() {
         .file("packetcrypt/src/Work.c")
         .file("packetcrypt/src/ProofTree.c")
         .file("packetcrypt/src/BlockMine.c")
-        .file("packetcrypt/src/UdpGso.c")
+        .file("packetcrypt/src/UdpGso.c"))
         .out_dir(dst.join("lib"))
         .flag("-O2")
         .compile("libpacketcrypt.a");

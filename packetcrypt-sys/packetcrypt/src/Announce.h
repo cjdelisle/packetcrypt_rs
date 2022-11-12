@@ -57,4 +57,9 @@ static inline void Announce_crypt(Announce_t* ann, const CryptoCycle_State_t* st
     }
 }
 
+#ifdef JIT_ENABLED
+#include "JIT/JIT.h"
+void rh_make_item(uint64_t num, CryptoCycle_Item_t* item, PacketCrypt_ValidateCtx_t* ctx, Buf32_t* seed, rh_jit_program_t* program);
+#endif
+
 #endif

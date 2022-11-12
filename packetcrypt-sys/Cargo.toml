@@ -35,3 +35,4 @@ rand = "0.7"
 generate-bindings = ["bindgen"]
 difficulty-test = ["pkg-config"]
 portable = []
+jit = []

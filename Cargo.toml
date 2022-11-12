@@ -36,6 +36,7 @@ reqwest = { version = "0.10", features = ["stream", "json"], default-features = 
 leak_detect = ["leak-detect-allocator"]
 jemalloc = ["jemallocator"]
 portable = ["packetcrypt-sys/portable"]
+jit = ["packetcrypt-sys/jit"]
 
 [profile.release]
 # lto = "fat" # takes ages
