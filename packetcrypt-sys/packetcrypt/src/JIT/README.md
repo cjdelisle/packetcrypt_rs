@@ -21,7 +21,7 @@ Note: **DynASM/ASM** code can only be written in the ```JIT.c``` file. It must t
 ## Cargo features
 The JIT is included in the miner at compile-time only if the Cargo ```jit``` feature is selected.  
 ```./do --jit``` will automatically compile using the JIT, otherwise the native interpreter is used.  
-The JIT miner can also be built using ``` cargo build --release --features jemalloc --features jit```
+The JIT miner can also be built using ```cargo build --release --features jemalloc --features jit```
 
 ## Author
 Michel Blanc - 2021   

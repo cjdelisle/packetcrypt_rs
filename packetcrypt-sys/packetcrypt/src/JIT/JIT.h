@@ -7,9 +7,6 @@
 #include "RandHash.h"
 #include <stdint.h>
 
-#define RandHash_MEMORY_SZ 256
-#define RandHash_INOUT_SZ  256
-
 typedef struct rh_jit_program
 {
     void     (*exec)(void*, void*, void*);

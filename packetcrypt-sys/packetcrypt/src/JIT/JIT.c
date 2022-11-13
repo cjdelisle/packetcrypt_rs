@@ -18,8 +18,6 @@
 #include "luajit-2.0/dynasm/dasm_proto.h"
 #include "luajit-2.0/dynasm/dasm_x86.h"
 
-#include "RandHash.h"
-
 #if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
 #define MAP_ANONYMOUS MAP_ANON
 #endif
@@ -161,6 +159,9 @@ const int stackSize           = 8 + 256 + 8 + 2048 + 8 + 8 + 8;
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //                                                INSTRUCTION DECODING                                               //
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#define RandHash_MEMORY_SZ 256
+#define RandHash_INOUT_SZ  256
 
 #define DecodeInsn_REGA(insn)    (((insn) >>  9) & 0x1ff)
 #define DecodeInsn_REGB(insn)    (((insn) >> 20) & 0x1ff)
