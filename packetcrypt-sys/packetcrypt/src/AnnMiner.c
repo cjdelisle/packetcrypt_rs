@@ -144,6 +144,7 @@ static void populateTable(CryptoCycle_Item_t* table, Buf64_t* annHash0) {
     }
 }
 
+ __attribute__((unused))
 static int populateTableJIT(Worker_t* w, Buf64_t* seed) {
   if (Announce_createProg(w->vctx, &seed->thirtytwos[0])) {
     return -1;
@@ -162,7 +163,7 @@ static int populateTableJIT(Worker_t* w, Buf64_t* seed) {
 
 // -1 means try again
 static int populateTable2(Worker_t* w, Buf64_t* seed) {
-    #ifdef ENABLE_JIT
+    #ifdef JIT_ENABLED
     return populateTableJIT(w, seed);
     #endif
     if (Announce_createProg(w->vctx, &seed->thirtytwos[0])) {
