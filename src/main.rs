@@ -141,7 +141,7 @@ async fn ann_load_config(
                 reqwest::StatusCode::OK => {
                     json = res.text().await.ok().expect("Could not read response body");
                 },
-                st => (panic!("Failed to load config.json. Status code was {:?}", st)),
+                st => panic!("Failed to load config.json. Status code was {:?}", st),
             };  
         } else {    
             let file = path::Path::new(config_json_path.as_str());

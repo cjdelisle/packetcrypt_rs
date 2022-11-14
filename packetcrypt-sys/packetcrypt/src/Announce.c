@@ -59,7 +59,6 @@ int Announce_mkitem2(uint64_t num, CryptoCycle_Item_t* item,
     return 0;
 }
 
-#ifdef JIT_ENABLED
 void rh_make_item(uint64_t num, CryptoCycle_Item_t* item, PacketCrypt_ValidateCtx_t* ctx, Buf32_t* seed, rh_jit_program_t* program) {
   CryptoCycle_State_t state; // Working on a buffer of 2048 bytes
   CryptoCycle_init(&state, seed, num);
@@ -71,6 +70,5 @@ void rh_make_item(uint64_t num, CryptoCycle_Item_t* item, PacketCrypt_ValidateCt
 
   Buf_OBJCPY_LDST(item, &state); // Only copy first 1024 bytes of the state to the returned item
 }
-#endif
 
 

@@ -118,11 +118,14 @@ fn main() {
 
         cfg.define("JIT_ENABLED", "1")
             .file("packetcrypt/src/JIT/JIT.posix64.c");
+    } else {
+        cfg.file("packetcrypt/src/JIT/NoJIT.c");
     }
 
     dbg!(cfg.include("packetcrypt/include")
         .include("packetcrypt/src")
         .flag("-Wno-implicit-function-declaration")
+        .flag("-Wno-implicit-fallthrough") // JIT has a bunch of these
         .file("packetcrypt/src/Validate.c")
         .file("packetcrypt/src/AnnMerkle.c")
         .file("packetcrypt/src/AnnMiner.c")

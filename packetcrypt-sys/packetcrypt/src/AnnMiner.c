@@ -144,22 +144,6 @@ static void populateTable(CryptoCycle_Item_t* table, Buf64_t* annHash0) {
     }
 }
 
-// -1 means try again
-static int populateTable2(Worker_t* w, Buf64_t* seed) {
-    if (Announce_createProg(w->vctx, &seed->thirtytwos[0])) {
-        return -1;
-    }
-    for (int i = 0; i < Announce_TABLE_SZ; i++) {
-        // Allow this to be interrupted in case we should stop
-        if (getRequestedState(w) != ThreadState_RUNNING) { return -1; }
-        if (Announce_mkitem2(i, &w->job.table[i], &seed->thirtytwos[1], w->vctx)) {
-            return -1;
-        }
-    }
-    return 0;
-}
-
-#ifdef JIT_ENABLED
 static int populateTableJIT(Worker_t* w, Buf64_t* seed) {
   if (Announce_createProg(w->vctx, &seed->thirtytwos[0])) {
     return -1;
@@ -175,7 +159,24 @@ static int populateTableJIT(Worker_t* w, Buf64_t* seed) {
 
   return 0;
 }
-#endif
+
+// -1 means try again
+static int populateTable2(Worker_t* w, Buf64_t* seed) {
+    #ifdef ENABLE_JIT
+    return populateTableJIT(w, seed);
+    #endif
+    if (Announce_createProg(w->vctx, &seed->thirtytwos[0])) {
+        return -1;
+    }
+    for (int i = 0; i < Announce_TABLE_SZ; i++) {
+        // Allow this to be interrupted in case we should stop
+        if (getRequestedState(w) != ThreadState_RUNNING) { return -1; }
+        if (Announce_mkitem2(i, &w->job.table[i], &seed->thirtytwos[1], w->vctx)) {
+            return -1;
+        }
+    }
+    return 0;
+}
 
 #define HASHES_PER_CYCLE 16
 
@@ -231,11 +232,7 @@ static int getNextJob(Worker_t* w) {
     Hash_COMPRESS64_OBJ(&w->job.annHash0, &w->job.hah);
 
     if (w->job.hah.annHdr.version > 0) {
-#ifdef JIT_ENABLED
-        int pt = populateTableJIT(w, &w->job.annHash0);
-#else
         int pt = populateTable2(w, &w->job.annHash0);
-#endif
         if (pt) { return pt; }
     } else {
         populateTable(w->job.table, &w->job.annHash0);
@@ -254,11 +251,7 @@ static int getNextJob(Worker_t* w) {
         Buf_OBJCPY(&b[0], root);
         Buf_OBJCPY(&b[1], &w->job.annHash0);
         Hash_COMPRESS64_OBJ(&b[0], &b);
-#ifdef JIT_ENABLED
-        int pt = populateTableJIT(w, &b[0]);
-#else
         int pt = populateTable2(w, &b[0]);
-#endif
         if (pt) { return pt; }
     }
     return 0;
