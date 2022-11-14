@@ -23,8 +23,8 @@
 #include <sys/mman.h>
 #include <linux/mman.h>
 
-#include "luajit-2.0/dynasm/dasm_proto.h"
-#include "luajit-2.0/dynasm/dasm_x86.h"
+#include "luajit-vendored/dynasm/dasm_proto.h"
+#include "luajit-vendored/dynasm/dasm_x86.h"
 
 #include "RandHash.h"
 

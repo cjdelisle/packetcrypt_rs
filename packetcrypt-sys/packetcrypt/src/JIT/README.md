@@ -13,7 +13,12 @@
 - Edit the code in ```JIT/JIT.c``` or ```JIT/JIT.h```
 - Regenerate the ```JIT.posix64.c``` file using the following command:
 ```
-./packetcrypt-sys/packetcrypt/src/JIT/luajit-2.0/src/host/minilua packetcrypt-sys/packetcrypt/src/JIT/luajit-2.0/dynasm/dynasm.lua -o packetcrypt-sys/packetcrypt/src/JIT/JIT.posix64.c -D X64 packetcrypt-sys/packetcrypt/src/JIT/JIT.c
+git clone https://luajit.org/git/luajit.git
+cd luajit
+git checkout v2.0.5
+make
+./src/host/minilua ./dynasm/dynasm.lua -o ../packetcrypt-sys/packetcrypt/src/JIT/JIT.posix64.c \
+    -D X64 ../packetcrypt-sys/packetcrypt/src/JIT/JIT.c
 ```
 
 Note: **DynASM/ASM** code can only be written in the ```JIT.c``` file. It must then be converted to **DynASM** functions using the above command.

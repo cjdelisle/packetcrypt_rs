@@ -1,3 +1,0 @@
-[submodule "packetcrypt-sys/packetcrypt/src/JIT/luajit-2.0"]
-	path = packetcrypt-sys/packetcrypt/src/JIT/luajit-2.0
-	url = http://luajit.org/git/luajit-2.0.git
