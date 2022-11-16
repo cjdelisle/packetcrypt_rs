@@ -157,6 +157,8 @@ static int populateTableJIT(Worker_t* w, Buf64_t* seed) {
     if (getRequestedState(w) != ThreadState_RUNNING) { return -1; }
     rh_make_item(i, &w->job.table[i], w->vctx, &seed->thirtytwos[1], program);
   }
+     
+  rh_free_program(program);
 
   return 0;
 }
