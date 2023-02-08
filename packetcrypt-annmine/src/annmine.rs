@@ -214,7 +214,6 @@ fn update_work_cycle(am: &AnnMine, p: &Arc<Pool>, update: PoolUpdate) -> Vec<Arc
         pm.handlers = new_handlers;
     }
 
-    let mut top = 0;
     for bi in update.update_blocks {
         if let Some(rw) = pm.recent_work[(bi.header.height as usize) % RECENT_WORK_BUF].as_ref() {
             if rw.header.height > bi.header.height {
@@ -222,8 +221,14 @@ fn update_work_cycle(am: &AnnMine, p: &Arc<Pool>, update: PoolUpdate) -> Vec<Arc
                 continue;
             }
         }
-        top = max(bi.header.height, top);
         pm.recent_work[(bi.header.height as usize) % RECENT_WORK_BUF] = Some(bi);
+    }
+
+    let mut top = 0;
+    for opt in pm.recent_work {
+        if let Some(rw) = opt {
+            top = max(rw.header.height, top);
+        }
     }
 
     let mine_old = if am.cfg.mine_old_anns > -1 {
