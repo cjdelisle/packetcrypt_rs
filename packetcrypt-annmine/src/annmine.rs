@@ -345,29 +345,18 @@ fn submit_to_pool(p: &Pool, ann_struct: &AnnResult, now: u64) {
         Arc::clone(&pm.handlers[(ann_struct.dedup_hash as u64 % hcount) as usize])
     };
     let mut tip = handler.tip.lock().unwrap();
-    match tip.parent_block_height.cmp(&parent_block_height) {
-        std::cmp::Ordering::Greater => {
-            debug!(
-                "Miner produced an old announcement, want parent_block_height {} got {}",
-                tip.parent_block_height, parent_block_height
-            );
-            return;
-        }
-        std::cmp::Ordering::Less => {
-            // this prints for each handler
-            trace!(
-                "New block number {} -> {}",
-                tip.parent_block_height,
-                parent_block_height
-            );
-            submit_anns(
-                p,
-                &handler,
-                &mut *tip,
-                parent_block_height,
-            );
-        }
-        std::cmp::Ordering::Equal => (),
+    if tip.parent_block_height != parent_block_height {
+        trace!(
+            "New block number {} -> {}",
+            tip.parent_block_height,
+            parent_block_height
+        );
+        submit_anns(
+            p,
+            &handler,
+            &mut *tip,
+            parent_block_height,
+        );
     }
 
     tip.anns.push(ann_struct.ann.clone());
