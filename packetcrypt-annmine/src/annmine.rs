@@ -11,9 +11,10 @@ use std::cmp::max;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, Condvar};
+use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 use tokio::sync::mpsc::{self, Receiver, Sender, UnboundedReceiver};
+use tokio::sync::Notify;
 use serde::{Deserialize};
 
 const RECENT_WORK_BUF: usize = 8;
@@ -28,7 +29,7 @@ struct AnnBatch {
 
 struct UploadQueue {
     batch_queue: VecDeque<AnnBatch>,
-    uploader_queue: VecDeque<Arc<Condvar>>,
+    uploader_queue: VecDeque<Arc<Notify>>,
 }
 
 struct Handler {
@@ -300,7 +301,7 @@ async fn update_work_loop(am: &AnnMine, p: Arc<Pool>) {
             let mut queue = to_shutdown.queue.lock().unwrap();
             to_shutdown.shutdown.store(true, Ordering::Relaxed);
             for uploader in queue.uploader_queue.drain(..) {
-                uploader.notify_one();
+                uploader.notify();
             }
         }
     }
@@ -343,7 +344,7 @@ fn submit_anns(
     }
     queue.batch_queue.push_back(tip);
     if let Some(uploader) = queue.uploader_queue.pop_back() {
-        uploader.notify_one();
+        uploader.notify();
     }
 }
 
@@ -614,12 +615,12 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
         .timeout(Duration::from_secs(am.cfg.upload_timeout as u64))
         .build()
         .unwrap();
-    let trigger = Arc::new(Condvar::new());
+    let trigger = Arc::new(Notify::new());
     loop {
         let batch;
-        {
-            let mut queue = h.queue.lock().unwrap();
-            loop {
+        loop {
+            {
+                let mut queue = h.queue.lock().unwrap();
                 if h.shutdown.load(Ordering::Relaxed) {
                     debug!("Uploader for {} shutting down", h.url);
                     return;
@@ -630,8 +631,8 @@ async fn uploader_loop(am: &AnnMine, p: Arc<Pool>, h: Arc<Handler>) {
                     break;
                 }
                 queue.uploader_queue.push_back(Arc::clone(&trigger));
-                queue = trigger.wait(queue).unwrap();
-            }
+            };
+            trigger.notified().await;
         };
         let upload_n = am
             .upload_num
